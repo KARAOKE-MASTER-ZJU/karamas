@@ -1,6 +1,6 @@
 [package]
 name = "ktv-casting"
-version = "1.10.0-dev.youtube.2"
+version = "1.11.0"
 edition = "2024"
 
 [lib]

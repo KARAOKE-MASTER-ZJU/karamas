@@ -56,11 +56,16 @@ impl DlnaCaster {
         reason: &str,
     ) -> Result<(), CastError> {
         let quality = crate::get_dlna_quality();
+        let direct = crate::get_dlna_direct();
+        let sequence = self.seek_sequence.load(std::sync::atomic::Ordering::Relaxed);
         let session = self
             .sessions
             .as_ref()
+            .filter(|_| !direct)
             .map(|sessions| sessions.activate(song, quality));
-        let media_url = if let Some(session) = &session {
+        let media_url = if direct {
+            resolve_direct_url(song, quality).await?
+        } else if let Some(session) = &session {
             session
                 .prepare(&self.media_client)
                 .await
@@ -72,6 +77,9 @@ impl DlnaCaster {
             song.to_owned()
         };
         let _transport = self.transport.lock().await;
+        if direct && sequence != self.seek_sequence.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(CastError::Device("播放请求已过期".into()));
+        }
         if session.as_ref().is_some_and(|s| s.is_stopped()) {
             return Err(CastError::Device("曲目准备已被新请求替代".into()));
         }
@@ -79,7 +87,13 @@ impl DlnaCaster {
         if session.as_ref().is_some_and(|s| s.is_stopped()) {
             return Err(CastError::Device("播放请求已过期".into()));
         }
-        self.controller
+        if direct {
+            if let Some(sessions) = &self.sessions { sessions.clear(); }
+            self.loaded_generation.store(0, std::sync::atomic::Ordering::Relaxed);
+            self.controller.set_avtransport_url(&self.device, &media_url, "").await
+                .map_err(|error| self.failure("设置直连媒体地址", error))?;
+        } else {
+            self.controller
             .set_avtransport_uri(
                 &self.device,
                 &media_url,
@@ -89,6 +103,7 @@ impl DlnaCaster {
             )
             .await
             .map_err(|error| self.failure("设置媒体地址", error))?;
+        }
         if session.as_ref().is_some_and(|s| s.is_stopped()) {
             return Err(CastError::Device("播放请求已过期".into()));
         }
@@ -99,7 +114,7 @@ impl DlnaCaster {
                 .store(session.generation, std::sync::atomic::Ordering::Relaxed);
         }
 
-        if (session.is_some() || quality == Quality::P720) && position > 0 {
+        if (direct || session.is_some() || quality == Quality::P720) && position > 0 {
             if let Err(error) = self.controller.seek(&self.device, position).await {
                 log::warn!(target: "DLNA1080", "切换媒体后恢复进度失败: quality={}, position={}s, error={}", quality.label(), position, error);
                 return Err(self.failure("恢复播放进度", error));
@@ -121,6 +136,26 @@ impl DlnaCaster {
         log::warn!("{}", message);
         CastError::Device(message)
     }
+}
+
+async fn resolve_direct_url(song: &str, quality: Quality) -> Result<String, CastError> {
+    if crate::youtube_parser::is_youtube_url(song) {
+        return Err(CastError::Device("此媒体需要在线混流，请启用 DLNA 媒体代理".into()));
+    }
+    if song.starts_with("http://") || song.starts_with("https://") {
+        return Ok(song.to_owned());
+    }
+    if quality == Quality::P1080 {
+        return Err(CastError::Device("DLNA 直连模式不支持 B站 1080P".into()));
+    }
+    let path = song.split('?').next().unwrap_or(song);
+    let (bvid, page) = path.split_once("-page").unwrap_or((path, "0"));
+    if !bvid.starts_with("BV") || bvid.len() != 12 || !bvid.is_ascii() {
+        return Err(CastError::Device("直连模式需要有效的媒体链接或 BV 号".into()));
+    }
+    let page = page.parse::<u32>().map_err(|_| CastError::Device("无效的 B站分P".into()))?;
+    crate::bilibili_parser::get_bilibili_direct_link(bvid, Some(page)).await
+        .map_err(CastError::Device)
 }
 
 fn with_start_offset(song: &str, position: u32) -> String {
@@ -177,7 +212,8 @@ impl Caster for DlnaCaster {
     }
 
     async fn seek(&self, secs: u32) -> Result<(), CastError> {
-        if self.sessions.is_none() && crate::get_dlna_quality() == Quality::P1080 {
+        let loaded_generation = self.loaded_generation.load(std::sync::atomic::Ordering::Relaxed);
+        if !crate::get_dlna_direct() && self.sessions.is_none() && crate::get_dlna_quality() == Quality::P1080 {
             let song = self
                 .current_song
                 .lock()
@@ -200,7 +236,7 @@ impl Caster for DlnaCaster {
             return Ok(());
         }
         let mut old_streams = None;
-        if let Some(sessions) = &self.sessions {
+        if let Some(sessions) = self.sessions.as_ref().filter(|_| loaded_generation != 0) {
             if let Some(session) = sessions
                 .get(
                     self.loaded_generation
@@ -254,6 +290,9 @@ impl Caster for DlnaCaster {
     }
 
     async fn set_quality(&self, quality: Quality) -> Result<(), CastError> {
+        if crate::get_dlna_direct() && quality == Quality::P1080 {
+            return Err(CastError::Device("DLNA 直连模式不支持 B站 1080P，请先启用媒体代理".into()));
+        }
         let previous = crate::get_dlna_quality();
         if previous == quality {
             return Ok(());
@@ -301,7 +340,17 @@ impl Caster for DlnaCaster {
 
 #[cfg(test)]
 mod tests {
-    use super::with_start_offset;
+    use super::{with_start_offset, resolve_direct_url};
+    use super::Quality;
+
+    #[tokio::test]
+    async fn direct_url_preserves_signed_mp4_and_rejects_dash() {
+        let url = "https://cdn.example/video.mp4?token=a%2Bb&expires=42";
+        assert_eq!(resolve_direct_url(url, Quality::P720).await.unwrap(), url);
+        assert!(resolve_direct_url("BV1dqj16aECG-page0", Quality::P1080).await.is_err());
+        assert!(resolve_direct_url("https://www.youtube.com/watch?v=test", Quality::P720).await.is_err());
+        assert!(resolve_direct_url("invalid-page0", Quality::P720).await.is_err());
+    }
 
     #[test]
     fn replaces_an_existing_start_offset() {

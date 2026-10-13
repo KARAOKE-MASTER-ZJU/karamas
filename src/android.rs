@@ -7,6 +7,22 @@ use jni::JavaVM;
 use log::{info, Log, Metadata, Record};
 use std::sync::OnceLock;
 
+#[allow(non_snake_case)]
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_zju_bangdream_ktv_casting_RustEngine_setDlnaDirect(
+    _env: JNIEnv, _class: JClass, enabled: jboolean,
+) {
+    crate::set_dlna_direct(enabled != 0);
+}
+
+#[allow(non_snake_case)]
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_zju_bangdream_ktv_casting_RustEngine_getDlnaDirect(
+    _env: JNIEnv, _class: JClass,
+) -> jboolean {
+    crate::get_dlna_direct() as jboolean
+}
+
 // 1. 日志初始化
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]

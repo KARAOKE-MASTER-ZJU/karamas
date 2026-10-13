@@ -55,8 +55,24 @@ pub static ENGINE_STATE: RwLock<Option<Arc<EngineContext>>> = RwLock::new(None);
 
 /// DLNA 媒体代理清晰度。720P 保持旧的完整 MP4 路径，1080P 启用 Rust fMP4 混流。
 static DLNA_QUALITY_QN: AtomicU32 = AtomicU32::new(64);
+static DLNA_DIRECT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Changes apply to the next media load (including recast).
+pub fn set_dlna_direct(enabled: bool) {
+    DLNA_DIRECT.store(enabled, Ordering::Relaxed);
+    if enabled {
+        DLNA_QUALITY_QN.store(64, Ordering::Relaxed);
+    }
+}
+
+pub fn get_dlna_direct() -> bool {
+    DLNA_DIRECT.load(Ordering::Relaxed)
+}
 
 pub fn set_dlna_quality(quality: cast::Quality) -> Result<(), &'static str> {
+    if get_dlna_direct() && quality == cast::Quality::P1080 {
+        return Err("DLNA 直连模式不支持 B站 1080P，请先启用媒体代理");
+    }
     match quality {
         cast::Quality::P720 | cast::Quality::P1080 => {
             DLNA_QUALITY_QN.store(quality.as_qn(), Ordering::Relaxed);

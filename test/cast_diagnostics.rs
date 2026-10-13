@@ -1,6 +1,55 @@
 use super::*;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+#[tokio::test]
+async fn transport_uri_distinguishes_direct_and_proxy_urls() {
+    let original = "https://cdn.example/video.mp4?token=a%2Bb&expires=42";
+    for direct in [true, false] {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}/", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let mut soap = String::new();
+            for _ in 0..2 {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                loop {
+                    let mut chunk = [0; 4096];
+                    let n = stream.read(&mut chunk).await.unwrap();
+                    assert!(n > 0);
+                    request.extend_from_slice(&chunk[..n]);
+                    if let Some(end) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let headers = String::from_utf8_lossy(&request[..end]);
+                        let length = headers.lines().find_map(|line| {
+                            line.to_ascii_lowercase().strip_prefix("content-length:")
+                                .and_then(|s| s.trim().parse::<usize>().ok())
+                        }).unwrap_or(0);
+                        if request.len() >= end + 4 + length { break; }
+                    }
+                }
+                let request = String::from_utf8(request).unwrap();
+                let body = if request.starts_with("GET ") {
+                    r#"<root><device><deviceType>urn:schemas-upnp-org:device:MediaRenderer:1</deviceType><friendlyName>Test renderer</friendlyName><serviceList><service><serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType><serviceId>urn:upnp-org:serviceId:AVTransport</serviceId><SCPDURL>/service.xml</SCPDURL><controlURL>/control</controlURL><eventSubURL>/events</eventSubURL></service></serviceList></device></root>"#
+                } else {
+                    soap = request;
+                    r#"<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><u:SetAVTransportURIResponse xmlns:u="urn:schemas-upnp-org:service:AVTransport:1"/></s:Body></s:Envelope>"#
+                };
+                stream.write_all(http_response(200, body).as_bytes()).await.unwrap();
+            }
+            soap
+        });
+        let controller = DlnaController::new();
+        let device = controller.get_device_from_url(&base).await.unwrap();
+        if direct {
+            controller.set_avtransport_url(&device, original, "").await.unwrap();
+        } else {
+            controller.set_avtransport_uri(&device, original, "", "127.0.0.1".parse().unwrap(), 8080).await.unwrap();
+        }
+        let soap = tokio::time::timeout(Duration::from_secs(5), server).await.unwrap().unwrap();
+        let expected = if direct { original.to_owned() } else { format!("http://127.0.0.1:8080/{original}") };
+        assert!(soap.contains(&format!("<CurrentURI>{}</CurrentURI>", xml_escape(&expected))), "{soap}");
+    }
+}
+
 const FAULT: &str = r#"<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
 <s:Body><s:Fault><faultcode>s:Client</faultcode><faultstring>UPnPError</faultstring>
 <detail><UPnPError xmlns="urn:schemas-upnp-org:control-1-0">

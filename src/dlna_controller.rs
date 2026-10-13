@@ -569,12 +569,22 @@ impl DlnaController {
         server_ip: IpAddr,
         server_port: u16,
     ) -> Result<(), rupnp::Error> {
+        let media_url = format!("http://{}:{}/{}", server_ip, server_port, current_uri);
+        self.set_avtransport_url(device, &media_url, current_uri_metadata).await
+    }
+
+    /// Send an absolute media URL unchanged, without wrapping it in the proxy.
+    pub async fn set_avtransport_url(
+        &self,
+        device: &DlnaDevice,
+        current_uri: &str,
+        current_uri_metadata: &str,
+    ) -> Result<(), rupnp::Error> {
         let avtransport = self
             .get_avtransport_service(device)
             .ok_or(rupnp::Error::ParseError("设备不支持AVTransport服务"))?;
 
-        // 构建完整的媒体URL
-        let media_url = format!("http://{}:{}/{}", server_ip, server_port, current_uri);
+        let media_url = current_uri.to_owned();
 
         log::info!("设置媒体URI: {}", media_url);
         log::debug!("元数据(传入): {}", current_uri_metadata);

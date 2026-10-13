@@ -1599,7 +1599,7 @@ dependencies = [
 
 [[package]]
 name = "ktv-casting"
-version = "1.10.0-dev.youtube.2"
+version = "1.11.0"
 dependencies = [
  "actix-files",
  "actix-web",

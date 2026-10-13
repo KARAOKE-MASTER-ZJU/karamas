@@ -123,7 +123,7 @@ jobs:
         run: |
           LIB="target/${{ matrix.platform.target }}/release/lib${{ env.LIB_NAME }}.so"
           readelf --dyn-syms --wide "$LIB" > jni-symbols.txt
-          for METHOD in initSessionDir pollPlaybackProgress recastCurrentSong setQuality jumpToSecs; do
+          for METHOD in initSessionDir pollPlaybackProgress recastCurrentSong setQuality jumpToSecs setDlnaDirect getDlnaDirect; do
             grep -q "Java_zju_bangdream_ktv_casting_RustEngine_$METHOD$" jni-symbols.txt
           done
 
