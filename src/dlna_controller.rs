@@ -5,12 +5,15 @@ use futures::stream::StreamExt;
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use rupnp::Device;
 use rupnp::http::Uri;
-use rupnp::ssdp::{SearchTarget, URN};
+use rupnp::ssdp::URN;
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::net::IpAddr;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
+
+#[path = "ssdp_discovery.rs"]
+mod ssdp_discovery;
 
 /// 兼容模式的单次请求超时。正常设备在局域网内响应在百毫秒级，1.5s 足够；
 /// 更短是为了避免候选 control 路径全量轮询时累加超过 ANR 阈值。
@@ -468,14 +471,13 @@ async fn collect_discovery_results(
             }
             Err(error) => {
                 errors += 1;
-                // rupnp combines SSDP receive and description fetch/parse errors in this stream.
-                log::error!(target: "DLNA_DISCOVERY", "发现过程错误：步骤=接收SSDP或获取/解析设备描述，错误={}", error);
+                log::error!(target: "DLNA_DISCOVERY", "发现过程错误：步骤=获取/解析设备描述，错误={}", error);
             }
         }
     }
     log::info!(target: "DLNA_DISCOVERY", "自动搜索结束：结果项={}，可用设备={}，重复={}，过滤={}，错误={}，耗时={}ms", events, devices.len(), duplicates, filtered, errors, started.elapsed().as_millis());
     if events == 0 {
-        log::warn!(target: "DLNA_DISCOVERY", "发现流未返回结果项：请检查设备投屏状态、Wi-Fi 多播/隔离及 VPN；此结果不能单独证明设备离线");
+        log::warn!(target: "DLNA_DISCOVERY", "没有设备描述结果：请结合DLNA_SSDP的实际UDP收包与响应拒绝计数；此结果不能单独证明设备离线");
     } else if devices.is_empty() {
         log::warn!(target: "DLNA_DISCOVERY", "没有可用设备：请查看上方过滤原因和发现过程错误");
     }
@@ -493,15 +495,23 @@ impl DlnaController {
     // 发现网络中的DLNA渲染器设备
     pub async fn discover_devices(&self) -> Result<Vec<DlnaDevice>, rupnp::Error> {
         let started = Instant::now();
-        log::info!(target: "DLNA_DISCOVERY", "自动搜索开始：目标={}，SSDP=239.255.255.250:1900，搜索窗口=5s，接口=系统默认", AV_TRANSPORT);
-        let search_target = SearchTarget::URN(AV_TRANSPORT);
-        let devices_stream = match rupnp::discover(&search_target, Duration::from_secs(5), None).await {
-            Ok(stream) => stream,
-            Err(error) => {
-                log::error!(target: "DLNA_DISCOVERY", "自动搜索失败：步骤=启动SSDP发现，耗时={}ms，错误={}", started.elapsed().as_millis(), error);
-                return Err(error);
+        log::info!(target: "DLNA_DISCOVERY", "自动搜索开始：并行对照AVTransport:1、MediaRenderer:1、ssdp:all，各5s；描述请求单次超时3s、并发8");
+        let locations = ssdp_discovery::discover_locations().await?;
+        let devices_stream = futures::stream::iter(locations).map(|location| async move {
+            let endpoint = discovery_endpoint(&location);
+            let started = Instant::now();
+            log::info!(target: "DLNA_DISCOVERY", "获取发现的设备描述：地址={}", endpoint);
+            let result = async {
+                let uri = location.parse::<Uri>()?;
+                timeout(DEVICE_DISCOVERY_TIMEOUT, Device::from_url(uri)).await
+                    .map_err(|_| rupnp::Error::ParseError("获取设备描述超时"))?
+            }.await;
+            match &result {
+                Ok(_) => log::info!(target: "DLNA_DISCOVERY", "设备描述解析成功：地址={}，耗时={}ms", endpoint, started.elapsed().as_millis()),
+                Err(error) => log::error!(target: "DLNA_DISCOVERY", "设备描述获取失败：地址={}，耗时={}ms，错误={}", endpoint, started.elapsed().as_millis(), error),
             }
-        };
+            result
+        }).buffer_unordered(8);
         Ok(collect_discovery_results(devices_stream, started).await)
     }
 
