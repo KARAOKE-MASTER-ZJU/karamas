@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::net::IpAddr;
 use std::sync::OnceLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// 兼容模式的单次请求超时。正常设备在局域网内响应在百毫秒级，1.5s 足够；
 /// 更短是为了避免候选 control 路径全量轮询时累加超过 ANR 阈值。
@@ -415,6 +415,20 @@ fn extract_control_endpoint_from_debug(service_debug: &str) -> Option<String> {
 // AVTransport服务URN
 const AV_TRANSPORT: URN = URN::service("schemas-upnp-org", "AVTransport", 1);
 
+// Keep the endpoint useful for LAN diagnosis without exporting URL credentials.
+fn discovery_endpoint(raw: &str) -> String {
+    match url::Url::parse(raw) {
+        Ok(mut url) => {
+            let _ = url.set_username("");
+            let _ = url.set_password(None);
+            url.set_query(None);
+            url.set_fragment(None);
+            url.to_string()
+        }
+        Err(_) => "<无效描述地址>".to_owned(),
+    }
+}
+
 // DLNA设备信息
 #[derive(Debug, Clone)]
 pub struct DlnaDevice {
@@ -422,6 +436,50 @@ pub struct DlnaDevice {
     pub friendly_name: String,
     pub location: String,
     pub services: Vec<URN>,
+}
+
+async fn collect_discovery_results(
+    stream: impl futures::Stream<Item = Result<Device, rupnp::Error>>,
+    started: Instant,
+) -> Vec<DlnaDevice> {
+    futures::pin_mut!(stream);
+    let mut devices = Vec::new();
+    let mut seen_locations = HashSet::new();
+    let (mut events, mut duplicates, mut filtered, mut errors) = (0, 0, 0, 0);
+    while let Some(result) = stream.next().await {
+        events += 1;
+        match result {
+            Ok(device) => {
+                let location = device.url().to_string();
+                if !seen_locations.insert(location.clone()) {
+                    duplicates += 1;
+                    continue;
+                }
+                let device_type = device.device_type().to_string();
+                if !device_type.contains("MediaRenderer") {
+                    filtered += 1;
+                    log::info!(target: "DLNA_DISCOVERY", "忽略设备：原因=非MediaRenderer，类型={}，描述地址={}", device_type, discovery_endpoint(&location));
+                    continue;
+                }
+                let friendly_name = device.friendly_name().to_string();
+                let services: Vec<URN> = device.services().iter().map(|s| s.service_type().clone()).collect();
+                log::info!(target: "DLNA_DISCOVERY", "发现设备：名称={}，描述地址={}，类型={}，服务={:?}", friendly_name, discovery_endpoint(&location), device_type, services);
+                devices.push(DlnaDevice { device, friendly_name, location, services });
+            }
+            Err(error) => {
+                errors += 1;
+                // rupnp combines SSDP receive and description fetch/parse errors in this stream.
+                log::error!(target: "DLNA_DISCOVERY", "发现过程错误：步骤=接收SSDP或获取/解析设备描述，错误={}", error);
+            }
+        }
+    }
+    log::info!(target: "DLNA_DISCOVERY", "自动搜索结束：结果项={}，可用设备={}，重复={}，过滤={}，错误={}，耗时={}ms", events, devices.len(), duplicates, filtered, errors, started.elapsed().as_millis());
+    if events == 0 {
+        log::warn!(target: "DLNA_DISCOVERY", "发现流未返回结果项：请检查设备投屏状态、Wi-Fi 多播/隔离及 VPN；此结果不能单独证明设备离线");
+    } else if devices.is_empty() {
+        log::warn!(target: "DLNA_DISCOVERY", "没有可用设备：请查看上方过滤原因和发现过程错误");
+    }
+    devices
 }
 
 #[derive(Clone)]
@@ -434,55 +492,17 @@ impl DlnaController {
 
     // 发现网络中的DLNA渲染器设备
     pub async fn discover_devices(&self) -> Result<Vec<DlnaDevice>, rupnp::Error> {
-        log::info!("正在搜索DLNA设备...");
-
+        let started = Instant::now();
+        log::info!(target: "DLNA_DISCOVERY", "自动搜索开始：目标={}，SSDP=239.255.255.250:1900，搜索窗口=5s，接口=系统默认", AV_TRANSPORT);
         let search_target = SearchTarget::URN(AV_TRANSPORT);
-        let devices_stream = rupnp::discover(&search_target, Duration::from_secs(5), None).await?;
-
-        let devices: Vec<Result<Device, rupnp::Error>> = devices_stream.collect().await;
-        log::debug!("发现设备总数: {}", devices.len());
-        let mut dlna_devices = Vec::new();
-
-        let mut seen_locations = HashSet::new();
-
-        for device_result in devices {
-            match device_result {
-                Ok(device) => {
-                    let location = device.url().to_string();
-
-                    if !seen_locations.insert(location.clone()) {
-                        continue;
-                    }
-
-                    let device_type_str = device.device_type().to_string();
-                    if device_type_str.contains("MediaRenderer") {
-                        let friendly_name = device.friendly_name().to_string();
-
-                        // 检查设备是否支持AVTransport服务
-                        let services: Vec<URN> = device
-                            .services()
-                            .iter()
-                            .map(|s| s.service_type().clone())
-                            .collect();
-
-                        log::info!("发现设备: {} (位置: {})", friendly_name, location);
-                        log::debug!("支持的服务: {:?}", services);
-
-                        dlna_devices.push(DlnaDevice {
-                            device,
-                            friendly_name,
-                            location,
-                            services,
-                        });
-                    }
-                }
-                Err(e) => {
-                    log::error!("设备发现错误: {}", e);
-                }
+        let devices_stream = match rupnp::discover(&search_target, Duration::from_secs(5), None).await {
+            Ok(stream) => stream,
+            Err(error) => {
+                log::error!(target: "DLNA_DISCOVERY", "自动搜索失败：步骤=启动SSDP发现，耗时={}ms，错误={}", started.elapsed().as_millis(), error);
+                return Err(error);
             }
-        }
-
-        Ok(dlna_devices)
+        };
+        Ok(collect_discovery_results(devices_stream, started).await)
     }
 
     pub async fn get_devices_from_urls(
@@ -526,23 +546,36 @@ impl DlnaController {
 
     /// 通过设备描述XML的URL直接获取设备（无需多播，适用于不支持SSDP的WiFi环境）
     pub async fn get_device_from_url(&self, url: &str) -> Result<DlnaDevice, rupnp::Error> {
+        let started = Instant::now();
+        let endpoint = discovery_endpoint(url);
+        log::info!(target: "DLNA_DISCOVERY", "手动连接开始：描述地址={}，超时={}ms", endpoint, DEVICE_DISCOVERY_TIMEOUT.as_millis());
         let uri: Uri = url
             .parse()
-            .map_err(|_| rupnp::Error::ParseError("无法解析设备XML URL"))?;
-        log::info!("正在通过URL直接获取设备: {}", url);
+            .map_err(|_| {
+                log::error!(target: "DLNA_DISCOVERY", "手动连接失败：步骤=解析描述地址，地址={}", endpoint);
+                rupnp::Error::ParseError("无法解析设备XML URL")
+            })?;
 
-        let device = timeout(DEVICE_DISCOVERY_TIMEOUT, Device::from_url(uri))
-            .await
-            .map_err(|_| rupnp::Error::ParseError("连接设备或获取描述文件超时"))??;
+        let device = match timeout(DEVICE_DISCOVERY_TIMEOUT, Device::from_url(uri)).await {
+            Ok(Ok(device)) => device,
+            Ok(Err(error)) => {
+                log::error!(target: "DLNA_DISCOVERY", "手动连接失败：步骤=获取/解析设备描述，描述地址={}，耗时={}ms，错误={}", endpoint, started.elapsed().as_millis(), error);
+                return Err(error);
+            }
+            Err(_) => {
+                log::error!(target: "DLNA_DISCOVERY", "手动连接失败：步骤=获取设备描述，描述地址={}，耗时={}ms，错误=超时", endpoint, started.elapsed().as_millis());
+                return Err(rupnp::Error::ParseError("连接设备或获取描述文件超时"));
+            }
+        };
 
         let friendly_name = device.friendly_name().to_string();
         let location = device.url().to_string();
-        let services = device
+        let services: Vec<URN> = device
             .services()
             .iter()
             .map(|s| s.service_type().clone())
             .collect();
-        log::info!("通过URL成功获取设备: {} ({})", friendly_name, location);
+        log::info!(target: "DLNA_DISCOVERY", "手动连接成功：名称={}，描述地址={}，类型={}，服务={:?}，耗时={}ms", friendly_name, endpoint, device.device_type(), services, started.elapsed().as_millis());
         Ok(DlnaDevice {
             device,
             friendly_name,
@@ -961,6 +994,10 @@ impl DlnaController {
 #[cfg(test)]
 #[path = "../test/cast_diagnostics.rs"]
 mod diagnostics_tests;
+
+#[cfg(test)]
+#[path = "../test/discovery_diagnostics.rs"]
+mod discovery_diagnostics_tests;
 
 #[cfg(test)]
 mod tests {

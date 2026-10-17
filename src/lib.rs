@@ -644,7 +644,10 @@ pub async fn discover_devices_core() -> Vec<DlnaDevice> {
     DlnaController::new()
         .discover_devices()
         .await
-        .unwrap_or_default()
+        .unwrap_or_else(|error| {
+            log::error!(target: "DLNA_DISCOVERY", "搜索接口返回空列表：原生搜索失败={}；空列表不等于设备离线", error);
+            Vec::new()
+        })
 }
 
 pub async fn discover_device_from_url_core(url: String) -> Result<DlnaDevice, String> {
