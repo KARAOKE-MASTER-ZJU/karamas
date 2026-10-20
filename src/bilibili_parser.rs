@@ -40,28 +40,134 @@ pub fn bv_to_aid(bvid: &str) -> u64 {
     (tmp & BV_MASK_CODE) ^ BV_XOR_CODE
 }
 
-/// Returns `(cid, duration_secs)` for the given page of a BV video.
-pub async fn get_page_info(bv_id: &str, page: u32) -> Result<(u64, u32), String> {
-    let url = format!("https://api.bilibili.com/x/player/pagelist?bvid={}", bv_id);
+/// Public page metadata. `page_index` is zero-based; `page` is for display.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BilibiliPart {
+    pub page_index: u32,
+    pub page: u32,
+    pub cid: u64,
+    pub part: String,
+    pub duration_secs: u32,
+}
+
+pub async fn get_bilibili_parts(bvid: &str) -> Result<Vec<BilibiliPart>, String> {
     let json: Value = bili_api_client()
-        .get(&url)
+        .get("https://api.bilibili.com/x/player/pagelist")
+        .query(&[("bvid", bvid)])
+        .header("Referer", "https://www.bilibili.com/")
         .send()
         .await
+        .map_err(|e| e.to_string())?
+        .error_for_status()
         .map_err(|e| e.to_string())?
         .json()
         .await
         .map_err(|e| e.to_string())?;
-    let data = json["data"].as_array().ok_or("no data")?;
-    let idx = page as usize;
-    if idx >= data.len() {
-        return Err(format!("page {} out of range (len={})", page, data.len()));
+    if json["code"].as_i64() != Some(0) {
+        return Err(format!(
+            "B站 API 错误: {} ({})",
+            json["message"], json["code"]
+        ));
     }
-    let cid = data[idx]["cid"].as_u64().ok_or("no cid")?;
-    let duration = data[idx]["duration"]
-        .as_u64()
-        .map(|d| d as u32)
-        .unwrap_or(0);
-    Ok((cid, duration))
+    let data = json["data"]
+        .as_array()
+        .filter(|data| !data.is_empty())
+        .ok_or("该视频没有可用的分 P 数据")?;
+    data.iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let page = item["page"]
+                .as_u64()
+                .and_then(|n| u32::try_from(n).ok())
+                .filter(|&n| n == index as u32 + 1)
+                .ok_or("无效的分 P 页码")?;
+            Ok(BilibiliPart {
+                page_index: page - 1,
+                page,
+                cid: item["cid"]
+                    .as_u64()
+                    .filter(|&n| n > 0)
+                    .ok_or("无效的 CID")?,
+                part: item["part"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| format!("P{page}")),
+                duration_secs: item["duration"]
+                    .as_u64()
+                    .and_then(|n| u32::try_from(n).ok())
+                    .ok_or("无效的分 P 时长")?,
+            })
+        })
+        .collect()
+}
+
+/// Returns `(cid, duration_secs)` for a zero-based page index.
+pub async fn get_page_info(bv_id: &str, page: u32) -> Result<(u64, u32), String> {
+    let parts = get_bilibili_parts(bv_id).await?;
+    let part = parts
+        .get(page as usize)
+        .ok_or_else(|| format!("分 P 超出范围: {page}"))?;
+    Ok((part.cid, part.duration_secs))
+}
+
+/// Parse only ordinary BV videos, preserving web `p` / app `page` semantics.
+pub fn parse_bilibili_video(input: &str) -> Result<(String, u32), String> {
+    let (bvid, page) = if input.starts_with("bilibili://")
+        || input.starts_with("https://")
+        || input.starts_with("http://")
+    {
+        let url = url::Url::parse(input).map_err(|_| "无效的视频 URL")?;
+        let app = url.scheme() == "bilibili";
+        if app {
+            if url.host_str() != Some("video") {
+                return Err("仅支持普通 BV 视频".into());
+            }
+        } else if !matches!(
+            url.host_str(),
+            Some("www.bilibili.com" | "bilibili.com" | "m.bilibili.com")
+        ) {
+            return Err("仅支持普通 BV 视频".into());
+        }
+        let path = url.path().trim_matches('/');
+        let bvid = if app {
+            path
+        } else {
+            path.strip_prefix("video/").ok_or("仅支持普通 BV 视频")?
+        };
+        let pairs: Vec<_> = url.query_pairs().collect();
+        let page = if app {
+            pairs.iter().find(|(k, _)| k == "page")
+        } else {
+            None
+        };
+        let index = if let Some((_, value)) = page {
+            value.parse::<u32>().map_err(|_| "无效的分 P 索引")?
+        } else if let Some((_, value)) = pairs.iter().find(|(k, _)| k == "p") {
+            value
+                .parse::<u32>()
+                .ok()
+                .and_then(|n| n.checked_sub(1))
+                .ok_or("无效的分 P 页码")?
+        } else {
+            0
+        };
+        (bvid.to_owned(), index)
+    } else {
+        let (bvid, page) = input.split_once("-page").unwrap_or((input, "0"));
+        (
+            bvid.to_owned(),
+            page.parse::<u32>().map_err(|_| "无效的分 P 索引")?,
+        )
+    };
+    if bvid.len() != 12
+        || !bvid.starts_with("BV")
+        || !bvid.bytes().skip(2).all(|c| c.is_ascii_alphanumeric())
+    {
+        return Err("仅支持普通 BV 视频".into());
+    }
+    Ok((bvid, page))
 }
 
 pub async fn get_page_duration(bv_id: &str, page: u32) -> Result<u32, String> {
@@ -125,56 +231,9 @@ pub async fn get_bilibili_media(
 
 /// 获取视频的CID（分集ID）
 async fn get_video_cid(bv_id: &str, page: u32) -> Result<String, String> {
-    let url = format!("https://api.bilibili.com/x/player/pagelist?bvid={}", bv_id);
-
-    let response = bili_api_client()
-        .get(&url)
-        .send()
+    get_page_info(bv_id, page)
         .await
-        .map_err(|e| format!("请求CID失败: {}", e))?;
-
-    let json: Value = response
-        .json()
-        .await
-        .map_err(|e| format!("解析JSON失败: {}", e))?;
-
-    // 检查API返回状态
-    if json["code"].as_i64() != Some(0) {
-        return Err(format!(
-            "API错误:  {}",
-            json.get("message")
-                .and_then(|v| v.as_str())
-                .unwrap_or("未知错误")
-        ));
-    }
-
-    // 检查分P是否存在
-    let data = json
-        .get("data")
-        .and_then(|d| d.as_array())
-        .ok_or_else(|| "无效的数据格式".to_string())?;
-
-    if data.is_empty() {
-        return Err("该视频没有可用的分P数据".to_string());
-    }
-
-    let idx = page as usize;
-    if idx >= data.len() {
-        return Err(format!(
-            "无效的分P: page={}, 有效范围: 0..{}, 总分P数: {}",
-            page,
-            data.len(),
-            data.len()
-        ));
-    }
-
-    // 获取指定分P的CID
-    let cid = data[idx]
-        .get("cid")
-        .and_then(|c| c.as_u64())
-        .ok_or_else(|| "无法获取CID".to_string())?;
-
-    Ok(cid.to_string())
+        .map(|(cid, _)| cid.to_string())
 }
 
 /// 获取视频播放链接

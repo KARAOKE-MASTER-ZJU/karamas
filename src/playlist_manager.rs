@@ -111,6 +111,10 @@ impl PlaylistManager {
             .to_string();
 
         let extract_bv_function = |url: &str| {
+            if let Ok((bvid, page)) = crate::bilibili_parser::parse_bilibili_video(url) {
+                return format!("{bvid}-page{page}");
+            }
+
             // 提取 bilibili://video/ 后面的部分
             if let Some(start) = url.find("bilibili://video/") {
                 let after_prefix = &url[start + "bilibili://video/".len()..];
@@ -412,6 +416,109 @@ impl PlaylistManager {
                 }
             }
         });
+    }
+
+    /// Read song and hash from one authoritative room response, without consuming
+    /// the sync loop's hash or suppressing its playback callback.
+    pub(crate) async fn current_song_snapshot(
+        &self,
+    ) -> Result<crate::bilibili_parts::CurrentSongSnapshot, crate::bilibili_parts::PartError> {
+        use crate::bilibili_parts::{CurrentSongSnapshot, PartError};
+        let json: serde_json::Value = self
+            .client
+            .get(format!(
+                "{}/api/songListInfo",
+                self.url.trim_end_matches('/')
+            ))
+            .query(&[("roomId", self.room_id.as_str())])
+            .send()
+            .await
+            .map_err(|e| PartError::new("ROOM_ERROR", e.to_string()))?
+            .error_for_status()
+            .map_err(|e| PartError::new("ROOM_ERROR", e.to_string()))?
+            .json()
+            .await
+            .map_err(|e| PartError::new("ROOM_ERROR", e.to_string()))?;
+        let song = &json["list"]["singing"];
+        if json["changed"].as_bool() != Some(true) || !json["list"].is_object() {
+            return Err(PartError::new("ROOM_ERROR", "无效的房间响应"));
+        }
+        if song.is_null() {
+            return Err(PartError::new("NO_CURRENT_SONG", "当前没有歌曲"));
+        }
+        let field = |value: &serde_json::Value| {
+            value
+                .as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| PartError::new("ROOM_ERROR", "房间歌曲字段不完整"))
+        };
+        Ok(CurrentSongSnapshot {
+            song_id: field(&song["id"])?,
+            song_url: field(&song["url"])?,
+            song_title: field(&song["title"])?,
+            room_hash: field(&json["hash"])?,
+        })
+    }
+
+    pub(crate) async fn edit_current_part(
+        &self,
+        song: &crate::bilibili_parts::CurrentSongSnapshot,
+        target_url: &str,
+        unchanged: bool,
+    ) -> Result<bool, crate::bilibili_parts::PartError> {
+        use crate::bilibili_parts::PartError;
+        // The room API atomically checks song ID and hash before publishing
+        // the edit. A second client-side read would not close that race.
+        if unchanged {
+            return Ok(false);
+        }
+        let response = self
+            .client
+            .post(format!(
+                "{}/api/editCurrentSong",
+                self.url.trim_end_matches('/')
+            ))
+            .query(&[("roomId", &self.room_id)])
+            .json(&json!({"idArrayHash": song.room_hash, "song": {
+                "id": song.song_id, "title": song.song_title, "url": target_url,
+            }}))
+            .send()
+            .await
+            .map_err(|e| {
+                PartError::new("RESULT_UNKNOWN", format!("提交结果未知，请刷新确认：{e}"))
+            })?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(PartError::new(
+                if status.is_server_error() {
+                    "RESULT_UNKNOWN"
+                } else {
+                    "ROOM_ERROR"
+                },
+                format!("修改分 P 请求失败：HTTP {status}，请刷新确认"),
+            ));
+        }
+        let json: serde_json::Value = response.json().await.map_err(|e| {
+            PartError::new("RESULT_UNKNOWN", format!("提交结果未知，请刷新确认：{e}"))
+        })?;
+        if json["success"].as_bool() == Some(true) {
+            Ok(true)
+        } else if json["success"].as_bool() == Some(false) {
+            Err(PartError::new(
+                if json["code"] == "REJECT" {
+                    "STALE_CONTEXT"
+                } else {
+                    "ROOM_ERROR"
+                },
+                json["msg"].as_str().unwrap_or(if json["code"] == "REJECT" {
+                    "歌单已变化，请重试"
+                } else {
+                    "修改被拒绝，请重试"
+                }),
+            ))
+        } else {
+            Err(PartError::new("RESULT_UNKNOWN", "无效的提交响应，请刷新确认"))
+        }
     }
 
     pub async fn next_song(&mut self) -> Result<(), String> {

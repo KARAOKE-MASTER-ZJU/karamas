@@ -32,6 +32,8 @@ pub const PROXY_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 pub mod android;
 
 pub mod bilibili_parser;
+pub mod bilibili_parts;
+pub use bilibili_parts::{get_current_bilibili_parts_core, select_current_bilibili_part_core};
 pub mod cast;
 pub mod dlna_controller;
 pub mod fmp4_mux;

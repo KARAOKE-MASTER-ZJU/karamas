@@ -38,6 +38,8 @@ async fn server(
             assert!(
                 header.starts_with("POST /api/nextSong?roomId=test ")
                     || header.starts_with("GET /api/songListInfo?roomId=test&")
+                    || header.starts_with("GET /api/songListInfo?roomId=test ")
+                    || header.starts_with("POST /api/editCurrentSong?roomId=test ")
             );
             let length: usize = header
                 .lines()
@@ -402,5 +404,68 @@ async fn failed_sync_preserves_handled_song_and_next_sync_recovers() {
     for _ in 0..3 {
         request(&mut requests).await;
     }
+    server.abort();
+}
+
+
+#[tokio::test]
+async fn part_edit_preserves_title_and_sync_replays_same_id_only_once() {
+    use crate::bilibili_parts::CurrentSongSnapshot;
+    let first = "bilibili://video/BV1LS4MzKE8y?page=0";
+    let second = "bilibili://video/BV1LS4MzKE8y?page=1";
+    let (manager, mut requests, server) = server(vec![
+        Some((200, playlist("H0", "A", first))),
+        Some((200, json!({"success":true,"hash":"H1"}))),
+        Some((200, playlist("H1", "A", second))),
+        Some((200, playlist("H1", "A", second))),
+    ])
+    .await;
+    let (played, mut received) = mpsc::unbounded_channel();
+    let mut callback = |url| -> Pin<Box<dyn Future<Output = ()> + Send>> {
+        let manager = manager.clone();
+        let played = played.clone();
+        Box::pin(async move {
+            assert_eq!(progress(&manager, 299, 300).await, (-1, -1));
+            confirm_play(&manager, false).await;
+            played.send(url).unwrap();
+        })
+    };
+    let mut cached = None;
+    manager
+        .sync_playlist(&mut cached, &mut callback)
+        .await
+        .unwrap();
+    assert_eq!(received.try_recv().unwrap(), "BV1LS4MzKE8y-page0");
+    let selection = CurrentSongSnapshot {
+        song_id: "A".into(),
+        song_url: first.into(),
+        room_hash: "H0".into(),
+        song_title: "A".into(),
+    };
+    assert!(
+        manager
+            .edit_current_part(&selection, second, false)
+            .await
+            .unwrap()
+    );
+    assert_eq!(manager.current_hash().await, "H0");
+    assert_eq!(progress(&manager, 12, 357).await, (12, 357));
+    request(&mut requests).await;
+    let body = request(&mut requests).await;
+    assert_eq!(
+        body,
+        json!({"idArrayHash":"H0","song":{"id":"A","title":"A","url":second}})
+    );
+    manager
+        .sync_playlist(&mut cached, &mut callback)
+        .await
+        .unwrap();
+    assert_eq!(received.try_recv().unwrap(), "BV1LS4MzKE8y-page1");
+    assert_eq!(progress(&manager, 1, 226).await, (1, 226));
+    manager
+        .sync_playlist(&mut cached, &mut callback)
+        .await
+        .unwrap();
+    assert!(received.try_recv().is_err());
     server.abort();
 }

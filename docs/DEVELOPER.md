@@ -39,6 +39,25 @@
 
 ---
 
+## 当前歌曲分 P 接口
+
+Rust 核心接口为 `get_current_bilibili_parts_core()` 和 `select_current_bilibili_part_core(song_id: &str, page_index: u32)`。对应的 `RustEngine` JNI 声明：
+
+```kotlin
+external fun getCurrentBilibiliParts(): String
+external fun selectCurrentBilibiliPart(songId: String, pageIndex: Int): Int
+```
+
+两个方法均需在 IO 线程调用。查询返回 JSON 对象，包含 `songId`、`bvid`、`currentPageIndex` 和 `parts`；失败返回空字符串，原因记录在 Rust 日志中。每个分 P 包含 `pageIndex`、`page`、`cid`、`part`、`durationSecs`。索引从 0 开始，显示页码 `page` 从 1 开始，时长单位为秒，CID 使用 64 位整数。
+
+选择时传入查询结果的 `songId` 和目标 `pageIndex`。返回 `1` 表示点歌台已接受修改，`0` 表示当前已是该分 P，`-1` 表示失败，详细原因见日志。`1` 不代表设备已经播放成功。
+
+Rust 每次选择时读取房间当前歌曲，核对 ID，并取得最新标题、URL 和 hash，保留标题、通过 `/api/editCurrentSong` 保存目标 URL。调用方无需传递这些字段，Rust 也不维护查询缓存。提交前不重复读取歌单，由网页后端校验当前歌曲 ID 和 hash 后保存。修改请求不自动重试，提交超时后需刷新确认结果。
+
+保存成功后由现有 WS／轮询同步触发目标分 P 从头播放，选择当前分 P 不写入、不重播。仅支持普通 BV 视频，兼容网页的一基 `p`、App 的零基 `page` 及内部 `BV号-page0` 格式；App 链接同时包含 `page` 和 `p` 时优先使用 `page`。
+
+---
+
 ## 投屏模式详解
 
 ### DLNA 模式
