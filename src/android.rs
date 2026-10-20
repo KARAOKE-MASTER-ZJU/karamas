@@ -825,6 +825,22 @@ pub extern "C" fn Java_zju_bangdream_ktv_casting_RustEngine_getCurrentSongTitle(
         .into_raw()
 }
 
+/// Returns the last synchronized current-song ID, or an empty string when
+/// disconnected or no song exists. Reads local state without network requests.
+#[allow(non_snake_case)]
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_zju_bangdream_ktv_casting_RustEngine_getCurrentSongId(
+    env: JNIEnv,
+    _class: JClass,
+) -> jstring {
+    let ctx = ENGINE_STATE.read().ok().and_then(|state| state.as_ref().cloned());
+    let id = match ctx {
+        Some(ctx) => ctx.rt.block_on(crate::get_current_song_id_core()),
+        None => String::new(),
+    };
+    env.new_string(id).expect("Couldn't create java string!").into_raw()
+}
+
 // 获取未播歌曲数量
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]

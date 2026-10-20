@@ -672,6 +672,15 @@ pub async fn discover_device_from_url_core(url: String) -> Result<DlnaDevice, St
         .map_err(|e| e.to_string())
 }
 
+/// Last synchronized current-song ID; empty when disconnected or no song exists.
+pub async fn get_current_song_id_core() -> String {
+    let ctx = ENGINE_STATE.read().ok().and_then(|state| state.as_ref().cloned());
+    match ctx {
+        Some(ctx) => ctx.playlist_manager.get_song_id().await.unwrap_or_default(),
+        None => String::new(),
+    }
+}
+
 pub async fn get_current_song_title_core() -> String {
     if let Ok(guard) = ENGINE_STATE.read() {
         if let Some(ctx) = guard.as_ref() {

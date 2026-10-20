@@ -39,6 +39,10 @@
 
 ---
 
+## 当前歌曲 ID
+
+`RustEngine.getCurrentSongId(): String` 对应 Rust 核心接口 `get_current_song_id_core()`，读取最近一次歌单同步的歌曲 ID。未连接或没有当前歌曲时返回空字符串，不发起网络请求。可与 `getCurrentSongTitle()` 一起轮询，用于区分同名歌曲；同一歌曲切换分 P 时 ID 保持不变。
+
 ## 当前歌曲分 P 接口
 
 Rust 核心接口为 `get_current_bilibili_parts_core()` 和 `select_current_bilibili_part_core(song_id: &str, page_index: u32)`。对应的 `RustEngine` JNI 声明：

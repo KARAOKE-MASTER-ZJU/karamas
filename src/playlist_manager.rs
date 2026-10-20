@@ -578,6 +578,10 @@ impl PlaylistManager {
         self.song_playing.lock().await.clone()
     }
 
+    pub async fn get_song_id(&self) -> Option<String> {
+        self.progress_gate.lock().await.song().and_then(|(id, _)| id)
+    }
+
     pub async fn get_song_title(&self) -> Option<String> {
         self.song_title.lock().await.clone()
     }
