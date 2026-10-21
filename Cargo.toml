@@ -1,0 +1,6 @@
+[workspace]
+members = ["src-tauri", "crates/casting-core"]
+resolver = "3"
+
+[patch.crates-io]
+rupnp = { git = "https://github.com/aspromise/rupnp.git", branch = "fix/control-endpoint-leading-slash" }

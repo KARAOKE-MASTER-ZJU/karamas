@@ -1,0 +1,47 @@
+# 前端依赖、缓存和构建产物
+node_modules/
+.pnpm-store/
+.vite/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Rust 构建产物
+target/
+
+# 编辑器和系统本地文件
+.idea/
+.DS_Store
+*.local
+*.log
+
+# 本地环境配置
+.env
+.env.*
+!.env.example
+
+# Tauri 自动生成的配置 schema
+src-tauri/gen/schemas/
+
+# Android 本地配置、缓存和构建产物
+.gradle/
+.kotlin/
+.cxx/
+.externalNativeBuild/
+src-tauri/gen/android/**/build/
+src-tauri/gen/android/local.properties
+
+# Apple 平台缓存、依赖和个人配置
+src-tauri/gen/apple/build/
+src-tauri/gen/apple/DerivedData/
+src-tauri/gen/apple/Pods/
+**/xcuserdata/
+
+# 本地签名文件
+*.jks
+*.keystore
+*.p12
+*.mobileprovision
+
+# 本地投屏登录凭据
+bili_session.json
