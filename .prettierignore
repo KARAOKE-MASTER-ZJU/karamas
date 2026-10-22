@@ -1,0 +1,16 @@
+# 依赖、缓存和构建产物
+node_modules/
+dist/
+target/
+coverage/
+.pnpm-store/
+.vite/
+
+# Rust 核心、原生工程和资源
+crates/
+src-tauri/
+public/
+
+# 锁文件和仓库规则
+pnpm-lock.yaml
+AGENTS.md

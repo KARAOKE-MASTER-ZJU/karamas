@@ -1,43 +1,36 @@
 # 开发说明
 
-## 工程结构
+## 开发约定
 
-- `src/`：前端入口和样式。暂用 Vite 和原生 TypeScript，界面框架待确定。
-- `src-tauri/`：Tauri 应用启动、配置，以及后续的前端命令桥接。
-- `crates/casting-core/`：独立于应用框架的 Rust 投屏核心，包含源码、测试和示例。
-- 根目录的 `Cargo.toml`：声明 workspace 成员，统一管理 Rust 依赖锁文件和构建目录。
+Tauri 命令层只负责调用转发，投屏逻辑放在 `crates/casting-core` 中。核心库保持独立，服务端可以单独依赖它，无须构建前端或 Tauri 应用。
 
-Tauri 命令层负责调用转发，投屏逻辑放在核心库中。核心库不依赖 Tauri，服务端可以单独依赖这个 crate，无须构建前端或 Tauri 应用。
+前端源码内部导入统一使用 `@/`；导入源码目录外的文件时使用相对路径。共用样式放在全局，页面和组件的专用样式使用 `<style scoped>`。共享状态使用 Pinia，表单草稿、筛选条件和弹窗开关留在页面或组件内。
 
-## 核心源码来源
+## Rust 核心
 
-核心源码来自 `KARAOKE-MASTER-ZJU/ktv-casting` 的提交 `517839d5e47cbfd7780f191ea5381de85ea65952`，直接存放在本仓库中，不使用 Git 子模块。
+核心源码来自 `KARAOKE-MASTER-ZJU/ktv-casting` 的提交 `517839d5e47cbfd7780f191ea5381de85ea65952`，直接存放在本仓库中。
 
-本次搭建保留原 Cargo 包名 `ktv-casting` 和库名 `ktv_casting_lib`，应用通过依赖别名 `casting-core` 引用它。
+Cargo 包名为 `ktv-casting`，库名为 `ktv_casting_lib`，应用通过依赖别名 `casting-core` 引用。`rupnp` 补丁必须配置在 workspace 根目录，Cargo 不读取成员 crate 中的补丁配置。
 
-Rust 源码、测试和示例均保持原样。现有 `rupnp` 补丁配置移至 workspace 根目录，这是 Cargo 对 workspace 补丁配置的要求。后续核心接入改动应与工程骨架分开处理。
+核心代码沿用现有格式，按具体任务修改相关文件，避免整库格式化。
 
-## 检查和构建
+## 检查命令
 
-```sh
-pnpm check
-pnpm build
-cargo check --workspace
-cargo test -p ktv-casting --lib
-pnpm tauri build
-```
+| 命令                                   | 用途                           |
+| -------------------------------------- | ------------------------------ |
+| `pnpm lint`                            | 检查前端代码，警告也会导致失败 |
+| `pnpm format:check`                    | 检查前端、配置和文档格式       |
+| `pnpm check`                           | TypeScript 类型检查            |
+| `pnpm build`                           | 类型检查并构建前端             |
+| `cargo check --workspace`              | 检查 Rust 工作区               |
+| `cargo test -p ktv-casting --lib`      | 运行核心库测试                 |
+| `cargo fmt -p ktv-casting-app --check` | 检查 Tauri 应用层 Rust 格式    |
 
-检查 Tauri 应用层 Rust 代码的格式：
+`pnpm lint:fix` 和 `pnpm format` 会修改文件。前端检查和格式化的范围见 `eslint.config.mjs` 和 `.prettierignore`。
 
-```sh
-cargo fmt -p ktv-casting-app --check
-```
+## 移动端开发
 
-核心代码沿用现有格式，按具体任务修改相关文件。
-
-## 移动端工程
-
-准备好 Android 工具链后，初始化原生工程并启动开发：
+准备好 Android 工具链后，首次初始化原生工程，再启动开发：
 
 ```sh
 pnpm tauri android init
@@ -51,10 +44,10 @@ pnpm tauri ios init
 pnpm tauri ios dev
 ```
 
-这些命令用于初始化和启动应用外壳。核心的移动端依赖、旧 JNI 桥接和平台服务仍需接入并验证。
+核心的移动端依赖、旧 JNI 桥接和平台服务仍需接入并验证。
 
-## 待接入内容
+## 接入状态
 
-Tauri 应用已声明对核心的 Cargo 依赖，前端尚未调用投屏功能。投屏命令、登录流程、多实例管理、服务端接口和界面框架均待接入。
+前端界面已搭好，实际房间操作、设备连接、播放控制和登录流程尚未接入。房间配置和主题保存在本机，运行日志不包含 Rust 日志。
 
-核心目前仍采用原有的单会话状态和 JNI 接口。后续需要服务端多实例复用时，再单独调整状态归属和任务生命周期。
+核心仍使用原有的单会话状态和 JNI 接口。服务端多实例复用前，需要调整状态归属和任务生命周期。

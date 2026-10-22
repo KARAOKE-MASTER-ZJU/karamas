@@ -1,24 +1,283 @@
+/* 根元素定义全局 CSS 变量和字体样式 */
 :root {
-  font-family: system-ui, sans-serif;
+  /* 字体族定义，优先使用系统字体，兼容不同操作系统和浏览器 */
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
   color: #202124;
-  background: #f6f7f9;
+  background: #ffffff;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+  /* 侧栏宽度 */
+  --navigation-rail-width: 88px;
+  /* 底栏高度，包含底部安全区 */
+  --navigation-bar-height: calc(76px + env(safe-area-inset-bottom));
+  /* 标准控件高度 */
+  --control-height: 40px;
+  /* 控件文字行高 */
+  --control-line-height: 20px;
+  /* 基础背景色 */
+  --surface: #ffffff;
+  /* 次级背景色 */
+  --subtle: #f5f6f8;
+  /* 悬停背景色 */
+  --hover: #eef0f3;
+  /* 主要文字色 */
+  --text: #202124;
+  /* 次要文字色 */
+  --muted: #737781;
+  /* 分隔线颜色 */
+  --line: #e7e8ec;
+  /* 控件边框色 */
+  --input-line: #d7d9df;
+  /* 主题强调色 */
+  --accent: #ff3377;
+  /* 半透明主题色 */
+  --accent-soft: rgb(255 51 119 / 10%);
+  /* 警告色 */
+  --warning: #a56a1b;
+  /* 错误色 */
+  --error: #b73f39;
+  color-scheme: light;
 }
-
+/* 深色主题 */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  color: #e6e7eb;
+  background: #1b1c20;
+  --surface: #1b1c20;
+  --subtle: #222328;
+  --hover: #2c2e35;
+  --text: #e6e7eb;
+  --muted: #a0a3ad;
+  --line: #30323a;
+  --input-line: #444752;
+  --accent: #ff3377;
+  --accent-soft: rgb(255 51 119 / 16%);
+  --warning: #f0bd6a;
+  --error: #ffb1a9;
+}
+* {
+  box-sizing: border-box;
+}
 body {
   margin: 0;
   min-width: 320px;
 }
-
-main {
-  max-width: 960px;
-  margin: 0 auto;
-  padding: 32px;
+button,
+input,
+select {
+  font: inherit;
 }
-
-h1 {
+a,
+button,
+input,
+select,
+summary {
+  -webkit-tap-highlight-color: transparent;
+}
+button {
+  color: inherit;
+  cursor: pointer;
+}
+button:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+button,
+input,
+select {
+  transition:
+    background-color 0.12s,
+    border-color 0.12s;
+}
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+svg {
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+h1,
+h2,
+h3,
+p {
   margin: 0;
-  font-size: 1.5rem;
+}
+h1 {
+  font-size: 23px;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+}
+h2 {
+  font-size: 15px;
+  line-height: 1.5;
+  font-weight: 600;
+}
+h3 {
+  font-size: 15px;
+  font-weight: 500;
+}
+fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.content-section {
+  padding: 24px 0;
+  border-bottom: 1px solid var(--line);
+}
+.content-section:first-child {
+  padding-top: 8px;
+}
+.content-section > h2 {
+  margin-bottom: 20px;
+}
+.button {
+  height: var(--control-height);
+  padding: 0 16px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: var(--control-line-height);
+  white-space: nowrap;
+  flex-shrink: 0;
+  background: none;
+}
+.primary {
+  background: var(--accent);
+  color: #fff;
+}
+.primary:hover {
+  filter: brightness(0.95);
+}
+.secondary {
+  border-color: var(--input-line);
+  background: var(--surface);
+}
+.secondary:hover {
+  background: var(--subtle);
+}
+.text-button {
+  color: var(--accent);
+  padding: 6px 8px;
+  min-height: 36px;
+}
+.text-button:hover {
+  background: var(--accent-soft);
+}
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: none;
+  border-radius: 6px;
+  width: 36px;
+  height: 36px;
+  padding: 8px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.icon-button:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.field > input {
+  width: 100%;
+}
+.field label {
+  font-size: 14px;
+  line-height: var(--control-line-height);
+}
+input:not([type="radio"]):not([type="range"]),
+select {
+  border: 1px solid var(--input-line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  height: var(--control-height);
+  padding: 0 12px;
+  font-size: 14px;
+  line-height: var(--control-line-height);
+  min-width: 0;
+}
+input::placeholder {
+  color: var(--muted);
+  opacity: 0.8;
+}
+input[aria-invalid="true"] {
+  border-color: var(--error) !important;
+}
+.field-error {
+  color: var(--error);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.select-control {
+  position: relative;
+  flex-shrink: 0;
+}
+.select-control select {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  padding-right: 36px;
+}
+.select-control > svg {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--muted);
+}
+.muted-text {
+  color: var(--muted);
+}
+@media (max-width: 640px) {
+  :root {
+    /* 手机使用底栏，取消侧栏占位 */
+    --navigation-rail-width: 0px;
+  }
+  .content-section > h2 {
+    margin-bottom: 18px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+  }
 }
