@@ -600,7 +600,7 @@ pub extern "C" fn Java_zju_bangdream_ktv_casting_RustEngine_startBilibiliQrLogin
     _env: JNIEnv,
     _class: JClass,
 ) {
-    use crate::cast::bilibili_caster::login_qr;
+    use crate::cast::bilibili_caster::{login_qr, save_session};
     use crate::BiliAuthState;
 
     reset_bili_auth_state();
@@ -611,7 +611,11 @@ pub extern "C" fn Java_zju_bangdream_ktv_casting_RustEngine_startBilibiliQrLogin
             let result = login_qr(|qr_url| {
                 set_bili_auth_state(BiliAuthState::AwaitingScan { qr_url });
             })
-            .await;
+            .await
+            .and_then(|session| {
+                save_session(&session)?;
+                Ok(session)
+            });
             match result {
                 Ok(session) => set_bili_auth_state(BiliAuthState::Success(session)),
                 Err(e) => set_bili_auth_state(BiliAuthState::Error(e)),

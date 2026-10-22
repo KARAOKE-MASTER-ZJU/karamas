@@ -113,6 +113,7 @@ mod cli {
         })
         .await
         .map_err(|e| anyhow::anyhow!("B站登录失败: {}", e))?;
+        bili::save_session(&session).map_err(|e| anyhow::anyhow!("保存B站会话失败: {}", e))?;
         Ok(session)
     }
 

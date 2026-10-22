@@ -96,7 +96,7 @@ fn bili_client() -> &'static reqwest::Client {
     })
 }
 
-/// Login via QR code. `on_qr(url)` is called once with the QR URL to display.
+/// 扫码登录并返回会话，保存由调用方决定。`on_qr(url)` 在获取二维码后调用一次。
 pub async fn login_qr(on_qr: impl Fn(String) + Send + Sync) -> Result<BilibiliSession, String> {
     let client = bili_client();
     let params = base_params();
@@ -151,7 +151,6 @@ pub async fn login_qr(on_qr: impl Fn(String) + Send + Sync) -> Result<BilibiliSe
                     .unwrap_or(7776000);
                 let expires_at = Some(now_ts() + expires_in);
                 let session = BilibiliSession { access_token: token, mid, expires_at };
-                save_session(&session)?;
                 return Ok(session);
             }
             Some(86038) => return Err("QR code expired".into()),
