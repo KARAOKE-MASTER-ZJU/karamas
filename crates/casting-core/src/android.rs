@@ -308,13 +308,21 @@ pub extern "C" fn Java_zju_bangdream_ktv_casting_RustEngine_pollPlaybackProgress
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
 pub extern "C" fn Java_zju_bangdream_ktv_casting_RustEngine_nextSong(_env: JNIEnv, _class: JClass) {
-    crate::trigger_next_song();
+    engine_runtime().spawn(async {
+        if let Err(e) = crate::trigger_next_song().await {
+            log::warn!("切下一首失败: {}", e);
+        }
+    });
 }
 // 7b. 控制接口：切歌(上一首)
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
 pub extern "C" fn Java_zju_bangdream_ktv_casting_RustEngine_prevSong(_env: JNIEnv, _class: JClass) {
-    crate::trigger_prev_song();
+    engine_runtime().spawn(async {
+        if let Err(e) = crate::trigger_prev_song().await {
+            log::warn!("切上一首失败: {}", e);
+        }
+    });
 }
 
 /// Called from Kotlin's IO dispatcher; no engine initialization or playlist mutation.

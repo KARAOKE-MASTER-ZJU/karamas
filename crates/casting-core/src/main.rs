@@ -237,12 +237,16 @@ mod cli {
                                 }
                             }
                             event::KeyCode::Char('b') => {
-                                trigger_prev_song();
-                                info!("⏮ 上一首");
+                                match trigger_prev_song().await {
+                                    Ok(()) => info!("⏮ 上一首"),
+                                    Err(e) => warn!("切上一首失败: {}", e),
+                                }
                             }
                             event::KeyCode::Char('n') => {
-                                trigger_next_song();
-                                info!("⏭ 下一首");
+                                match trigger_next_song().await {
+                                    Ok(()) => info!("⏭ 下一首"),
+                                    Err(e) => warn!("切下一首失败: {}", e),
+                                }
                             }
                             event::KeyCode::Char('+') | event::KeyCode::Char('=') => {
                                 match volume_up_core(VOLUME_STEP).await {

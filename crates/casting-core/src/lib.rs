@@ -123,13 +123,19 @@ pub struct EngineContext {
 }
 
 impl EngineContext {
-    fn spawn_task(&self, task: impl std::future::Future<Output = ()> + Send + 'static) {
+    fn spawn_task<F>(&self, task: F) -> Result<tokio::task::JoinHandle<F::Output>, CoreError>
+    where
+        F: std::future::Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
         let mut tasks = self.tasks.lock().unwrap_or_else(|error| error.into_inner());
         if self.stopped.load(Ordering::SeqCst) {
-            return;
+            return Err("Engine stopped".into());
         }
         tasks.retain(|task| !task.is_finished());
-        tasks.push(self.rt.spawn(task).abort_handle());
+        let task = self.rt.spawn(task);
+        tasks.push(task.abort_handle());
+        Ok(task)
     }
 
     fn stop_tasks(&self) {
@@ -253,29 +259,28 @@ async fn read_progress(ctx: &EngineContext, trigger_next: bool) -> (i32, i32) {
     (current, total)
 }
 
-pub fn trigger_next_song() {
-    if let Ok(guard) = ENGINE_STATE.read() {
-        if let Some(ctx) = guard.as_ref() {
-            let mut pm = ctx.playlist_manager.clone();
-            ctx.spawn_task(async move {
-                if let Err(e) = pm.next_song().await {
-                    log::warn!("切下一首失败: {}", e);
-                }
-            });
-        }
-    }
+/// 等待点歌台确认下一首请求，设备播放由后续歌单同步处理。
+pub async fn trigger_next_song() -> Result<(), CoreError> {
+    let ctx = {
+        let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
+        guard.as_ref().cloned().ok_or("Engine not initialized")?
+    };
+    let mut pm = ctx.playlist_manager.clone();
+    ctx.spawn_task(async move { pm.next_song().await })?
+        .await??;
+    Ok(())
 }
-pub fn trigger_prev_song() {
-    if let Ok(guard) = ENGINE_STATE.read() {
-        if let Some(ctx) = guard.as_ref() {
-            let mut pm = ctx.playlist_manager.clone();
-            ctx.spawn_task(async move {
-                if let Err(e) = pm.prev_song().await {
-                    log::warn!("切上一首失败: {}", e);
-                }
-            });
-        }
-    }
+
+/// 等待点歌台确认上一首请求，设备播放由后续歌单同步处理。
+pub async fn trigger_prev_song() -> Result<(), CoreError> {
+    let ctx = {
+        let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
+        guard.as_ref().cloned().ok_or("Engine not initialized")?
+    };
+    let mut pm = ctx.playlist_manager.clone();
+    ctx.spawn_task(async move { pm.prev_song().await })?
+        .await??;
+    Ok(())
 }
 
 pub async fn jump_to_secs(target_secs: u32) -> Result<(), CoreError> {
