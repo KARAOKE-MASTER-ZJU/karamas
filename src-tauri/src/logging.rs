@@ -35,7 +35,6 @@ impl<R: Runtime> Log for AppLogger<R> {
             target: record.target().to_owned(),
             message: record.args().to_string(),
         };
-        eprintln!("[{}] {}: {}", level, message.target, message.message);
         // 发送失败时不再记录日志，避免日志桥接递归。
         let _ = self.0.emit(LOG_EVENT, message);
     }

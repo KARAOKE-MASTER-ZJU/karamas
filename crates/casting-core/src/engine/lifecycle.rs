@@ -14,7 +14,10 @@ use crate::{
 };
 use actix_web::web;
 use log::info;
-use std::sync::{Arc, atomic::AtomicBool};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use tokio::sync::Mutex;
 
 pub fn reset_engine() {
@@ -108,29 +111,6 @@ pub async fn connect_room(
 
     let pm = PlaylistManager::new(&base_url_str, room_id);
 
-    let caster_cb = Arc::clone(&caster);
-    let cache_cb = Arc::clone(&cache);
-    let gate_cb = Arc::clone(&pm.progress_gate);
-    let playback_lock = Arc::new(Mutex::new(()));
-    let playback_cb = Arc::clone(&playback_lock);
-    let sync_task = pm.start_sync(&rt, move |video_url| {
-        let c = Arc::clone(&caster_cb);
-        let cache = Arc::clone(&cache_cb);
-        let gate = Arc::clone(&gate_cb);
-        let playback = Arc::clone(&playback_cb);
-        Box::pin(async move {
-            let _playback = playback.lock().await;
-            let Some(token) = gate.lock().await.play_token(&video_url) else { return };
-            info!("通知设备准备拉取路径: {}", video_url);
-            // 先写入 BV 的完整时长，再通知 DLNA 设备拉流。DASH/fMP4 的 moov
-            // 可能只给 renderer 暴露首个分片（约 5 秒）的临时时长；若先播放，
-            // Android 的自动切歌逻辑会把该临时时长误认为歌曲已结束。
-            prepare_duration(&video_url, &cache).await;
-
-            play_and_confirm(&*c, &video_url, token, &gate).await;
-        })
-    });
-
     let ctx = Arc::new(EngineContext {
         caster,
         playlist_manager: pm,
@@ -138,13 +118,33 @@ pub async fn connect_room(
         local_ip: local_ip_addr,
         server_port: port,
         is_playing: AtomicBool::new(true),
-        playback_lock,
+        playback_lock: Arc::new(Mutex::new(())),
         // danmaku_on: AtomicBool::new(false),
         // quality_qn: AtomicU32::new(cast::Quality::default().as_qn()),
         rt,
-        tasks: std::sync::Mutex::new(vec![sync_task.abort_handle()]),
+        tasks: std::sync::Mutex::new(vec![]),
         stopped: AtomicBool::new(false),
     });
+
+    // 同步任务只弱引用会话，避免阻止引擎释放。
+    let session = Arc::downgrade(&ctx);
+    let sync_task = ctx.playlist_manager.start_sync(&ctx.rt, move |video_url| {
+        let session = session.clone();
+        Box::pin(async move {
+            let Some(ctx) = session.upgrade() else { return };
+            let _playback = ctx.playback_lock.lock().await;
+            let gate = &ctx.playlist_manager.progress_gate;
+            let Some(token) = gate.lock().await.play_token(&video_url) else { return };
+            info!("通知设备准备拉取路径: {}", video_url);
+            // 先准备完整时长，再通知设备播放，避免临时时长影响自动切歌。
+            prepare_duration(&video_url, &ctx.duration_cache).await;
+
+            if play_and_confirm(&*ctx.caster, &video_url, token, gate).await {
+                ctx.is_playing.store(true, Ordering::SeqCst);
+            }
+        })
+    });
+    ctx.tasks.lock().map_err(|_| "Lock error")?.push(sync_task.abort_handle());
 
     let mut guard = ENGINE_STATE.write().map_err(|_| "Lock error")?;
     *guard = Some(ctx);

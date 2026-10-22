@@ -113,9 +113,7 @@ function exportLogs() {
     </div>
 
     <!-- 日志列表部分，显示过滤后的日志条目 -->
-    <p class="log-caption">
-      当前显示 {{ filtered.length }} 条记录，仅包含本次运行的界面操作。
-    </p>
+    <p class="log-caption">当前显示 {{ filtered.length }} 条记录。</p>
     <div class="log-list" role="log" aria-label="运行日志">
       <div
         v-for="entry in filtered"

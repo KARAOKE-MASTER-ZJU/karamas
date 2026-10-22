@@ -6,7 +6,9 @@ import AppNavigation from "@/components/AppNavigation.vue";
 import AppToast from "@/components/AppToast.vue";
 import HelpDialog from "@/components/HelpDialog.vue";
 import { usePreferencesStore } from "@/stores/preferences";
-import { useLogsStore } from "@/stores/logs";
+import BilibiliLoginDialog from "@/components/BilibiliLoginDialog.vue";
+import { useBilibiliStore } from "@/stores/bilibili";
+import { useCastingRuntime } from "@/composables/useCastingRuntime";
 import { useNotificationsStore } from "@/stores/notifications";
 import { useOperationNotice } from "@/composables/useOperationNotice";
 import { useTheme } from "@/composables/useTheme";
@@ -14,14 +16,14 @@ import { useTheme } from "@/composables/useTheme";
 // 使用路由、偏好设置、日志和通知存储
 const route = useRoute();
 const preferences = usePreferencesStore();
-const logs = useLogsStore();
+const auth = useBilibiliStore();
 const notifications = useNotificationsStore();
 
-// 使用操作提示、应用主题，并在组件挂载时记录日志和显示存储警告（如果有）
+// 初始化应用主题和原生交互，读取配置失败时提示。
 const { notify } = useOperationNotice();
 useTheme();
+useCastingRuntime();
 onMounted(() => {
-  logs.add("应用界面已启动，投屏功能尚未接入。");
   if (preferences.storageWarning)
     notify("未能读取本机配置，已使用默认设置。", "warning");
 });
@@ -80,6 +82,7 @@ const showHelp = ref(false);
 
     <!-- 帮助对话框组件，根据 showHelp 状态显示 -->
     <HelpDialog v-if="showHelp" @close="showHelp = false" />
+    <BilibiliLoginDialog v-if="auth.showLogin" />
   </div>
 </template>
 

@@ -2,12 +2,20 @@
 
 <script setup lang="ts">
 import { Cast, Tv, ChevronDown, RefreshCw, ScanQrCode } from "@lucide/vue";
-import { reactive, ref } from "vue";
+import { computed, reactive, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 import type { CastMode, RoomEntryMode } from "@/types";
+import type { CastDevice } from "@/types/casting";
 import { usePreferencesStore } from "@/stores/preferences";
+import { useCastingStore } from "@/stores/casting";
+import { useBilibiliStore } from "@/stores/bilibili";
+import { castingApi, errorMessage } from "@/services/casting";
 import { useOperationNotice } from "@/composables/useOperationNotice";
 
 const store = usePreferencesStore();
+const casting = useCastingStore();
+const auth = useBilibiliStore();
+const router = useRouter();
 const { notify } = useOperationNotice();
 const form = reactive({
   serverUrl: store.preferences.serverUrl,
@@ -17,9 +25,23 @@ const mode = ref<CastMode>("dlna");
 const errors = reactive({ serverUrl: "", roomId: "", deviceUrl: "" });
 const deviceUrl = ref("");
 const showManualConnect = ref(false);
+const dlnaDevices = ref<CastDevice[]>([]);
+const bilibiliDevices = ref<CastDevice[]>([]);
+const searching = reactive({ dlna: false, bilibili: false });
+const resolvingDevice = ref(false);
+const devices = computed(() => {
+  const found =
+    mode.value === "dlna" ? dlnaDevices.value : bilibiliDevices.value;
+  const active = casting.activeDevice;
+  // 刷新搜索时仍保留当前设备，保证用户随时可以断开。
+  return active?.kind === mode.value &&
+    !found.some((device) => deviceKey(device) === deviceKey(active))
+    ? [active, ...found]
+    : found;
+});
 
-// 处理房间创建或加入的逻辑，包括输入验证和配置保存
-function enterRoom(entryMode: RoomEntryMode) {
+// 校验表单后等待服务器确认，再保存房间配置。
+async function enterRoom(entryMode: RoomEntryMode) {
   errors.serverUrl = "";
   errors.roomId = "";
   let server: URL | undefined;
@@ -31,30 +53,95 @@ function enterRoom(entryMode: RoomEntryMode) {
       server.password ||
       server.search ||
       server.hash
-    ) {
+    )
       throw new Error();
-    }
   } catch {
     errors.serverUrl = "请输入有效的 HTTP 或 HTTPS 服务器网址。";
   }
   if (!form.roomId.trim()) errors.roomId = "请输入房间号。";
   if (errors.serverUrl || errors.roomId || !server) return;
-  form.serverUrl = server.toString().replace(/\/$/, "");
-  form.roomId = form.roomId.trim();
-  if (!store.saveConnection({ ...form })) {
-    notify("无法保存配置，请检查本机存储是否可用。", "error");
+  const config = {
+    serverUrl: server.toString().replace(/\/$/, ""),
+    roomId: form.roomId.trim(),
+  };
+  try {
+    await casting.enterRoom(config, entryMode);
+    Object.assign(form, config);
+    if (store.saveConnection(config))
+      notify(entryMode === "create" ? "房间已创建并加入" : "已加入房间");
+    else notify("已加入房间，但无法保存本机配置。", "warning");
+  } catch (error) {
+    notify(errorMessage(error), "error");
+  }
+}
+async function searchDevices(kind: CastMode = mode.value) {
+  if (searching[kind]) return;
+  const session = auth.session;
+  if (kind === "bilibili" && !session) {
+    void auth.login();
     return;
   }
-  unavailable(entryMode === "create" ? "创建房间" : "加入房间");
+  searching[kind] = true;
+  try {
+    if (kind === "dlna")
+      dlnaDevices.value = (await castingApi.discoverDlnaDevices()).map(
+        (device) => ({ ...device, kind: "dlna" }),
+      );
+    else if (session) {
+      const result = await castingApi.listBilibiliDevices(session);
+      if (session === auth.session)
+        bilibiliDevices.value = result.map((device) => ({
+          ...device,
+          kind: "bilibili",
+        }));
+    }
+  } catch (error) {
+    notify(errorMessage(error), "error");
+  } finally {
+    searching[kind] = false;
+    if (
+      kind === "bilibili" &&
+      mode.value === kind &&
+      auth.session &&
+      session !== auth.session
+    )
+      void searchDevices(kind);
+  }
 }
-
-// 显示功能尚未接入的提示消息
-function unavailable(feature: string) {
-  notify(`${feature}尚未接入。`, "warning");
+watch(
+  () => auth.session,
+  (session) => {
+    bilibiliDevices.value = [];
+    if (session && mode.value === "bilibili") void searchDevices("bilibili");
+  },
+);
+watch(mode, (kind) => {
+  if (kind === "bilibili" && auth.session) void searchDevices(kind);
+});
+function deviceKey(device: CastDevice) {
+  return device.kind === "dlna" ? device.location : device.buvid;
 }
-
-// 处理手动输入设备地址的连接逻辑，包括输入验证
-function connectByUrl() {
+function isActive(device: CastDevice) {
+  return (
+    casting.activeDevice?.kind === device.kind &&
+    deviceKey(casting.activeDevice) === deviceKey(device)
+  );
+}
+async function connect(device: CastDevice) {
+  try {
+    if (isActive(device)) {
+      await casting.disconnect();
+      notify("已断开设备");
+    } else {
+      await casting.connect(device);
+      await router.push({ name: "playback" });
+    }
+  } catch (error) {
+    notify(errorMessage(error), "error");
+  }
+}
+// 设备地址先解析为真实设备，再走与搜索列表相同的连接流程。
+async function connectByUrl() {
   errors.deviceUrl = "";
   try {
     const address = new URL(deviceUrl.value.trim());
@@ -68,7 +155,22 @@ function connectByUrl() {
     errors.deviceUrl = "请输入设备描述文件的完整 HTTP 或 HTTPS 地址。";
     return;
   }
-  unavailable("手动连接");
+  resolvingDevice.value = true;
+  try {
+    const device: CastDevice = {
+      ...(await castingApi.discoverDlnaDevice(deviceUrl.value.trim())),
+      kind: "dlna",
+    };
+    if (
+      !dlnaDevices.value.some((item) => deviceKey(item) === deviceKey(device))
+    )
+      dlnaDevices.value.push(device);
+    await connect(device);
+  } catch (error) {
+    notify(errorMessage(error), "error");
+  } finally {
+    resolvingDevice.value = false;
+  }
 }
 </script>
 
@@ -77,13 +179,19 @@ function connectByUrl() {
     <!-- 点歌房间创建/加入表单部分 -->
     <section class="content-section" aria-labelledby="room-title">
       <h2 id="room-title">点歌房间</h2>
-      <form class="room-form" novalidate @submit.prevent="enterRoom('create')">
+      <form
+        class="room-form"
+        :aria-busy="casting.enteringRoom"
+        novalidate
+        @submit.prevent="enterRoom('create')"
+      >
         <!-- 服务器网址输入字段 -->
         <div class="field">
           <label for="server-url">服务器网址</label>
           <input
             id="server-url"
             v-model="form.serverUrl"
+            :disabled="casting.enteringRoom || casting.connecting"
             type="url"
             inputmode="url"
             placeholder="https://你的点歌台网址"
@@ -101,6 +209,7 @@ function connectByUrl() {
           <input
             id="room-id"
             v-model="form.roomId"
+            :disabled="casting.enteringRoom || casting.connecting"
             placeholder="输入房间号"
             autocomplete="off"
             :aria-invalid="!!errors.roomId"
@@ -112,7 +221,12 @@ function connectByUrl() {
         </div>
         <!-- 创建和加入房间的操作按钮 -->
         <div class="room-actions">
-          <button class="button primary" type="submit" aria-label="创建并加入">
+          <button
+            class="button primary"
+            type="submit"
+            :disabled="casting.busy"
+            aria-label="创建并加入"
+          >
             <span class="room-action-label">创建并加入</span>
             <span class="room-action-compact" aria-hidden="true">创建</span>
           </button>
@@ -120,6 +234,7 @@ function connectByUrl() {
             class="button secondary"
             type="button"
             aria-label="加入房间"
+            :disabled="casting.busy"
             @click="enterRoom('join')"
           >
             <span class="room-action-label">加入房间</span>
@@ -160,12 +275,21 @@ function connectByUrl() {
         <div class="device-actions">
           <button
             class="button text-button"
-            @click="unavailable(mode === 'dlna' ? '设备搜索' : '扫码登录')"
+            :disabled="searching[mode] || auth.loggingIn"
+            @click="searchDevices()"
           >
             <component
-              :is="mode === 'dlna' ? RefreshCw : ScanQrCode"
+              :is="mode === 'dlna' || auth.session ? RefreshCw : ScanQrCode"
               :size="17"
-            />{{ mode === "dlna" ? "搜索设备" : "扫码登录" }}
+            />{{
+              searching[mode]
+                ? "搜索中…"
+                : mode === "dlna"
+                  ? "搜索设备"
+                  : auth.session
+                    ? "刷新设备"
+                    : "扫码登录"
+            }}
           </button>
           <button
             v-if="mode === 'dlna'"
@@ -205,22 +329,93 @@ function connectByUrl() {
             {{ errors.deviceUrl }}
           </p>
         </div>
-        <button type="submit" class="button secondary">连接</button>
+        <button
+          type="submit"
+          class="button secondary"
+          :disabled="resolvingDevice || casting.busy"
+        >
+          {{ resolvingDevice ? "连接中…" : "连接" }}
+        </button>
       </form>
 
-      <!-- 显示设备为空的提示信息，根据投屏方式显示不同的图标和文本 -->
-      <div class="device-empty">
+      <!-- 设备列表与空状态 -->
+      <ul v-if="devices.length" class="device-list">
+        <li
+          v-for="device in devices"
+          :key="deviceKey(device)"
+          class="device-row"
+        >
+          <component :is="device.kind === 'dlna' ? Cast : Tv" :size="20" />
+          <div class="device-info">
+            <h3>{{ device.name }}</h3>
+            <p>
+              {{
+                device.kind === "dlna"
+                  ? device.location
+                  : [device.brand, device.model].filter(Boolean).join(" · ")
+              }}
+            </p>
+          </div>
+          <button
+            class="button secondary"
+            :disabled="casting.busy || resolvingDevice"
+            @click="connect(device)"
+          >
+            {{ isActive(device) ? "断开" : "连接" }}
+          </button>
+        </li>
+      </ul>
+      <div v-else class="device-empty" :aria-busy="searching[mode]">
         <component :is="mode === 'dlna' ? Cast : Tv" :size="32" />
-        <p>{{ mode === "dlna" ? "暂无设备" : "尚未登录哔哩哔哩" }}</p>
+        <p>
+          {{
+            searching[mode]
+              ? "正在搜索设备…"
+              : mode === "bilibili" && !auth.session
+                ? "尚未登录哔哩哔哩"
+                : "暂无设备"
+          }}
+        </p>
         <span v-if="mode === 'dlna'">将电视与本机连接到同一网络后搜索</span>
       </div>
     </section>
-
-    <p class="page-note">房间创建、加入和投屏功能尚未接入。</p>
   </div>
 </template>
 
 <style scoped>
+.device-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.device-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+.device-row:last-child {
+  border-bottom: 0;
+}
+.device-row > svg {
+  color: var(--muted);
+}
+.device-info {
+  flex: 1;
+  min-width: 0;
+}
+.device-info h3,
+.device-info p {
+  overflow-wrap: anywhere;
+}
+.device-info p {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
 .room-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -326,14 +521,6 @@ function connectByUrl() {
 }
 .manual-form .button {
   margin-top: calc(var(--control-line-height) + 8px);
-}
-.page-note {
-  font-size: 12px;
-  line-height: 1.7;
-  color: var(--muted);
-}
-.page-note {
-  padding-top: 16px;
 }
 @media (min-width: 900px) {
   .room-form {

@@ -2543,6 +2543,7 @@ version = "0.1.0"
 dependencies = [
  "ktv-casting",
  "log",
+ "reqwest 0.12.28",
  "serde",
  "tauri",
  "tauri-build",

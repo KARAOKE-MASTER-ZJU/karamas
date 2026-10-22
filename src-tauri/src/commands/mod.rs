@@ -1,12 +1,14 @@
 pub mod bilibili;
 pub mod devices;
 pub mod playback;
+pub mod room;
 pub mod session;
 
 /// 注册应用实际提供的 IPC 命令。
 pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static
 {
     tauri::generate_handler![
+        room::enter_room,
         devices::discover_dlna_devices,
         devices::discover_dlna_device,
         devices::list_bilibili_devices,

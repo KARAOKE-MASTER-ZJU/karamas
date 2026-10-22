@@ -83,12 +83,13 @@ async fn probe_target(
     let retry_at = started + Duration::from_secs(1);
     let mut retried = false;
     let mut report = ProbeReport::default();
+    let mut last_error = None;
     let mut buffer = vec![0u8; 65535];
     log::info!(target: "DLNA_SSDP", "探测开始：目标={}，本地={}，目的={}，MX=3，TTL=2，窗口={}ms", target, local, destination, window.as_millis());
     match socket.send_to(request.as_bytes(), destination).await {
         Ok(bytes) => {
             report.sent += 1;
-            log::info!(target: "DLNA_SSDP", "UDP发送成功：目标={}，本地={}，目的={}，字节={}，序号=1；仅表示系统接受发送", target, local, destination, bytes);
+            log::debug!(target: "DLNA_SSDP", "UDP发送成功：目标={}，本地={}，目的={}，字节={}，序号=1；仅表示系统接受发送", target, local, destination, bytes);
         }
         Err(error) => {
             log::error!(target: "DLNA_SSDP", "UDP发送失败：目标={}，本地={}，错误={}", target, local, error);
@@ -104,11 +105,12 @@ async fn probe_target(
                 match socket.send_to(request.as_bytes(), destination).await {
                     Ok(bytes) => {
                         report.sent += 1;
-                        log::info!(target: "DLNA_SSDP", "UDP发送成功：目标={}，本地={}，目的={}，字节={}，序号=2", target, local, destination, bytes);
+                        log::debug!(target: "DLNA_SSDP", "UDP发送成功：目标={}，本地={}，目的={}，字节={}，序号=2", target, local, destination, bytes);
                     }
                     Err(error) => {
                         report.errors += 1;
                         log::error!(target: "DLNA_SSDP", "UDP重发失败：目标={}，错误={}", target, error);
+                        last_error = Some(error);
                     }
                 }
             }
@@ -118,18 +120,19 @@ async fn probe_target(
                     Err(error) => {
                         report.errors += 1;
                         log::error!(target: "DLNA_SSDP", "UDP接收失败：目标={}，错误={}", target, error);
+                        last_error = Some(error);
                         break;
                     }
                 };
                 report.received += 1;
                 let detailed = report.received <= DETAIL_LIMIT;
                 if report.received == DETAIL_LIMIT + 1 {
-                    log::info!(target: "DLNA_SSDP", "目标={}：后续数据包省略逐条日志，继续统计和处理", target);
+                    log::debug!(target: "DLNA_SSDP", "目标={}：后续数据包省略逐条日志，继续统计和处理", target);
                 }
                 match parse_reply(&buffer[..size]) {
                     Ok(reply) => {
                         if detailed {
-                            log::info!(target: "DLNA_SSDP", "UDP收到响应：请求目标={}，来源={}，字节={}，ST={}，USN={}，LOCATION={}", target, source, size, log_field(reply.st), log_field(reply.usn), discovery_endpoint(reply.location));
+                            log::debug!(target: "DLNA_SSDP", "UDP收到响应：请求目标={}，来源={}，字节={}，ST={}，USN={}，LOCATION={}", target, source, size, log_field(reply.st), log_field(reply.usn), discovery_endpoint(reply.location));
                         }
                         if !report.locations.insert(reply.location.to_owned()) { report.duplicates += 1; }
                     }
@@ -143,7 +146,11 @@ async fn probe_target(
             }
         }
     }
-    log::info!(target: "DLNA_SSDP", "目标对照结果：目标={}，本地={}，发送={}，UDP收到={}，响应拒绝={}，重复={}，描述地址={}，收发错误={}，耗时={}ms", target, local, report.sent, report.received, report.rejected, report.duplicates, report.locations.len(), report.errors, started.elapsed().as_millis());
+    log::info!(target: "DLNA_SSDP", "目标探测结果：目标={}，本地={}，发送={}，UDP收到={}，响应拒绝={}，重复={}，描述地址={}，收发错误={}，耗时={}ms", target, local, report.sent, report.received, report.rejected, report.duplicates, report.locations.len(), report.errors, started.elapsed().as_millis());
+    // 没有可用结果时保留收发错误，供宿主区分网络失败与空列表。
+    if report.locations.is_empty() {
+        if let Some(error) = last_error { return Err(error); }
+    }
     Ok(report)
 }
 
@@ -171,17 +178,21 @@ async fn compare_targets(route: IpAddr, destination: SocketAddr, window: Duratio
     })).await;
     let mut locations = BTreeSet::new();
     let mut failed = 0;
+    let mut first_error = None;
     for (target, result) in TARGETS.iter().zip(results) {
         match result {
             Ok(report) => locations.extend(report.locations),
             Err(error) => {
                 failed += 1;
                 log::error!(target: "DLNA_SSDP", "目标探测失败：目标={}，错误={}", target, error);
+                first_error.get_or_insert(rupnp::Error::IO(error));
             }
         }
     }
-    log::info!(target: "DLNA_SSDP", "三目标对照结束：失败目标={}，合并后描述地址={}", failed, locations.len());
-    if failed == TARGETS.len() { return Err(rupnp::Error::ParseError("所有SSDP目标探测失败，请查看DLNA_SSDP日志")); }
+    log::info!(target: "DLNA_SSDP", "SSDP探测结束：失败目标={}，合并后描述地址={}", failed, locations.len());
+    if locations.is_empty() {
+        if let Some(error) = first_error { return Err(error); }
+    }
     Ok(locations.into_iter().collect())
 }
 

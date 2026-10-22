@@ -14,29 +14,13 @@ Cargo 包名为 `ktv-casting`，库名为 `ktv_casting_lib`，应用通过依赖
 
 核心代码沿用现有格式，按具体任务修改相关文件，避免整库格式化。
 
-`engine` 负责组合设备协议、房间同步和媒体服务；`cast`、`playlist`、`media` 和 `sources` 不反向依赖引擎。内部调用使用所属模块的接口，`lib.rs` 只声明模块和导出宿主入口。JNI 的登录展示状态留在 `android`，CLI 留在二进制入口中。单元测试跟随所属模块，迁移文件时保留原有测试内容。
+核心目前为单会话，仍保留 JNI 接口。服务端多实例复用前，需要调整状态归属和任务生命周期。
 
-## Tauri 接入
-
-`src-tauri/src/commands` 按设备、会话、播放控制和登录划分命令。命令复用 Tauri 运行时，核心库继续持有单会话状态；应用退出时重置引擎并取消扫码任务。
-
-通过 `invoke` 传入结构化参数，不需要手动序列化 JSON。命令参数和适配层返回字段使用 camelCase，例如启动 DLNA 会话：
-
-```ts
-await invoke("start_casting", {
-  serverUrl: "https://你的点歌台网址",
-  roomId: "房间号",
-  target: { kind: "dlna", location: "http://设备地址/description.xml" },
-});
-```
-
-房间应由调用方提前创建或加入。B站目标参数为 `{ kind: "bilibili", session, deviceBuvid }`。`poll_playback` 由界面定期调用，同时驱动自动切歌；未连接时返回 null，当前进度不可信时进度字段为 null。
-
-`login_bilibili` 接收名为 `onQr` 的 `Channel<string>`，通过通道返回二维码地址，成功后返回 `BilibiliSession`。会话沿用核心库字段 `access_token`、`mid`、`expires_at`；登录和启动投屏都不自动保存会话，保存、读取和清除分别使用 `save_bilibili_session`、`load_bilibili_session`、`clear_bilibili_session`。关闭扫码界面时调用 `cancel_bilibili_login`。
-
-命令错误返回 `{ code, message }`。Rust 日志通过 `casting://log` 事件发送 `{ level, target, message }`，与界面提示条独立。
+`engine` 负责组合设备协议、房间同步和媒体服务；`cast`、`playlist`、`media` 和 `sources` 不反向依赖引擎。内部调用使用所属模块的接口，`lib.rs` 只声明模块和导出宿主入口。单元测试跟随所属模块。
 
 ## 检查命令
+
+浏览器预览用于检查界面，投屏和登录需通过 `pnpm tauri dev` 启动。
 
 | 命令                                   | 用途                           |
 | -------------------------------------- | ------------------------------ |
@@ -67,9 +51,3 @@ pnpm tauri ios dev
 ```
 
 移动端需在初始化原生工程后单独验证。
-
-## 接入状态
-
-Tauri 命令已连接 Rust 核心，前端页面仍保留占位交互，尚未调用这些命令或订阅 Rust 日志。房间配置和主题保存在本机。
-
-核心仍使用原有的单会话状态和 JNI 接口。服务端多实例复用前，需要调整状态归属和任务生命周期。

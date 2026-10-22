@@ -6,14 +6,54 @@ import {
   Music2,
   SkipBack,
   Play,
+  Pause,
   SkipForward,
   Volume2,
   Minus,
   Plus,
 } from "@lucide/vue";
+import { computed } from "vue";
 import { storeToRefs } from "pinia";
 import { usePreferencesStore } from "@/stores/preferences";
+import { useCastingStore } from "@/stores/casting";
+import { castingApi, errorMessage } from "@/services/casting";
+import { useOperationNotice } from "@/composables/useOperationNotice";
 const { preferences } = storeToRefs(usePreferencesStore());
+const casting = useCastingStore();
+const { notify } = useOperationNotice();
+const { playback, volume } = storeToRefs(casting);
+const room = computed(() => casting.room ?? preferences.value);
+const progress = computed(() => {
+  if (playback.value?.currentSecs == null || !playback.value.totalSecs)
+    return 0;
+  return Math.min(
+    100,
+    (100 * playback.value.currentSecs) / playback.value.totalSecs,
+  );
+});
+function time(seconds: number | null | undefined) {
+  if (seconds == null) return "--:--";
+  return `${Math.floor(seconds / 60)
+    .toString()
+    .padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
+}
+async function run(action: () => Promise<unknown>) {
+  try {
+    await action();
+  } catch (error) {
+    notify(errorMessage(error), "error");
+  }
+}
+function previousSong() {
+  void run(() => casting.control(castingApi.previousSong));
+}
+function nextSong() {
+  void run(() => casting.control(castingApi.nextSong));
+}
+function seek(event: Event) {
+  const seconds = Number((event.target as HTMLInputElement).value);
+  void run(() => casting.control(() => castingApi.seek(seconds)));
+}
 </script>
 
 <template>
@@ -22,13 +62,18 @@ const { preferences } = storeToRefs(usePreferencesStore());
     <div class="session-header" aria-label="当前投屏连接">
       <div class="session-chips">
         <span class="session-chip">
-          <Cast :size="14" /><span>未连接设备</span>
+          <Cast :size="14" /><span>{{
+            casting.connecting
+              ? "连接中…"
+              : (casting.activeDevice?.name ??
+                (casting.connected ? "已连接设备" : "未连接设备"))
+          }}</span>
         </span>
         <span
           class="session-chip room-chip"
-          :title="preferences.serverUrl || '服务器未设置'"
+          :title="room.serverUrl || '服务器未设置'"
         >
-          <span>房间：{{ preferences.roomId || "未设置" }}</span>
+          <span>房间：{{ room.roomId || "未设置" }}</span>
         </span>
       </div>
     </div>
@@ -42,36 +87,65 @@ const { preferences } = storeToRefs(usePreferencesStore());
       <div class="track-placeholder">
         <Music2 :size="24" />
         <div>
-          <h3>暂无播放内容</h3>
+          <h3>{{ playback?.title || "暂无播放内容" }}</h3>
         </div>
       </div>
-      <div
-        class="progress-track"
-        role="progressbar"
-        aria-label="播放进度"
-        aria-valuemin="0"
-        aria-valuemax="100"
-        aria-valuenow="0"
-      />
-      <div class="time-labels"><span>00:00</span><span>00:00</span></div>
-      <fieldset class="player-controls" disabled>
+      <div class="progress-track">
+        <div class="progress-fill" :style="{ width: `${progress}%` }" />
+        <input
+          class="progress-input"
+          type="range"
+          min="0"
+          :max="playback?.totalSecs || 1"
+          :value="playback?.currentSecs ?? 0"
+          :disabled="
+            !playback?.capabilities.seek ||
+            !playback?.totalSecs ||
+            playback.currentSecs === null ||
+            casting.busy
+          "
+          aria-label="播放进度"
+          :aria-valuetext="time(playback?.currentSecs)"
+          @change="seek"
+        />
+      </div>
+      <div class="time-labels">
+        <span>{{ time(playback?.currentSecs) }}</span
+        ><span>{{ time(playback?.totalSecs) }}</span>
+      </div>
+      <fieldset
+        class="player-controls"
+        :disabled="!casting.connected || casting.busy"
+      >
         <legend class="sr-only">播放控制，连接设备后可用</legend>
-        <button class="icon-button" aria-label="上一首">
+        <button class="icon-button" aria-label="上一首" @click="previousSong()">
           <SkipBack :size="24" />
         </button>
-        <button class="play-button" aria-label="播放">
-          <Play :size="25" />
+        <button
+          class="play-button"
+          :aria-label="playback?.isPlaying ? '暂停' : '播放'"
+          :disabled="!playback?.songId"
+          @click="run(casting.togglePause)"
+        >
+          <component :is="playback?.isPlaying ? Pause : Play" :size="25" />
         </button>
-        <button class="icon-button" aria-label="下一首">
+        <button class="icon-button" aria-label="下一首" @click="nextSong()">
           <SkipForward :size="24" />
         </button>
       </fieldset>
       <div class="volume-heading">
         <label for="volume"><Volume2 :size="16" />音量</label>
       </div>
-      <fieldset class="volume-control" disabled>
+      <fieldset
+        class="volume-control"
+        :disabled="!casting.connected || casting.busy"
+      >
         <legend class="sr-only">音量控制，连接设备后可用</legend>
-        <button class="icon-button" aria-label="降低音量">
+        <button
+          class="icon-button"
+          aria-label="降低音量"
+          @click="run(() => casting.changeVolume(false))"
+        >
           <Minus :size="18" />
         </button>
         <input
@@ -79,10 +153,22 @@ const { preferences } = storeToRefs(usePreferencesStore());
           type="range"
           min="0"
           max="100"
-          value="0"
+          :value="volume ?? 0"
+          :disabled="!playback?.capabilities.absoluteVolume || volume === null"
           aria-label="音量"
+          @change="
+            run(() =>
+              casting.setVolume(
+                Number(($event.target as HTMLInputElement).value),
+              ),
+            )
+          "
         />
-        <button class="icon-button" aria-label="提高音量">
+        <button
+          class="icon-button"
+          aria-label="提高音量"
+          @click="run(() => casting.changeVolume(true))"
+        >
           <Plus :size="18" />
         </button>
       </fieldset>
@@ -145,9 +231,32 @@ const { preferences } = storeToRefs(usePreferencesStore());
   color: var(--muted);
 }
 .progress-track {
+  position: relative;
   height: 4px;
   background: var(--line);
   border-radius: 2px;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+.progress-input {
+  position: absolute;
+  inset: -8px 0;
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.progress-track:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.track-placeholder > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .time-labels {
   display: flex;

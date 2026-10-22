@@ -30,7 +30,6 @@ function closeOnBackdrop(event: MouseEvent) {
     </div>
     <h3>投屏设备</h3>
     <p>DLNA 需要本机与电视连接同一网络。小电视云投屏需要登录哔哩哔哩账号。</p>
-    <p class="muted-text">房间创建、加入和投屏功能尚未接入。</p>
     <div class="dialog-actions">
       <button class="button primary" @click="dialog?.close()">知道了</button>
     </div>

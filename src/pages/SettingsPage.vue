@@ -6,9 +6,16 @@ import { RouterLink } from "vue-router";
 import { storeToRefs } from "pinia";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useOperationNotice } from "@/composables/useOperationNotice";
+import { useBilibiliStore } from "@/stores/bilibili";
+import { useCastingStore } from "@/stores/casting";
+import { errorMessage } from "@/services/casting";
+import { ref } from "vue";
 import type { Theme } from "@/types";
 import { version } from "../../package.json";
 const store = usePreferencesStore();
+const auth = useBilibiliStore();
+const casting = useCastingStore();
+const loggingOut = ref(false);
 const { preferences } = storeToRefs(store);
 const { notify } = useOperationNotice();
 const themes: { value: Theme; label: string }[] = [
@@ -20,6 +27,18 @@ const themes: { value: Theme; label: string }[] = [
 function updateTheme(theme: Theme) {
   if (!store.saveTheme(theme))
     notify("无法保存主题设置，请检查本机存储是否可用。", "error");
+}
+async function logout() {
+  loggingOut.value = true;
+  try {
+    if (casting.activeDevice?.kind === "bilibili") await casting.disconnect();
+    await auth.logout();
+    notify("已退出哔哩哔哩账号");
+  } catch (error) {
+    notify(errorMessage(error), "error");
+  } finally {
+    loggingOut.value = false;
+  }
 }
 </script>
 
@@ -55,9 +74,28 @@ function updateTheme(theme: Theme) {
     <section class="content-section" aria-labelledby="account-title">
       <h2 id="account-title">账号</h2>
       <div class="settings-row">
-        <span>哔哩哔哩</span><span class="muted-text">未登录</span>
+        <span
+          >哔哩哔哩<span v-if="auth.session" class="muted-text">
+            · UID {{ auth.session.mid }}</span
+          ></span
+        >
+        <button
+          v-if="auth.session"
+          class="button text-button"
+          :disabled="casting.busy || loggingOut || auth.loggingIn"
+          @click="logout"
+        >
+          退出登录
+        </button>
+        <button
+          v-else
+          class="button text-button"
+          :disabled="auth.loggingIn"
+          @click="auth.login"
+        >
+          扫码登录
+        </button>
       </div>
-      <p class="setting-note">账号登录尚未接入</p>
     </section>
     <section class="content-section" aria-labelledby="about-title">
       <h2 id="about-title">关于</h2>
@@ -73,11 +111,6 @@ function updateTheme(theme: Theme) {
 </template>
 
 <style scoped>
-.setting-note {
-  font-size: 12px;
-  line-height: 1.7;
-  color: var(--muted);
-}
 .settings-page .content-section > h2 {
   margin-bottom: 8px;
   color: var(--muted);
@@ -101,9 +134,6 @@ function updateTheme(theme: Theme) {
 }
 .theme-select {
   width: 140px;
-}
-.setting-note {
-  margin-top: -6px;
 }
 .about-row {
   display: flex;

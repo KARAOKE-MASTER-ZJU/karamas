@@ -38,16 +38,13 @@ pub async fn jump_to_secs(target_secs: u32) -> Result<(), CoreError> {
 
 /// 切换播放/暂停状态，返回切换后的状态
 pub async fn toggle_pause_core() -> Result<bool, CoreError> {
-    let target_state = {
-        let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
-        let ctx = guard.as_ref().ok_or("Engine not initialized")?;
-        !ctx.is_playing.load(Ordering::SeqCst)
-    };
-
     let ctx = {
         let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
         guard.as_ref().cloned().ok_or("Engine not initialized")?
     };
+    // 与新曲播放串行处理，避免播放确认覆盖刚完成的暂停状态。
+    let _playback = ctx.playback_lock.lock().await;
+    let target_state = !ctx.is_playing.load(Ordering::SeqCst);
 
     if target_state {
         ctx.caster.resume().await?;
