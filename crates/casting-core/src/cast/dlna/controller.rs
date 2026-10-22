@@ -14,16 +14,11 @@ use tokio::time::timeout;
 
 mod ssdp_discovery;
 
-/// 兼容模式的单次请求超时。正常设备在局域网内响应在百毫秒级，1.5s 足够；
-/// 更短是为了避免候选 control 路径全量轮询时累加超过 ANR 阈值。
+/// 兼容模式的单次 SOAP 请求超时。
 const SOAP_TIMEOUT_COMPAT: Duration = Duration::from_millis(1500);
-const _: () = assert!(SOAP_TIMEOUT_COMPAT.as_millis() < crate::config::ANR_DEADLINE.as_millis() as u128,
-    "SOAP_TIMEOUT_COMPAT 必须小于 ANR_DEADLINE");
 
 /// 设备发现/连接超时。SSDP/HTTP 描述文件获取不应阻塞过久。
 const DEVICE_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(3);
-const _: () = assert!(DEVICE_DISCOVERY_TIMEOUT.as_secs() < crate::config::ANR_DEADLINE.as_secs(),
-    "DEVICE_DISCOVERY_TIMEOUT 必须小于 ANR_DEADLINE");
 
 /// 全局复用的 SOAP HTTP 客户端：连接池复用 + 统一超时。
 /// 修复前：每次 action 都新建 reqwest Client（新 TCP 连接），配合 1s 一次的

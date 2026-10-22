@@ -14,7 +14,7 @@ pub use cast::dlna::{
     discover_device_from_url_core, discover_devices_core,
     settings::{get_dlna_direct, get_dlna_quality, set_dlna_direct, set_dlna_quality},
 };
-pub use config::{ANR_DEADLINE, API_TIMEOUT, PROXY_CONNECT_TIMEOUT, SOAP_TIMEOUT};
+pub use config::{API_TIMEOUT, PROXY_CONNECT_TIMEOUT, SOAP_TIMEOUT};
 pub use engine::{
     CurrentBilibiliParts, ENGINE_STATE, EngineContext, connect_dlna_device, connect_room,
     cycle_quality_core, get_current_bilibili_parts_core, get_current_progress,

@@ -1,5 +1,8 @@
 //! Resolve a YouTube page to compatible MP4 DASH tracks on both desktop and Android.
 //! Stream URLs are short-lived and must remain inside the current media session.
+//! 
+//! 解析 YouTube 页面为兼容的 MP4 DASH 轨道，适用于桌面和 Android。
+//! 流 URL 是短生命周期的，必须在当前媒体会话中使用。
 use innertube_rs::{Innertube, StreamingFormat, endpoints::player::resolve_stream_url_full};
 use std::io;
 use tokio::sync::OnceCell;
@@ -13,6 +16,7 @@ pub struct YoutubeDash {
     pub duration_secs: u32,
 }
 
+/// 检查输入是否为 YouTube 视频 URL。
 pub fn is_youtube_url(input: &str) -> bool {
     let Ok(url) = Url::parse(input) else {
         return false;
@@ -31,6 +35,7 @@ pub fn is_youtube_url(input: &str) -> bool {
         )
 }
 
+/// 从 YouTube 视频 URL 中提取视频 ID。
 pub fn video_id(input: &str) -> Option<String> {
     let url = Url::parse(input).ok()?;
     if !matches!(url.scheme(), "http" | "https") {
@@ -64,6 +69,7 @@ pub fn video_id(input: &str) -> Option<String> {
     .then_some(id)
 }
 
+/// 选择最适合的音视频轨道，确保它们是可索引的 MP4 格式，并且不受 DRM 保护。
 fn choose_tracks(
     formats: &[StreamingFormat],
     max_height: u32,
@@ -94,6 +100,7 @@ fn choose_tracks(
     Ok((video, audio))
 }
 
+/// 解析 YouTube 视频 URL，获取视频 ID、时长、视频 URL 和音频 URL。
 pub async fn resolve(input: &str, max_height: u32) -> io::Result<YoutubeDash> {
     tokio::time::timeout(
         std::time::Duration::from_secs(30),
@@ -103,6 +110,7 @@ pub async fn resolve(input: &str, max_height: u32) -> io::Result<YoutubeDash> {
     .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "YouTube extraction timeout"))?
 }
 
+/// 内部解析函数，负责获取视频 ID、时长、视频 URL 和音频 URL。
 async fn resolve_inner(input: &str, max_height: u32) -> io::Result<YoutubeDash> {
     let id = video_id(input).ok_or_else(|| io::Error::other("invalid YouTube video URL"))?;
     let yt = YOUTUBE_CLIENT
@@ -113,6 +121,10 @@ async fn resolve_inner(input: &str, max_height: u32) -> io::Result<YoutubeDash> 
     // URLs can read the beginning but return 403 for later ranges without PO
     // attestation. Request VISIONOS explicitly and preserve its failure rather
     // than returning a different client's unusable tracks.
+    //
+    // 高级 get_video_info 会默默地回退到 IOS，其 CDN URL 可以读取开头，
+    // 但在没有 PO 证明的情况下返回 403。明确请求 VISIONOS 并保留其失败，
+    // 而不是返回不同客户端的不可用轨道。
     let response = yt
         .session
         .post_innertube_client(

@@ -10,6 +10,7 @@ pub async fn login_qr(on_qr: impl Fn(String) + Send + Sync) -> Result<BilibiliSe
     let params = base_params();
     let body = sign_params(&params);
 
+    // 获取二维码和授权码
     let json: Value = client
         .post(format!("{}/x/passport-tv-login/qrcode/auth_code", PASSPORT_HOST))
         .header("Content-Type", "application/x-www-form-urlencoded")

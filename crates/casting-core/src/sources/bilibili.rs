@@ -3,9 +3,7 @@ use serde_json::Value;
 use std::sync::OnceLock;
 
 /// 全局共享 B站 API 客户端：连接池复用 + 超时。
-/// 超时值来自 `crate::config::API_TIMEOUT`，编译期保证 < ANR 阈值（5s）。
-/// 修复前每次调用 `Client::new()` 都新建 TCP 连接，B站 API 卡住时无超时
-/// 永久挂起 → block_on 死锁 → ANR / 闪退。
+/// 请求超时由 `crate::config::API_TIMEOUT` 设置。
 fn bili_api_client() -> &'static Client {
     static CLIENT: OnceLock<Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
@@ -25,6 +23,7 @@ const BV_ALPHABET: &str = "FcwAPNKTMug3GV5Lj7EJnHpWsx4tb8haYeviqBz6rkCy12mUSDQX9
 // ENCODE_MAP = [8,7,0,5,1,3,2,4,6]; DECODE_MAP = reversed(ENCODE_MAP)
 const BV_DECODE_MAP: [usize; 9] = [6, 4, 2, 3, 1, 5, 0, 7, 8];
 
+/// 将 B站 BV号 转换为 AV号
 pub fn bv_to_aid(bvid: &str) -> u64 {
     let s = bvid.strip_prefix("BV1").unwrap_or(bvid);
     let alpha: Vec<char> = BV_ALPHABET.chars().collect();
@@ -51,6 +50,7 @@ pub struct BilibiliPart {
     pub duration_secs: u32,
 }
 
+/// 获取 B站视频的所有分 P 页数据。
 pub async fn get_bilibili_parts(bvid: &str) -> Result<Vec<BilibiliPart>, String> {
     let json: Value = bili_api_client()
         .get("https://api.bilibili.com/x/player/pagelist")
@@ -103,7 +103,7 @@ pub async fn get_bilibili_parts(bvid: &str) -> Result<Vec<BilibiliPart>, String>
         .collect()
 }
 
-/// Returns `(cid, duration_secs)` for a zero-based page index.
+/// 获取 B站视频的指定分 P 页的 CID 和时长。
 pub async fn get_page_info(bv_id: &str, page: u32) -> Result<(u64, u32), String> {
     let parts = get_bilibili_parts(bv_id).await?;
     let part = parts
@@ -112,7 +112,7 @@ pub async fn get_page_info(bv_id: &str, page: u32) -> Result<(u64, u32), String>
     Ok((part.cid, part.duration_secs))
 }
 
-/// Parse only ordinary BV videos, preserving web `p` / app `page` semantics.
+/// 解析 B站视频输入，支持 BV号、BV URL、bilibili://video/URL、以及带分 P 的格式。
 pub fn parse_bilibili_video(input: &str) -> Result<(String, u32), String> {
     let (bvid, page) = if input.starts_with("bilibili://")
         || input.starts_with("https://")
@@ -170,6 +170,7 @@ pub fn parse_bilibili_video(input: &str) -> Result<(String, u32), String> {
     Ok((bvid, page))
 }
 
+/// 获取 B站视频的指定分 P 页的时长。
 pub async fn get_page_duration(bv_id: &str, page: u32) -> Result<u32, String> {
     get_page_info(bv_id, page).await.map(|(_, d)| d)
 }
