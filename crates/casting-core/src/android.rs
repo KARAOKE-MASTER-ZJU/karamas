@@ -191,7 +191,12 @@ pub extern "C" fn Java_zju_bangdream_ktv_casting_RustEngine_searchDevices(
     _class: JClass,
 ) -> jobjectArray {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let dlna_devices = rt.block_on(crate::discover_devices_core());
+    let dlna_devices = rt
+        .block_on(crate::discover_devices_core())
+        .unwrap_or_else(|error| {
+            log::error!(target: "DLNA_DISCOVERY", "搜索接口返回空列表：原生搜索失败={}；空列表不等于设备离线", error);
+            Vec::new()
+        });
 
     let cls = env
         .find_class("zju/bangdream/ktv/casting/DlnaDeviceItem")

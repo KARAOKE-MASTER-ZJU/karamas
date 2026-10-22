@@ -10,6 +10,9 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::sync::Notify;
 
+/// 公共接口错误，保留原始错误并支持跨线程传递。
+pub type CoreError = Box<dyn std::error::Error + Send + Sync + 'static>;
+
 // ── 超时常量 ──────────────────────────────────────────────
 // 所有可能阻塞 App 主线程（JNI block_on）或 CLI 键盘事件的
 // 同步等待都必须在此阈值内返回，否则会触发 Android ANR（5s）。
@@ -71,16 +74,16 @@ pub fn get_dlna_direct() -> bool {
     DLNA_DIRECT.load(Ordering::Relaxed)
 }
 
-pub fn set_dlna_quality(quality: cast::Quality) -> Result<(), &'static str> {
+pub fn set_dlna_quality(quality: cast::Quality) -> Result<(), CoreError> {
     if get_dlna_direct() && quality == cast::Quality::P1080 {
-        return Err("DLNA 直连模式不支持 B站 1080P，请先启用媒体代理");
+        return Err("DLNA 直连模式不支持 B站 1080P，请先启用媒体代理".into());
     }
     match quality {
         cast::Quality::P720 | cast::Quality::P1080 => {
             DLNA_QUALITY_QN.store(quality.as_qn(), Ordering::Relaxed);
             Ok(())
         }
-        _ => Err("DLNA 仅支持 720P 和 1080P(beta)"),
+        _ => Err("DLNA 仅支持 720P 和 1080P(beta)".into()),
     }
 }
 
@@ -275,12 +278,13 @@ pub fn trigger_prev_song() {
     }
 }
 
-pub async fn jump_to_secs(target_secs: u32) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn jump_to_secs(target_secs: u32) -> Result<(), CoreError> {
     let ctx = {
         let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
         guard.as_ref().cloned().ok_or("Engine not initialized")?
     };
-    ctx.caster.seek(target_secs).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+    ctx.caster.seek(target_secs).await?;
+    Ok(())
 }
 
 /// 1 = confirmed, 0 = no current song, -1 = failed/timed out/superseded, -2 = busy.
@@ -323,7 +327,7 @@ pub async fn start_engine_core(
     room_id: String,
     loc_str: String,
     rt: tokio::runtime::Handle,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), CoreError> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     info!("开始初始化核心引擎: {}, Room: {}", loc_str, room_id);
 
@@ -331,7 +335,7 @@ pub async fn start_engine_core(
 
     // 每次进入 DLNA 会话都从已验证最稳定的 720P 开始。静态清晰度状态会
     // 跨引擎重建存活，若不显式重置会让上一会话的 1080P 误成为默认值。
-    set_dlna_quality(cast::Quality::P720).expect("720P is a supported DLNA quality");
+    set_dlna_quality(cast::Quality::P720)?;
     info!(target: "DLNA1080", "DLNA 新会话默认清晰度: 720P");
 
     let handle = rt.clone();
@@ -360,14 +364,14 @@ pub async fn connect_dlna_device(
         Arc<Mutex<std::collections::HashMap<String, u32>>>,
         web::Data<SharedState>,
     ),
-    Box<dyn std::error::Error>,
+    CoreError,
 > {
     let _ = rustls::crypto::ring::default_provider().install_default();
     info!("开始连接DLNA设备: {}", loc_str);
 
     let controller = DlnaController::new();
-    let uri = loc_str.parse().expect("解析 URL 失败");
-    let device_obj = rupnp::Device::from_url(uri).await.expect("连接设备失败");
+    let uri = loc_str.parse()?;
+    let device_obj = rupnp::Device::from_url(uri).await?;
 
     let device = DlnaDevice {
         friendly_name: device_obj.friendly_name().to_string(),
@@ -389,7 +393,8 @@ pub async fn connect_dlna_device(
         media_sessions: Arc::new(media_session::MediaSessions::default()),
     });
     // 通知旧服务器关闭（防止端口冲突）
-    if let Ok(mut guard) = MEDIA_SERVER_SHUTDOWN.write() {
+    {
+        let mut guard = MEDIA_SERVER_SHUTDOWN.write().map_err(|_| "Lock error")?;
         if let Some(notify) = guard.take() {
             notify.notify_one();
         }
@@ -410,34 +415,34 @@ pub async fn connect_dlna_device(
         }
     };
 
+    let local_ip_addr: std::net::IpAddr = get_best_local_ip(target_ip).parse()?;
+    // 媒体代理只限制连接超时，避免截断长视频的流式响应。
+    let proxy_client = reqwest::Client::builder()
+        .connect_timeout(PROXY_CONNECT_TIMEOUT)
+        .build()?;
+    let shared_state_clone = shared_state.clone();
+    let app_factory = move || {
+        App::new()
+            .app_data(web::Data::new(proxy_client.clone()))
+            .app_data(shared_state_clone.clone())
+            .service(media_server::proxy_handler)
+    };
+    let server = HttpServer::new(app_factory)
+        .disable_signals()
+        .workers(1)
+        .listen(listener)?
+        .run();
+
     let shutdown = Arc::new(Notify::new());
     let shutdown_clone = shutdown.clone();
-    if let Ok(mut guard) = MEDIA_SERVER_SHUTDOWN.write() {
+    {
+        let mut guard = MEDIA_SERVER_SHUTDOWN.write().map_err(|_| "Lock error")?;
         *guard = Some(shutdown);
     }
 
-    let shared_state_clone = shared_state.clone();
     let media_sessions = shared_state.media_sessions.clone();
     handle.spawn(async move {
         info!("正在启动媒体服务器...");
-        let app_factory = move || {
-            // 媒体代理 client：只限制连接建立阶段，避免上游连接挂起导致设备拉流卡死
-            // （流式响应本身不能设整体 timeout，否则长视频会被掐断）
-            let proxy_client = reqwest::Client::builder()
-                .connect_timeout(PROXY_CONNECT_TIMEOUT)
-                .build()
-                .expect("创建媒体代理 HTTP 客户端失败");
-            App::new()
-                .app_data(web::Data::new(proxy_client))
-                .app_data(shared_state_clone.clone())
-                .service(media_server::proxy_handler)
-        };
-        let server = HttpServer::new(app_factory)
-            .disable_signals()
-            .workers(1)
-            .listen(listener)
-            .expect("使用预绑定 listener 不应失败")
-            .run();
         let server_handle = server.handle();
         tokio::pin!(server);
         tokio::select! {
@@ -451,7 +456,6 @@ pub async fn connect_dlna_device(
         }
     });
 
-    let local_ip_addr: std::net::IpAddr = get_best_local_ip(target_ip).parse().unwrap();
     Ok((controller, device, local_ip_addr, port, cache, shared_state))
 }
 
@@ -463,7 +467,7 @@ pub async fn connect_room(
     port: u16,
     cache: Arc<Mutex<std::collections::HashMap<String, u32>>>,
     rt: tokio::runtime::Handle,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), CoreError> {
     info!("开始连接房间: {}", room_id);
 
     let pm = PlaylistManager::new(&base_url_str, room_id);
@@ -506,10 +510,9 @@ pub async fn connect_room(
         stopped: AtomicBool::new(false),
     });
 
-    if let Ok(mut guard) = ENGINE_STATE.write() {
-        *guard = Some(ctx);
-        info!("房间连接成功");
-    }
+    let mut guard = ENGINE_STATE.write().map_err(|_| "Lock error")?;
+    *guard = Some(ctx);
+    info!("房间连接成功");
 
     Ok(())
 }
@@ -569,7 +572,7 @@ pub async fn get_total_duration() -> u32 {
     0
 }
 
-pub async fn toggle_pause_core() -> Result<bool, Box<dyn std::error::Error>> {
+pub async fn toggle_pause_core() -> Result<bool, CoreError> {
     let target_state = {
         let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
         let ctx = guard.as_ref().ok_or("Engine not initialized")?;
@@ -582,65 +585,65 @@ pub async fn toggle_pause_core() -> Result<bool, Box<dyn std::error::Error>> {
     };
 
     if target_state {
-        ctx.caster.resume().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        ctx.caster.resume().await?;
     } else {
-        ctx.caster.pause().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+        ctx.caster.pause().await?;
     }
     ctx.is_playing.store(target_state, Ordering::SeqCst);
 
     Ok(target_state)
 }
 
-pub async fn set_volume_core(volume: u32) -> Result<u32, Box<dyn std::error::Error>> {
+pub async fn set_volume_core(volume: u32) -> Result<u32, CoreError> {
     let ctx = {
         let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
         guard.as_ref().cloned().ok_or("Engine not initialized")?
     };
     let target = volume.clamp(0, 100);
-    ctx.caster.set_volume(target).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+    ctx.caster.set_volume(target).await?;
     Ok(target)
 }
 
-pub async fn get_volume_core() -> Result<u32, Box<dyn std::error::Error>> {
+pub async fn get_volume_core() -> Result<u32, CoreError> {
     let ctx = {
         let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
         guard.as_ref().cloned().ok_or("Engine not initialized")?
     };
-    let v = ctx.caster.get_volume().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+    let v = ctx.caster.get_volume().await?;
     Ok(v.unwrap_or(0))
 }
 
-pub async fn volume_up_core(step: u32) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn volume_up_core(step: u32) -> Result<(), CoreError> {
     let ctx = {
         let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
         guard.as_ref().cloned().ok_or("Engine not initialized")?
     };
-    ctx.caster.volume_up(step).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+    ctx.caster.volume_up(step).await?;
     Ok(())
 }
 
-pub async fn volume_down_core(step: u32) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn volume_down_core(step: u32) -> Result<(), CoreError> {
     let ctx = {
         let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
         guard.as_ref().cloned().ok_or("Engine not initialized")?
     };
-    ctx.caster.volume_down(step).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+    ctx.caster.volume_down(step).await?;
     Ok(())
 }
 
 /// 直接设置弹幕开关，返回设置后的状态。
-pub async fn set_danmaku_core(on: bool) -> Result<bool, Box<dyn std::error::Error>> {
+pub async fn set_danmaku_core(on: bool) -> Result<bool, CoreError> {
     let ctx = {
         let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
         guard.as_ref().cloned().ok_or("Engine not initialized")?
     };
-    ctx.caster.set_danmaku(on).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+    ctx.caster.set_danmaku(on).await?;
     // ctx.danmaku_on.store(on, Ordering::SeqCst);
     Ok(on)
 }
 
 /// 切换弹幕开关，返回切换后的状态。
-pub async fn toggle_danmaku_core() -> Result<bool, Box<dyn std::error::Error>> {
+pub async fn toggle_danmaku_core() -> Result<bool, CoreError> {
     set_danmaku_core(!get_danmaku_core()).await
 }
 
@@ -656,18 +659,18 @@ pub fn get_danmaku_core() -> bool {
 }
 
 /// 直接设置清晰度，返回设置后的值。
-pub async fn set_quality_core(quality: cast::Quality) -> Result<cast::Quality, Box<dyn std::error::Error>> {
+pub async fn set_quality_core(quality: cast::Quality) -> Result<cast::Quality, CoreError> {
     let ctx = {
         let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
         guard.as_ref().cloned().ok_or("Engine not initialized")?
     };
-    ctx.caster.set_quality(quality).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+    ctx.caster.set_quality(quality).await?;
     // ctx.quality_qn.store(quality.as_qn(), Ordering::SeqCst);
     Ok(quality)
 }
 
 /// 切到下一档清晰度（循环），返回切换后的值。
-pub async fn cycle_quality_core() -> Result<cast::Quality, Box<dyn std::error::Error>> {
+pub async fn cycle_quality_core() -> Result<cast::Quality, CoreError> {
     set_quality_core(get_quality_core().next()).await
 }
 
@@ -688,7 +691,7 @@ pub async fn start_bilibili_engine_core(
     session: cast::bilibili_caster::BilibiliSession,
     device_buvid: String,
     rt: tokio::runtime::Handle,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), CoreError> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     info!("开始初始化Bilibili引擎, Room: {}", room_id);
 
@@ -701,21 +704,13 @@ pub async fn start_bilibili_engine_core(
     connect_room(base_url_str, room_id, caster, "127.0.0.1".parse().unwrap(), 0, cache, rt).await
 }
 
-pub async fn discover_devices_core() -> Vec<DlnaDevice> {
-    DlnaController::new()
-        .discover_devices()
-        .await
-        .unwrap_or_else(|error| {
-            log::error!(target: "DLNA_DISCOVERY", "搜索接口返回空列表：原生搜索失败={}；空列表不等于设备离线", error);
-            Vec::new()
-        })
+/// 无设备时返回空列表，搜索失败时返回错误。
+pub async fn discover_devices_core() -> Result<Vec<DlnaDevice>, CoreError> {
+    Ok(DlnaController::new().discover_devices().await?)
 }
 
-pub async fn discover_device_from_url_core(url: String) -> Result<DlnaDevice, String> {
-    DlnaController::new()
-        .get_device_from_url(&url)
-        .await
-        .map_err(|e| e.to_string())
+pub async fn discover_device_from_url_core(url: String) -> Result<DlnaDevice, CoreError> {
+    Ok(DlnaController::new().get_device_from_url(&url).await?)
 }
 
 /// Last synchronized current-song ID; empty when disconnected or no song exists.
