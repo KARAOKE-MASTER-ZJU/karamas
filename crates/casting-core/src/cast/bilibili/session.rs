@@ -9,6 +9,7 @@ use std::{
 static SESSION_DIR: OnceLock<String> = OnceLock::new();
 pub const TOKEN_FILE: &str = "bili_session.json";
 
+/// Bilibili 投屏会话
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BilibiliSession {
     pub access_token: String,
@@ -27,11 +28,13 @@ pub fn init_session_dir(dir: &str) {
     log::info!("[Bilibili] Session 目录已初始化: {}", dir);
 }
 
+/// 获取 session 文件路径
 fn get_session_file() -> PathBuf {
     let dir = SESSION_DIR.get().map(|s| s.as_str()).unwrap_or(".");
     PathBuf::from(dir).join(TOKEN_FILE)
 }
 
+/// 删除 session 文件
 fn remove_session_file(path: &Path) -> Result<(), String> {
     match std::fs::remove_file(path) {
         Ok(()) => Ok(()),
@@ -47,6 +50,7 @@ fn remove_session_file(path: &Path) -> Result<(), String> {
     }
 }
 
+/// 保存 session 到文件
 pub fn save_session(session: &BilibiliSession) -> Result<(), String> {
     let json = serde_json::to_string_pretty(session).map_err(|e| e.to_string())?;
     let path = get_session_file();
@@ -59,7 +63,7 @@ pub fn save_session(session: &BilibiliSession) -> Result<(), String> {
     Ok(())
 }
 
-/// Load saved session. Supports both our flat format and the Python nested format.
+/// 加载已保存的 session
 pub fn load_session() -> Option<BilibiliSession> {
     let path = get_session_file();
     let text = match std::fs::read_to_string(&path) {
@@ -91,6 +95,7 @@ pub fn load_session() -> Option<BilibiliSession> {
     None
 }
 
+/// 检查 session 是否过期
 pub fn is_session_expired(session: &BilibiliSession) -> bool {
     match session.expires_at {
         Some(expires_at) => {
@@ -105,6 +110,7 @@ pub fn is_session_expired(session: &BilibiliSession) -> bool {
     }
 }
 
+/// 清除 session 文件
 pub fn clear_session() -> Result<(), String> {
     let path = get_session_file();
     remove_session_file(&path)?;

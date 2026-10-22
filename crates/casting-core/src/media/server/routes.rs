@@ -5,6 +5,7 @@ use actix_web::{HttpRequest, HttpResponse, route, web};
 use futures_util::StreamExt;
 use log::{debug, info};
 
+/// 处理媒体代理请求，提供会话媒体或转发上游响应。
 #[route("/{url:.*}", method = "GET", method = "HEAD")]
 pub async fn proxy_handler(
     req: HttpRequest,

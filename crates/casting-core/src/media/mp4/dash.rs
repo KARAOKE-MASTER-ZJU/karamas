@@ -18,9 +18,11 @@ const FRAGMENT_PREFIX: u64 = 16 * 1024;
 const MAX_METADATA: u64 = 16 * 1024 * 1024;
 const MAX_SEGMENTS: usize = 8192;
 
+/// 构建 DASH 元数据无效的错误。
 fn bad(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
+/// 从指定偏移读取大端 u32。
 fn u32_at(b: &[u8], p: usize) -> io::Result<u32> {
     Ok(u32::from_be_bytes(
         b.get(p..p + 4)
@@ -29,6 +31,7 @@ fn u32_at(b: &[u8], p: usize) -> io::Result<u32> {
             .unwrap(),
     ))
 }
+/// 从指定偏移读取大端 u64。
 fn u64_at(b: &[u8], p: usize) -> io::Result<u64> {
     Ok(u64::from_be_bytes(
         b.get(p..p + 8)
@@ -37,6 +40,7 @@ fn u64_at(b: &[u8], p: usize) -> io::Result<u64> {
             .unwrap(),
     ))
 }
+/// 读取 MP4 box 的大小和头部长度。
 fn size(b: &[u8]) -> io::Result<(u64, usize)> {
     let (size, header) = match u32_at(b, 0)? {
         0 => return Err(bad("unbounded metadata box")),
@@ -49,6 +53,7 @@ fn size(b: &[u8]) -> io::Result<(u64, usize)> {
     Ok((size, header))
 }
 
+/// 解析 sidx 索引，得到源文件中的分片范围。
 fn segments(sidx: &[u8], position: u64, total: u64) -> io::Result<Vec<Range<u64>>> {
     let (length, h) = size(sidx)?;
     if length != sidx.len() as u64 || sidx.get(4..8) != Some(b"sidx") {
@@ -99,6 +104,7 @@ fn segments(sidx: &[u8], position: u64, total: u64) -> io::Result<Vec<Range<u64>
     Ok(result)
 }
 
+/// 通过 Range 请求获取媒体源的总长度。
 async fn source_length(client: &reqwest::Client, url: &str) -> io::Result<u64> {
     let response = client
         .get(url)
@@ -135,6 +141,7 @@ struct SourceMetadata {
     fragments: Vec<(u64, Bytes, Range<u64>)>,
 }
 
+/// 加载媒体源的初始化信息和分片元数据。
 async fn load_source(client: &reqwest::Client, url: &str) -> io::Result<SourceMetadata> {
     let len = source_length(client, url).await?;
     let prefix = fetch_range(client, url, 0..len.min(PREFIX), len).await?;

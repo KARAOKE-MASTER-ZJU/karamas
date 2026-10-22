@@ -18,6 +18,7 @@ pub struct PlaylistManager {
 }
 
 impl PlaylistManager {
+    /// 创建指定房间的歌单管理器。
     pub fn new(url: &str, room_id: String) -> Self {
         // 在初始化时构建一次 Client
         let client = Client::builder()
@@ -45,6 +46,7 @@ impl PlaylistManager {
     //   hash: string
     // }
     // Song { id, title, url, addedBy? }
+    /// 同步房间歌单，返回当前歌曲的 ID 和地址。
     pub(super) async fn fetch_playlist(&self) -> Result<Option<(Option<String>, String)>, String> {
         let last_hash = self
             .hash
@@ -134,22 +136,27 @@ impl PlaylistManager {
         Ok(gate.song())
     }
 
+    /// 读取最近同步的当前歌曲地址。
     pub async fn get_song_playing(&self) -> Option<String> {
         self.song_playing.lock().await.clone()
     }
 
+    /// 读取最近同步的当前歌曲 ID。
     pub async fn get_song_id(&self) -> Option<String> {
         self.progress_gate.lock().await.song().and_then(|(id, _)| id)
     }
 
+    /// 读取最近同步的当前歌曲标题。
     pub async fn get_song_title(&self) -> Option<String> {
         self.song_title.lock().await.clone()
     }
 
+    /// 读取最近同步的待播歌曲数量。
     pub async fn get_queued_count(&self) -> usize {
         *self.queued_count.lock().await
     }
 
+    /// 读取最近同步的已播歌曲数量。
     pub async fn get_sung_count(&self) -> usize {
         *self.sung_count.lock().await
     }

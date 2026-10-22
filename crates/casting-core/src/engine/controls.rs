@@ -26,6 +26,7 @@ pub async fn trigger_prev_song() -> Result<(), CoreError> {
     Ok(())
 }
 
+/// 跳转到指定时间点，单位秒
 pub async fn jump_to_secs(target_secs: u32) -> Result<(), CoreError> {
     let ctx = {
         let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
@@ -35,6 +36,7 @@ pub async fn jump_to_secs(target_secs: u32) -> Result<(), CoreError> {
     Ok(())
 }
 
+/// 切换播放/暂停状态，返回切换后的状态
 pub async fn toggle_pause_core() -> Result<bool, CoreError> {
     let target_state = {
         let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
@@ -57,6 +59,7 @@ pub async fn toggle_pause_core() -> Result<bool, CoreError> {
     Ok(target_state)
 }
 
+/// 设置音量，返回设置后的值
 pub async fn set_volume_core(volume: u32) -> Result<u32, CoreError> {
     let ctx = {
         let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
@@ -67,6 +70,7 @@ pub async fn set_volume_core(volume: u32) -> Result<u32, CoreError> {
     Ok(target)
 }
 
+/// 获取当前音量，返回值范围 0~100；如果设备不支持获取音量，则返回 0。
 pub async fn get_volume_core() -> Result<u32, CoreError> {
     let ctx = {
         let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
@@ -76,6 +80,7 @@ pub async fn get_volume_core() -> Result<u32, CoreError> {
     Ok(v.unwrap_or(0))
 }
 
+/// 相对调高音量，返回设置后的值
 pub async fn volume_up_core(step: u32) -> Result<(), CoreError> {
     let ctx = {
         let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
@@ -85,6 +90,7 @@ pub async fn volume_up_core(step: u32) -> Result<(), CoreError> {
     Ok(())
 }
 
+/// 相对调低音量，返回设置后的值
 pub async fn volume_down_core(step: u32) -> Result<(), CoreError> {
     let ctx = {
         let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
@@ -148,7 +154,7 @@ pub fn get_quality_core() -> cast::Quality {
     cast::Quality::default()
 }
 
-/// Last synchronized current-song ID; empty when disconnected or no song exists.
+/// 获取当前歌曲id，若未连接或无歌曲则返回空字符串。
 pub async fn get_current_song_id_core() -> String {
     let ctx = ENGINE_STATE.read().ok().and_then(|state| state.as_ref().cloned());
     match ctx {
@@ -157,6 +163,7 @@ pub async fn get_current_song_id_core() -> String {
     }
 }
 
+/// 获取当前歌曲标题，若未连接或无歌曲则返回 "暂无歌曲"。
 pub async fn get_current_song_title_core() -> String {
     let ctx = {
         let guard = ENGINE_STATE.read().ok();

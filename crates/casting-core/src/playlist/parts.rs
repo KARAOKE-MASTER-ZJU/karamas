@@ -15,6 +15,7 @@ pub struct PartError {
 }
 
 impl PartError {
+    /// 创建包含错误码和说明的分 P 操作错误。
     pub(crate) fn new(code: &'static str, message: impl Into<String>) -> Self {
         Self {
             code,

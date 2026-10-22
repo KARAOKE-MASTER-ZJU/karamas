@@ -12,17 +12,20 @@ pub(crate) struct AutoNextSong {
 }
 
 impl AutoNextSong {
+    /// 重置自动切歌状态，并取消旧请求。
     pub(crate) fn reset_for_playback(&mut self) {
         self.fired = false;
         self.cancel_pending_request();
     }
 
+    /// 取消尚未结束的自动切歌请求。
     pub(crate) fn cancel_pending_request(&mut self) {
         if let Some(task) = self.retry_task.take() {
             task.abort();
         }
     }
 
+    /// 检查播放进度，判断是否首次达到自动切歌条件。
     pub(crate) fn observe(&mut self, current: i32, total: i32) -> bool {
         if current > 5
             && total > 0
@@ -35,6 +38,7 @@ impl AutoNextSong {
         false
     }
 
+    /// 在指定运行时启动自动切歌请求。
     pub(crate) fn start_request(
         &mut self,
         manager: PlaylistManager,
@@ -48,6 +52,7 @@ impl AutoNextSong {
 }
 
 impl Drop for AutoNextSong {
+    /// 销毁自动切歌状态时取消后台请求。
     fn drop(&mut self) {
         if let Some(task) = self.retry_task.take() {
             task.abort();
@@ -55,6 +60,7 @@ impl Drop for AutoNextSong {
     }
 }
 
+/// 使用同一请求重试切歌，直到成功或被拒绝。
 async fn retry_next_song(request: reqwest::RequestBuilder) {
     loop {
         let retry = request

@@ -15,6 +15,7 @@ enum RequestedRange {
     Unsatisfiable,
 }
 
+/// 解析 HTTP Range 请求，确定响应的字节范围。
 fn resolve_range(value: &str, length: u64) -> RequestedRange {
     let Some(value) = value.strip_prefix("bytes=") else {
         return RequestedRange::Full;

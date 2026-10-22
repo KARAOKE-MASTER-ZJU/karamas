@@ -1,7 +1,10 @@
+//! Bilibili 投屏器
 use super::{
     client::{API_HOST, APPKEY, bili_client, form_body},
     session::{BilibiliSession, now_ts},
 };
+
+// 解析歌曲引用，返回 BV 号和页码
 use crate::{
     cast::{
         Capabilities, CastError, Caster, Progress, Quality, SongRef, progress::LocalProgressTracker,
@@ -15,6 +18,7 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU32, Ordering},
 };
 
+// Bilibili 投屏器
 pub struct BilibiliCaster {
     access_token: String,
     mid: u64,
@@ -25,6 +29,7 @@ pub struct BilibiliCaster {
     danmaku: AtomicBool,
 }
 
+// Bilibili 投屏器实现
 impl BilibiliCaster {
     pub fn new(session: BilibiliSession, device_buvid: String) -> Self {
         Self {
@@ -37,6 +42,7 @@ impl BilibiliCaster {
         }
     }
 
+    /// 发送命令到 Bilibili 服务器
     async fn send_cmd(
         &self,
         command: u32,
@@ -52,6 +58,7 @@ impl BilibiliCaster {
         })
         .to_string();
 
+        // 构建基础 extra 参数
         let mut full_extra = serde_json::json!({
             "accessKey": self.access_token.as_str(),
             "autoNext": false, "biz_id": 6213332, "oid": oid,
@@ -109,6 +116,7 @@ impl BilibiliCaster {
 
         let body = form_body(&params);
 
+        // 发送请求
         let endpoint = format!("{}/x/tv/stream/cmd", API_HOST);
         let context = format!("[Bilibili] {}：command={}，设备={}，端点={}", command_name(command), command, self.device_buvid, endpoint);
         let send = || async {
@@ -129,6 +137,7 @@ impl BilibiliCaster {
     }
 }
 
+// 读取控制响应，解析JSON并检查业务响应码
 async fn read_control_response(context: &str, command: u32, response: reqwest::Response) -> Result<(), CastError> {
     let status = response.status();
     let bytes = response.bytes().await
@@ -149,6 +158,7 @@ async fn read_control_response(context: &str, command: u32, response: reqwest::R
     }
 }
 
+/// 根据 command 值返回对应的操作名称，用于日志记录和错误信息中
 fn command_name(command: u32) -> &'static str {
     match command {
         1 => "播放歌曲",
@@ -164,6 +174,7 @@ fn command_name(command: u32) -> &'static str {
     }
 }
 
+/// 处理控制指令失败的情况，记录日志并返回 CastError
 fn control_failure(context: &str, stage: &str, status: Option<reqwest::StatusCode>, error: impl std::fmt::Display) -> CastError {
     let http = status.map(|status| format!("，HTTP={}", status.as_u16())).unwrap_or_default();
     let message = format!("{}失败：步骤={}{}，错误={}", context, stage, http, error);
@@ -171,6 +182,7 @@ fn control_failure(context: &str, stage: &str, status: Option<reqwest::StatusCod
     CastError::Device(message)
 }
 
+/// 解析歌曲引用，返回 BV 号和页码
 fn parse_song_ref(s: &str) -> (String, u32) {
     if let Some((bv, page_str)) = s.split_once("-page") {
         (bv.to_string(), page_str.parse().unwrap_or(0))
@@ -179,8 +191,11 @@ fn parse_song_ref(s: &str) -> (String, u32) {
     }
 }
 
+/// 投屏 Bilibili 视频
 #[async_trait]
 impl Caster for BilibiliCaster {
+    
+    /// 播放指定歌曲
     async fn play_song(&self, song: &SongRef) -> Result<(), CastError> {
         let (bvid, page) = parse_song_ref(&song.0);
         if !bvid.starts_with("BV") {
@@ -225,39 +240,47 @@ impl Caster for BilibiliCaster {
         Ok(())
     }
 
+    /// 继续播放
     async fn resume(&self) -> Result<(), CastError> {
         self.progress.resume().await;
         self.send_cmd(6, 0, None, 0).await
     }
 
+    /// 暂停播放
     async fn pause(&self) -> Result<(), CastError> {
         self.progress.pause().await;
         self.send_cmd(5, 0, None, 0).await
     }
 
+    /// 停止播放
     async fn stop(&self) -> Result<(), CastError> {
         self.send_cmd(7, 0, None, 0).await
     }
 
+    /// 定位到指定时间点（秒）
     async fn seek(&self, secs: u32) -> Result<(), CastError> {
         self.progress.seek(secs).await;
         self.send_cmd(4, 0, None, secs).await
     }
 
+    /// 获取当前播放进度（秒），返回 Progress 结构体
     async fn get_progress(&self) -> Result<Progress, CastError> {
         Ok(self.progress.get_progress().await)
     }
 
+    /// 设置音量（0-100），B站投屏没有绝对音量接口，返回 CastError::Unsupported
     async fn set_volume(&self, _volume: u32) -> Result<(), CastError> {
         Err(CastError::Unsupported)
     }
 
+    /// 获取当前音量（0-100），B站投屏没有绝对音量接口，返回 None
     async fn get_volume(&self) -> Result<Option<u32>, CastError> {
         Ok(None)
     }
 
     // B站投屏没有"绝对音量"接口，只有设备侧按固定步长调整的相对指令：
     // command=8 音量+，command=12 音量-（与 main.py 的 cmd 8 / 12 一致）。
+    /// 增大音量
     async fn volume_up(&self, _step: u32) -> Result<(), CastError> {
         self.send_cmd(8, 0, None, 0).await
     }
@@ -286,6 +309,7 @@ impl Caster for BilibiliCaster {
         Ok(())
     }
 
+    /// 获取当前清晰度
     fn get_quality(&self) -> Result<Quality, CastError> {
         Ok(Quality::from_qn(self.quality.load(Ordering::Relaxed)).unwrap_or_default())
     }

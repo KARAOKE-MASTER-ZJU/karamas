@@ -9,6 +9,7 @@ pub(super) const UA: &str = "Mozilla/5.0 BiliTV/1.8.5 os/android model/OPD2404 m
 pub(super) const PASSPORT_HOST: &str = "https://passport.snm0516.aisee.tv";
 pub(super) const API_HOST: &str = "https://api.bilibili.com";
 
+/// bilibili投屏请求的基础参数
 pub(super) fn base_params() -> Vec<(String, String)> {
     vec![
         ("appkey".into(), APPKEY.into()),
@@ -26,6 +27,7 @@ pub(super) fn base_params() -> Vec<(String, String)> {
     ]
 }
 
+/// 对请求参数进行签名
 pub(super) fn sign_params(params: &[(String, String)]) -> String {
     let mut sorted = params.to_vec();
     sorted.sort_by(|a, b| a.0.cmp(&b.0));
@@ -38,6 +40,7 @@ pub(super) fn sign_params(params: &[(String, String)]) -> String {
     format!("{}&sign={:x}", body, digest)
 }
 
+/// 对请求参数进行编码
 pub(super) fn form_body(params: &[(&str, &str)]) -> String {
     params
         .iter()
@@ -46,6 +49,7 @@ pub(super) fn form_body(params: &[(&str, &str)]) -> String {
         .join("&")
 }
 
+/// 创建一个 bilibili 投屏客户端
 pub(super) fn bili_client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {

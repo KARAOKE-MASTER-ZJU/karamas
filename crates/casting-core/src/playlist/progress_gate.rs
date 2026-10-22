@@ -23,13 +23,16 @@ pub(crate) struct ProgressGate {
 }
 
 impl ProgressGate {
+    /// 读取当前进度状态的版本号。
     pub(crate) fn revision(&self) -> u64 {
         self.revision
     }
+    /// 读取当前歌曲的 ID 和地址。
     pub(crate) fn song(&self) -> Option<(Option<String>, String)> {
         self.song.clone()
     }
 
+    /// 更新当前歌曲，并在歌曲变化时屏蔽旧播放进度。
     pub(crate) fn update_song(&mut self, id: Option<String>, url: Option<String>) {
         let song = url.map(|url| (id, url));
         if song != self.song {
@@ -43,6 +46,7 @@ impl ProgressGate {
         }
     }
 
+    /// 获取匹配当前歌曲的播放确认标识。
     pub(crate) fn play_token(&self, url: &str) -> Option<u64> {
         self.song
             .as_ref()
@@ -50,6 +54,7 @@ impl ProgressGate {
             .map(|_| self.revision)
     }
 
+    /// 开始重新投屏，返回歌曲地址和新的播放确认标识。
     pub(crate) fn begin_recast(&mut self) -> Option<(String, u64)> {
         let (_, url) = self.song.as_ref()?;
         let url = url.clone();
@@ -62,6 +67,7 @@ impl ProgressGate {
         Some((url, self.revision))
     }
 
+    /// 确认当前版本播放成功，并重置进度保护和自动切歌状态。
     pub(crate) fn play_succeeded(
         &mut self,
         token: u64,
@@ -82,10 +88,12 @@ impl ProgressGate {
         true
     }
 
+    /// 过滤过期或切歌期间不可信的播放进度。
     pub(crate) fn filter(&mut self, revision: u64, current: i32, total: i32) -> (i32, i32) {
         self.filter_at(revision, current, total, Instant::now())
     }
 
+    /// 按指定时间判断进度保护是否结束，并过滤播放进度。
     fn filter_at(&mut self, revision: u64, current: i32, total: i32, now: Instant) -> (i32, i32) {
         if revision != self.revision || self.song.is_none() || current < 0 || total <= 0 {
             return (-1, -1);

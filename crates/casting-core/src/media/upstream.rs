@@ -1,5 +1,6 @@
 //! Source-specific request headers for media fetched by the local DLNA proxy.
 
+/// 根据媒体来源选择上游请求的 User-Agent。
 pub fn user_agent(url: &str) -> &'static str {
     // Keep the media request compatible with youtube_parser's selected client.
     // A generic Mozilla/5.0 UA can read the start but fails on later ranges.
@@ -35,6 +36,7 @@ mod tests {
     }
 }
 
+/// 根据媒体来源选择上游请求的 Referer。
 pub fn referer(url: &str) -> &'static str {
     match url::Url::parse(url)
         .ok()

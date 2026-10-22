@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 static DLNA_QUALITY_QN: AtomicU32 = AtomicU32::new(64);
 static DLNA_DIRECT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Changes apply to the next media load (including recast).
+/// 设置 DLNA 直连模式
 pub fn set_dlna_direct(enabled: bool) {
     DLNA_DIRECT.store(enabled, Ordering::Relaxed);
     if enabled {
@@ -13,10 +13,12 @@ pub fn set_dlna_direct(enabled: bool) {
     }
 }
 
+/// 获取 DLNA 直连模式
 pub fn get_dlna_direct() -> bool {
     DLNA_DIRECT.load(Ordering::Relaxed)
 }
 
+/// 设置 DLNA 清晰度
 pub fn set_dlna_quality(quality: cast::Quality) -> Result<(), CoreError> {
     if get_dlna_direct() && quality == cast::Quality::P1080 {
         return Err("DLNA 直连模式不支持 B站 1080P，请先启用媒体代理".into());
@@ -30,6 +32,7 @@ pub fn set_dlna_quality(quality: cast::Quality) -> Result<(), CoreError> {
     }
 }
 
+/// 获取 DLNA 清晰度
 pub fn get_dlna_quality() -> cast::Quality {
     cast::Quality::from_qn(DLNA_QUALITY_QN.load(Ordering::Relaxed))
         .unwrap_or(cast::Quality::P720)

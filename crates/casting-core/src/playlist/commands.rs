@@ -58,6 +58,7 @@ impl PlaylistManager {
         })
     }
 
+    /// 提交当前歌曲的分 P 修改，返回是否已提交。
     pub(crate) async fn edit_current_part(
         &self,
         song: &crate::playlist::parts::CurrentSongSnapshot,
@@ -119,23 +120,28 @@ impl PlaylistManager {
         }
     }
 
+    /// 请求点歌台切换到下一首。
     pub async fn next_song(&mut self) -> Result<(), String> {
         self.switch_song(true).await
     }
 
+    /// 请求点歌台切换到上一首。
     pub async fn prev_song(&mut self) -> Result<(), String> {
         self.switch_song(false).await
     }
 
+    /// 使用当前歌单 hash 请求切歌。
     pub async fn switch_song(&mut self, next: bool) -> Result<(), String> {
         let hash = self.current_hash().await;
         self.switch_song_with_hash(next, &hash).await.map_err(|e| e.to_string())
     }
 
+    /// 读取最近同步的歌单 hash。
     pub(crate) async fn current_hash(&self) -> String {
         self.hash.lock().await.clone().unwrap_or_else(|| "EMPTY_LIST_HASH".into())
     }
 
+    /// 使用指定歌单 hash 请求切歌。
     pub(crate) async fn switch_song_with_hash(
         &self,
         next: bool,
@@ -144,11 +150,13 @@ impl PlaylistManager {
         Self::send_switch_request(self.switch_request(next, hash)).await
     }
 
+    /// 构建携带歌单 hash 的切歌请求。
     pub(crate) fn switch_request(&self, next: bool, hash: &str) -> reqwest::RequestBuilder {
         let url = format!("{}/api/{}Song?roomId={}", self.url, if next {"next"} else {"prev"}, self.room_id);
         self.client.post(url).json(&json!({"idArrayHash": hash}))
     }
 
+    /// 发送切歌请求，区分可重试错误和请求拒绝。
     pub(crate) async fn send_switch_request(request: reqwest::RequestBuilder) -> Result<(), SwitchSongError> {
         let resp = request
             .send()

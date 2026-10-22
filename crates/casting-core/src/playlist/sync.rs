@@ -8,6 +8,7 @@ use url::Url;
 impl PlaylistManager {
     // 根据环境变量切换同步驱动（WS / POLLING）
     // 环境变量：KTV_SYNC_MODE = "WS" 或 "POLLING"（不区分大小写），默认为 WS
+    /// 根据同步模式启动房间歌单同步任务。
     pub fn start_sync<F>(
         &self,
         runtime: &tokio::runtime::Handle,
@@ -25,6 +26,7 @@ impl PlaylistManager {
         }
     }
 
+    /// 同步一次歌单，并在当前歌曲变化时调用播放回调。
     pub(super) async fn sync_playlist<F>(
         &self,
         song_playing_cached: &mut Option<(Option<String>, String)>,
@@ -43,6 +45,7 @@ impl PlaylistManager {
         Ok(())
     }
 
+    /// 通过 WebSocket 通知和心跳同步歌单，断线后自动重连。
     fn start_ws_update<F>(
         &self,
         runtime: &tokio::runtime::Handle,
@@ -258,6 +261,7 @@ impl PlaylistManager {
         })
     }
 
+    /// 启动定时轮询歌单的后台任务。
     pub fn start_periodic_update<F>(
         &self,
         runtime: &tokio::runtime::Handle,

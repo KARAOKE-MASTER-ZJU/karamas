@@ -1,5 +1,8 @@
 /// Retry control requests only on timeout, before receiving response headers.
 /// Media preparation and response body reads stay outside this loop.
+/// 
+/// 重试控制请求仅在超时的情况下进行重试，直到接收到响应头为止
+/// 媒体准备和响应体读取不在此循环内
 pub(crate) async fn retry_cast_request<T, F, Fut>(context: &str, mut send: F) -> Result<T, reqwest::Error>
 where
     F: FnMut() -> Fut,

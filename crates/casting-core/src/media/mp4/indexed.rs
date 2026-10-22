@@ -6,9 +6,11 @@
 use bytes::Bytes;
 use std::{io, ops::Range};
 
+/// 构建 MP4 数据无效的错误。
 fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
+/// 从指定偏移读取大端 u32。
 fn u32_at(b: &[u8], p: usize) -> io::Result<u32> {
     Ok(u32::from_be_bytes(
         b.get(p..p + 4)
@@ -17,6 +19,7 @@ fn u32_at(b: &[u8], p: usize) -> io::Result<u32> {
             .unwrap(),
     ))
 }
+/// 从指定偏移读取大端 u64。
 fn u64_at(b: &[u8], p: usize) -> io::Result<u64> {
     Ok(u64::from_be_bytes(
         b.get(p..p + 8)
@@ -25,6 +28,7 @@ fn u64_at(b: &[u8], p: usize) -> io::Result<u64> {
             .unwrap(),
     ))
 }
+/// 将数据封装为指定类型的 MP4 box。
 fn atom(kind: &[u8; 4], body: &[u8]) -> io::Result<Vec<u8>> {
     let size = u32::try_from(
         body.len()
@@ -38,6 +42,7 @@ fn atom(kind: &[u8; 4], body: &[u8]) -> io::Result<Vec<u8>> {
     out.extend_from_slice(body);
     Ok(out)
 }
+/// 检查 MP4 box 头部并返回头部长度。
 fn header(b: &[u8]) -> io::Result<usize> {
     if b.len() < 8 {
         return Err(invalid("short box"));
@@ -48,6 +53,7 @@ fn header(b: &[u8]) -> io::Result<usize> {
     }
     Ok(size)
 }
+/// 解析并校验容器内的直接子 box。
 fn children(b: &[u8]) -> io::Result<Vec<&[u8]>> {
     let mut p = header(b)?;
     let declared = match u32_at(b, 0)? {
@@ -77,12 +83,14 @@ fn children(b: &[u8]) -> io::Result<Vec<&[u8]>> {
     }
     Ok(out)
 }
+/// 获取指定类型的直接子 box。
 fn child<'a>(b: &'a [u8], kind: &[u8; 4]) -> io::Result<&'a [u8]> {
     children(b)?
         .into_iter()
         .find(|c| &c[4..8] == kind)
         .ok_or_else(|| invalid("missing required box"))
 }
+/// 替换指定类型的直接子 box，并重建容器。
 fn replace(b: &[u8], kind: &[u8; 4], replacement: &[u8]) -> io::Result<Vec<u8>> {
     let mut body = Vec::new();
     for c in children(b)? {
@@ -90,6 +98,7 @@ fn replace(b: &[u8], kind: &[u8; 4], replacement: &[u8]) -> io::Result<Vec<u8>> 
     }
     atom(b[4..8].try_into().unwrap(), &body)
 }
+/// 读取影片或媒体头中的时间刻度。
 fn time_scale(b: &[u8]) -> io::Result<u32> {
     let h = header(b)?;
     let version = *b.get(h).ok_or_else(|| invalid("short media header"))?;
@@ -102,6 +111,7 @@ fn time_scale(b: &[u8]) -> io::Result<u32> {
     }
     Ok(value)
 }
+/// 复制头部并更新影片、媒体或轨道时长。
 fn duration(b: &[u8], value: u64, track: bool) -> io::Result<Vec<u8>> {
     let mut out = b.to_vec();
     let h = header(b)?;
@@ -154,6 +164,7 @@ pub struct Mp4Builder {
 }
 
 impl Mp4Builder {
+    /// 使用首个媒体源的初始化信息创建 MP4 索引构建器。
     pub fn new(ftyp: &[u8], moov: &[u8], source: usize) -> io::Result<Self> {
         let mut result = Self {
             ftyp: ftyp.to_vec(),
@@ -165,6 +176,7 @@ impl Mp4Builder {
         Ok(result)
     }
 
+    /// 添加媒体源的轨道信息和默认采样参数。
     pub fn add_source(&mut self, moov: &[u8], source: usize) -> io::Result<()> {
         let trexes = children(child(moov, b"mvex")?)?;
         for trak in children(moov)?.into_iter().filter(|c| &c[4..8] == b"trak") {
@@ -363,6 +375,7 @@ impl Mp4Builder {
         Ok(())
     }
 
+    /// 生成可定位 MP4 的头部和源文件字节映射。
     pub fn finish(self) -> io::Result<VirtualMp4> {
         if self.tracks.is_empty() || self.tracks.iter().any(|t| t.samples.is_empty()) {
             return Err(invalid("empty track"));
@@ -429,6 +442,7 @@ impl Mp4Builder {
         })
     }
 
+    /// 根据采样信息和输出偏移生成 moov。
     fn build_moov(&self, offsets: &[Vec<u64>]) -> io::Result<Vec<u8>> {
         let movie_scale = time_scale(&self.mvhd)?;
         let mut body = Vec::new();
@@ -536,6 +550,7 @@ impl Mp4Builder {
     }
 }
 
+/// 将连续相同的采样值合并为游程表。
 fn run_table(kind: &[u8; 4], version: u8, values: &[u32]) -> io::Result<Vec<u8>> {
     let mut runs: Vec<(u32, u32)> = Vec::new();
     for &value in values {
@@ -583,6 +598,7 @@ impl VirtualMp4 {
             .map_or(self.prefix.len() as u64, |(_, offset)| *offset);
         start..start.saturating_add(2 * 1024 * 1024).min(self.len)
     }
+    /// 校验采样映射是否位于对应媒体源范围内。
     pub fn validate_sources(&self, lengths: &[u64]) -> io::Result<()> {
         for extent in &self.extents {
             let length = *lengths

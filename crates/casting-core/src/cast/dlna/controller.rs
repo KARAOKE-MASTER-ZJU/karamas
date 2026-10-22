@@ -1006,10 +1006,12 @@ impl DlnaController {
     }
 }
 #[cfg(test)]
-mod diagnostics_tests;
+#[path = "controller/tests/diagnostics.rs"]
+mod diagnostics;
 
 #[cfg(test)]
-mod discovery_diagnostics_tests;
+#[path = "controller/tests/discovery_diagnostics.rs"]
+mod discovery_diagnostics;
 
 #[cfg(test)]
 mod tests {

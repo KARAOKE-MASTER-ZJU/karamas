@@ -10,6 +10,7 @@ use tokio::sync::{Mutex, Notify};
 
 static MEDIA_SERVER_SHUTDOWN: RwLock<Option<Arc<Notify>>> = RwLock::new(None);
 
+/// 优先选择与目标设备最接近的本机 IPv4 地址。
 fn get_best_local_ip(target_device_ip: &str) -> String {
     let interfaces = local_ip_address::list_afinet_netifas().unwrap_or_default();
     let target_u32 = target_device_ip.parse::<Ipv4Addr>().map(u32::from).ok();
@@ -34,6 +35,7 @@ fn get_best_local_ip(target_device_ip: &str) -> String {
         .unwrap_or_else(|_| "127.0.0.1".to_string())
 }
 
+/// 启动本地媒体代理，返回监听地址和共享状态。
 pub(crate) fn start(
     target_device_ip: &str,
     handle: tokio::runtime::Handle,
@@ -119,6 +121,7 @@ pub(crate) fn start(
     Ok((local_ip_addr, port, cache, shared_state))
 }
 
+/// 通知当前媒体代理停止。
 pub(crate) fn stop() {
     if let Ok(mut guard) = MEDIA_SERVER_SHUTDOWN.write() {
         if let Some(notify) = guard.take() {

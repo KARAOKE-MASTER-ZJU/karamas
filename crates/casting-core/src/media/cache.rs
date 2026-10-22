@@ -28,12 +28,14 @@ pub struct RemoteSource {
 }
 struct Directory(PathBuf);
 impl Drop for Directory {
+    /// 删除已释放的歌曲缓存目录。
     fn drop(&mut self) {
         let _ = std::fs::remove_dir(&self.0);
     }
 }
 struct Staging(PathBuf);
 impl Drop for Staging {
+    /// 删除未发布的缓存临时文件。
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.0);
     }
@@ -45,6 +47,7 @@ struct Block {
     _directory: Arc<Directory>,
 }
 impl Drop for Block {
+    /// 删除已释放的缓存块文件。
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.path);
     }
@@ -68,14 +71,17 @@ pub struct SongCache {
     hits: AtomicU64,
 }
 
+/// 构建指定类型的缓存 I/O 错误。
 fn error(kind: io::ErrorKind, message: &str) -> io::Error {
     io::Error::new(kind, message)
 }
+/// 构建缓存读取已取消的错误。
 fn cancelled() -> io::Error {
     error(io::ErrorKind::Interrupted, "song cache cancelled")
 }
 
 impl SongCache {
+    /// 使用默认块大小创建歌曲缓存。
     pub fn new(
         parent: &Path,
         client: reqwest::Client,
@@ -85,6 +91,7 @@ impl SongCache {
         Self::new_with_block_size(parent, client, sources, capacity, DEFAULT_CACHE_BLOCK_BYTES)
     }
 
+    /// 按指定块大小和容量创建歌曲缓存。
     pub fn new_with_block_size(
         parent: &Path,
         client: reqwest::Client,
@@ -136,6 +143,7 @@ impl SongCache {
         })
     }
 
+    /// 取消当前歌曲的缓存读取和响应流。
     pub fn cancel(&self) {
         self.cancelled.send_replace(true);
         self.interrupt_streams();
@@ -145,17 +153,21 @@ impl SongCache {
     pub fn interrupt_streams(&self) {
         self.retire_streams(self.stream_cutoff());
     }
+    /// 读取当前响应流编号，供定位操作确定中断范围。
     pub fn stream_cutoff(&self) -> u64 {
         self.stream_id.load(Ordering::SeqCst)
     }
+    /// 使指定编号及之前的响应流失效。
     pub fn retire_streams(&self, cutoff: u64) {
         self.stream_epoch.send_modify(|epoch| *epoch = (*epoch).max(cutoff));
     }
+    /// 注册响应流，并返回编号和失效通知订阅。
     pub fn stream_epoch(&self) -> (u64, watch::Receiver<u64>) {
         let receiver = self.stream_epoch.subscribe();
         let id = self.stream_id.fetch_add(1, Ordering::SeqCst) + 1;
         (id, receiver)
     }
+    /// 读取缓存下载请求数和命中数。
     pub fn stats(&self) -> (u64, u64) {
         (
             self.requests.load(Ordering::Relaxed),
@@ -163,6 +175,7 @@ impl SongCache {
         )
     }
 
+    /// 将媒体读取范围转换为去重后的预取块列表。
     pub(crate) fn warmup_blocks(&self, parts: Vec<crate::media::mp4::indexed::ReadPart>) -> Vec<(usize, Range<u64>)> {
         let mut seen = std::collections::HashSet::new();
         let mut reads = Vec::new();
@@ -229,6 +242,7 @@ impl SongCache {
         }
     }
 
+    /// 读取一个缓存块，未命中时下载并保存。
     async fn block(&self, key: Key) -> io::Result<Bytes> {
         {
             let mut hot = self.hot.lock().await;

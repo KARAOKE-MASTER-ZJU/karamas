@@ -22,6 +22,7 @@ use tokio::sync::{OnceCell, watch};
 static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
 static CACHE_ROOT: RwLock<Option<PathBuf>> = RwLock::new(None);
 
+/// 设置并创建媒体缓存根目录。
 pub fn init_cache_dir(path: &str) -> io::Result<()> {
     let root = PathBuf::from(path).join("ktv-media-cache");
     std::fs::create_dir_all(&root)?;
@@ -30,6 +31,7 @@ pub fn init_cache_dir(path: &str) -> io::Result<()> {
         .map_err(|_| io::Error::other("cache root lock poisoned"))? = Some(root);
     Ok(())
 }
+/// 获取当前媒体缓存根目录。
 fn cache_root() -> io::Result<PathBuf> {
     if let Some(root) = CACHE_ROOT
         .read()
@@ -45,6 +47,7 @@ fn cache_root() -> io::Result<PathBuf> {
     #[cfg(not(target_os = "android"))]
     Ok(std::env::temp_dir())
 }
+/// 构建媒体会话已失效的错误。
 fn stopped() -> io::Error {
     io::Error::new(io::ErrorKind::Interrupted, "obsolete media session")
 }
@@ -66,12 +69,15 @@ pub struct MediaSession {
     warmup: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 impl MediaSession {
+    /// 生成包含当前会话代次的媒体路径。
     pub fn path(&self) -> String {
         format!("__ktv_media/{}.mp4", self.generation)
     }
+    /// 检查当前媒体会话是否已失效。
     pub fn is_stopped(&self) -> bool {
         *self.stopped.borrow()
     }
+    /// 取消当前会话的媒体准备、预取和缓存读取。
     fn cancel(&self) {
         if let Some(task) = self.warmup.lock().unwrap().take() {
             task.abort();
@@ -127,6 +133,7 @@ impl MediaSession {
         }));
     }
 
+    /// 获取可定位媒体的缓存和当前响应流编号。
     pub fn seek_stream_cutoff(&self) -> Option<(Arc<SongCache>, u64)> {
         let SessionMedia::Seekable { cache, .. } = self.ready.get()?.as_ref() else {
             return None;
@@ -161,6 +168,7 @@ impl MediaSession {
         Ok(result.clone())
     }
 
+    /// 解析歌曲媒体源，按需准备可定位的 DASH 媒体。
     async fn resolve(&self, client: &reqwest::Client) -> io::Result<SessionMedia> {
         if crate::sources::youtube::is_youtube_url(&self.song) {
             let max_height = match self.quality {
@@ -213,6 +221,7 @@ impl MediaSession {
         }
     }
 
+    /// 构建 DASH 媒体的 MP4 索引和歌曲缓存。
     async fn prepare_dash(
         &self,
         client: &reqwest::Client,
@@ -243,6 +252,7 @@ pub struct MediaSessions {
     current: Mutex<Option<Arc<MediaSession>>>,
 }
 impl MediaSessions {
+    /// 获取尚未失效的当前媒体会话。
     pub fn current(&self) -> Option<Arc<MediaSession>> {
         self.current
             .lock()
@@ -251,6 +261,7 @@ impl MediaSessions {
             .filter(|s| !s.is_stopped())
             .cloned()
     }
+    /// 为歌曲和清晰度创建媒体会话，并取消旧会话。
     pub fn activate(&self, song: &str, quality: Quality) -> Arc<MediaSession> {
         let session = Arc::new(MediaSession {
             generation: NEXT_GENERATION.fetch_add(1, Ordering::Relaxed),
@@ -267,6 +278,7 @@ impl MediaSessions {
         log::info!(target: "DLNA1080", "切换当前曲目媒体会话: generation={}, quality={}", session.generation, quality.label());
         session
     }
+    /// 按代次获取仍有效的当前媒体会话。
     pub fn get(&self, generation: u64) -> Option<Arc<MediaSession>> {
         self.current
             .lock()
@@ -275,6 +287,7 @@ impl MediaSessions {
             .filter(|s| s.generation == generation && !s.is_stopped())
             .cloned()
     }
+    /// 移除并取消当前媒体会话。
     pub fn clear(&self) {
         if let Some(previous) = self.current.lock().unwrap().take() {
             previous.cancel();
@@ -282,11 +295,13 @@ impl MediaSessions {
     }
 }
 impl Drop for MediaSessions {
+    /// 销毁会话集合时清理当前会话。
     fn drop(&mut self) {
         self.clear();
     }
 }
 
+/// 从媒体路径中解析会话代次。
 pub fn generation_from_path(path: &str) -> Option<u64> {
     path.strip_prefix("__ktv_media/")?
         .strip_suffix(".mp4")?

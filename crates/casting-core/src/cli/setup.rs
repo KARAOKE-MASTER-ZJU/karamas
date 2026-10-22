@@ -7,6 +7,7 @@ use log::info;
 use std::io;
 use url::Url;
 
+/// 获取当前登录用户的B站会话，如果没有保存的会话，则进行扫码登录
 pub(super) async fn acquire_bilibili_session() -> Result<BilibiliSession> {
     if let Some(session) = bili::load_session() {
         println!("已读取保存的B站会话 (UID: {})", session.mid);
@@ -24,6 +25,7 @@ pub(super) async fn acquire_bilibili_session() -> Result<BilibiliSession> {
     Ok(session)
 }
 
+/// 交互式选择B站投屏设备，返回选中的设备的buvid
 pub(super) async fn select_bilibili_device_interactively(session: &BilibiliSession) -> Result<String> {
     let devices = bili::list_devices(session)
         .await
@@ -70,6 +72,7 @@ pub(super) async fn select_dlna_device_interactively(controller: &DlnaController
     pick_from_device_list(devices)
 }
 
+/// 直接输入设备 URL 或 IP，返回选中的设备
 async fn select_device_by_url(controller: &DlnaController) -> Result<DlnaDevice> {
     println!("请输入设备 IP 或描述文件完整 URL");
     println!("  示例 IP：  192.168.1.100");
@@ -95,6 +98,7 @@ async fn select_device_by_url(controller: &DlnaController) -> Result<DlnaDevice>
         .with_context(|| format!("无法连接设备：{}", url))
 }
 
+/// 从设备列表中选择一个设备
 fn pick_from_device_list(devices: Vec<DlnaDevice>) -> Result<DlnaDevice> {
     println!("发现以下设备：");
     for (i, d) in devices.iter().enumerate() {
@@ -108,6 +112,7 @@ fn pick_from_device_list(devices: Vec<DlnaDevice>) -> Result<DlnaDevice> {
     devices.into_iter().nth(idx).context("编号无效")
 }
 
+/// 交互式获取房间配置，返回 (base_url, room_id)
 pub(super) fn get_room_config_interactively() -> Result<(String, String)> {
     println!("=== KTV投屏DLNA应用启动 ===");
     println!("输入房间链接:");

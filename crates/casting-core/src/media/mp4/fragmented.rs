@@ -33,10 +33,12 @@ struct BoxReader {
 }
 
 impl BoxReader {
+    /// 从媒体源起始位置创建 MP4 box 读取器。
     async fn open(client: &reqwest::Client, url: &str, track: &'static str) -> io::Result<Self> {
         Self::open_at(client, url, track, None).await
     }
 
+    /// 从媒体源指定偏移创建 MP4 box 读取器。
     async fn open_at(
         client: &reqwest::Client,
         url: &str,
@@ -82,6 +84,7 @@ impl BoxReader {
         })
     }
 
+    /// 读取下一个完整 MP4 box，流结束时返回 None。
     async fn next_box(&mut self) -> io::Result<Option<Bytes>> {
         loop {
             if self.buffered.len() >= 8 {
@@ -145,6 +148,7 @@ struct SidxEntry {
 }
 
 impl TrackSource {
+    /// 读取单轨媒体的初始化信息和分片索引。
     async fn open(
         client: &reqwest::Client,
         url: &str,
@@ -204,6 +208,7 @@ impl TrackSource {
         ))
     }
 
+    /// 根据分片索引重新打开接近目标时间的媒体流。
     async fn seek_to(&mut self, client: &reqwest::Client, start_secs: u32) -> io::Result<()> {
         let Some(sidx) = self.sidx.as_ref() else {
             return Err(invalid("fMP4 source has no sidx seek index"));
@@ -227,6 +232,7 @@ impl TrackSource {
         Ok(())
     }
 
+    /// 读取下一个包含 moof 和 mdat 的媒体分片。
     async fn next_fragment(&mut self) -> io::Result<Option<Fragment>> {
         let moof = if let Some(moof) = self.pending_moof.take() {
             moof
@@ -355,6 +361,7 @@ pub async fn mux_dash_from(
     })
 }
 
+/// 按解码时间交错输出音视频分片。
 async fn mux_fragments(
     tx: &mpsc::Sender<Result<Bytes, io::Error>>,
     video: &mut TrackSource,
@@ -462,10 +469,12 @@ async fn mux_fragments(
     Ok(())
 }
 
+/// 判断分片是否位于目标播放时间或之后。
 fn fragment_is_at_or_after(decode_time: u64, timescale: u32, start_secs: u32) -> bool {
     decode_time >= u64::from(start_secs) * u64::from(timescale)
 }
 
+/// 生成日志使用的媒体地址，省略查询参数。
 fn safe_endpoint(url: &str) -> String {
     reqwest::Url::parse(url)
         .map(|url| {
@@ -479,6 +488,7 @@ fn safe_endpoint(url: &str) -> String {
         .unwrap_or_else(|_| "<invalid-url>".to_string())
 }
 
+/// 合并音视频初始化信息，统一轨道编号和时长。
 fn merge_initialization(
     video_ftyp: &Bytes,
     video_moov: &Bytes,
@@ -531,6 +541,7 @@ fn merge_initialization(
     Ok(init.freeze())
 }
 
+/// 更新分片的轨道编号和序号。
 fn patch_moof(moof: &Bytes, track_id: u32, sequence: u32) -> io::Result<Bytes> {
     let mut out = moof.to_vec();
     let mfhd = child_range(&out, 0..out.len(), b"mfhd")?;
@@ -541,6 +552,7 @@ fn patch_moof(moof: &Bytes, track_id: u32, sequence: u32) -> io::Result<Bytes> {
     Ok(Bytes::from(out))
 }
 
+/// 读取分片的起始解码时间。
 fn fragment_decode_time(moof: &[u8]) -> io::Result<u64> {
     let traf = child_range(moof, 0..moof.len(), b"traf")?;
     let tfdt = child_range(moof, traf, b"tfdt")?;
@@ -554,6 +566,7 @@ fn fragment_decode_time(moof: &[u8]) -> io::Result<u64> {
     }
 }
 
+/// 读取轨道的时间刻度。
 fn track_timescale(moov: &[u8]) -> io::Result<u32> {
     let trak = child_range(moov, 0..moov.len(), b"trak")?;
     let mdia = child_range(moov, trak, b"mdia")?;
@@ -574,6 +587,7 @@ fn track_timescale(moov: &[u8]) -> io::Result<u32> {
     }
 }
 
+/// 读取影片的时间刻度。
 fn mvhd_timescale(mvhd: &[u8]) -> io::Result<u32> {
     let header = box_header_len(mvhd)?;
     let version = *mvhd.get(header).ok_or_else(|| invalid("short mvhd"))?;
@@ -590,6 +604,7 @@ fn mvhd_timescale(mvhd: &[u8]) -> io::Result<u32> {
     }
 }
 
+/// 根据分片索引更新轨道时长。
 fn patch_trak_duration(trak: &mut [u8], sidx: &SidxInfo, movie_timescale: u32) -> io::Result<()> {
     let tkhd = child_range(trak, 0..trak.len(), b"tkhd")?;
     let mdia = child_range(trak, 0..trak.len(), b"mdia")?;
@@ -619,6 +634,7 @@ fn patch_trak_duration(trak: &mut [u8], sidx: &SidxInfo, movie_timescale: u32) -
     Ok(())
 }
 
+/// 将时长换算到目标时间刻度。
 fn scale_duration(duration: u64, source_timescale: u32, target_timescale: u32) -> io::Result<u64> {
     if source_timescale == 0 || target_timescale == 0 {
         return Err(invalid("zero duration timescale"));
@@ -627,6 +643,7 @@ fn scale_duration(duration: u64, source_timescale: u32, target_timescale: u32) -
         .map_err(|_| invalid("duration overflow"))
 }
 
+/// 更新 mvhd 或 mdhd 中的时长。
 fn patch_header_duration(atom: &mut [u8], duration: u64) -> io::Result<()> {
     let header = box_header_len(atom)?;
     let version = *atom.get(header).ok_or_else(|| invalid("short full box"))?;
@@ -646,6 +663,7 @@ fn patch_header_duration(atom: &mut [u8], duration: u64) -> io::Result<()> {
     }
 }
 
+/// 更新 tkhd 中的轨道时长。
 fn patch_tkhd_duration(atom: &mut [u8], duration: u64) -> io::Result<()> {
     let header = box_header_len(atom)?;
     let version = *atom.get(header).ok_or_else(|| invalid("short tkhd"))?;
@@ -665,6 +683,7 @@ fn patch_tkhd_duration(atom: &mut [u8], duration: u64) -> io::Result<()> {
     }
 }
 
+/// 更新轨道头中的轨道编号。
 fn patch_trak_track_id(trak: &mut [u8], track_id: u32) -> io::Result<()> {
     let tkhd = child_range(trak, 0..trak.len(), b"tkhd")?;
     let version = *trak
@@ -678,6 +697,7 @@ fn patch_trak_track_id(trak: &mut [u8], track_id: u32) -> io::Result<()> {
     patch_at(trak, offset, track_id)
 }
 
+/// 更新影片头中的下一个可用轨道编号。
 fn patch_mvhd_next_track_id(mvhd: &mut [u8], next_track_id: u32) -> io::Result<()> {
     if mvhd.len() < 12 {
         return Err(invalid("short mvhd"));
@@ -685,10 +705,12 @@ fn patch_mvhd_next_track_id(mvhd: &mut [u8], next_track_id: u32) -> io::Result<(
     patch_at(mvhd, mvhd.len() - 4, next_track_id)
 }
 
+/// 更新 box 中指定偏移的 u32 字段。
 fn patch_full_box_u32(atom: &mut [u8], offset: usize, value: u32) -> io::Result<()> {
     patch_at(atom, offset, value)
 }
 
+/// 在指定偏移写入大端 u32。
 fn patch_at(data: &mut [u8], offset: usize, value: u32) -> io::Result<()> {
     let dst = data
         .get_mut(offset..offset + 4)
@@ -697,6 +719,7 @@ fn patch_at(data: &mut [u8], offset: usize, value: u32) -> io::Result<()> {
     Ok(())
 }
 
+/// 在指定偏移写入大端 u64。
 fn patch_u64(data: &mut [u8], offset: usize, value: u64) -> io::Result<()> {
     let dst = data
         .get_mut(offset..offset + 8)
@@ -705,11 +728,13 @@ fn patch_u64(data: &mut [u8], offset: usize, value: u64) -> io::Result<()> {
     Ok(())
 }
 
+/// 获取指定类型的直接子 box。
 fn child<'a>(parent: &'a [u8], wanted: &[u8; 4]) -> io::Result<&'a [u8]> {
     let range = child_range(parent, 0..parent.len(), wanted)?;
     Ok(&parent[range])
 }
 
+/// 查找指定类型的直接子 box，返回其字节范围。
 fn child_range(data: &[u8], parent: Range<usize>, wanted: &[u8; 4]) -> io::Result<Range<usize>> {
     let parent_header = box_header_len(&data[parent.clone()])?;
     let mut offset = parent.start + parent_header;
@@ -732,6 +757,7 @@ fn child_range(data: &[u8], parent: Range<usize>, wanted: &[u8; 4]) -> io::Resul
     )))
 }
 
+/// 将给定内容封装为指定类型的 MP4 box。
 fn make_box(kind: &[u8; 4], children: &[&[u8]]) -> io::Result<Vec<u8>> {
     let payload: usize = children.iter().map(|c| c.len()).sum();
     let size = 8usize
@@ -747,6 +773,7 @@ fn make_box(kind: &[u8; 4], children: &[&[u8]]) -> io::Result<Vec<u8>> {
     Ok(out)
 }
 
+/// 解析分片索引中的偏移、大小和时长。
 fn parse_sidx(sidx: &[u8]) -> io::Result<SidxInfo> {
     let header = box_header_len(sidx)?;
     let version = *sidx.get(header).ok_or_else(|| invalid("short sidx"))?;
@@ -798,6 +825,7 @@ fn parse_sidx(sidx: &[u8]) -> io::Result<SidxInfo> {
     })
 }
 
+/// 查找目标时间及之后最近分片的源文件偏移。
 fn sidx_offset_for_start(sidx: &SidxInfo, start_secs: u32) -> Option<(u64, f64)> {
     let target_time = (u128::from(start_secs) * u128::from(sidx.timescale)) as u64;
     let mut offset = sidx.first_media_offset;
@@ -812,14 +840,17 @@ fn sidx_offset_for_start(sidx: &SidxInfo, start_secs: u32) -> Option<(u64, f64)>
     None
 }
 
+/// 读取 MP4 box 的类型。
 fn atom_type(data: &[u8]) -> io::Result<&[u8]> {
     data.get(4..8).ok_or_else(|| invalid("short box header"))
 }
 
+/// 读取 MP4 box 的头部长度。
 fn box_header_len(data: &[u8]) -> io::Result<usize> {
     Ok(if read_u32(data, 0)? == 1 { 16 } else { 8 })
 }
 
+/// 读取 MP4 box 头部声明的大小。
 fn box_size_prefix(data: &[u8]) -> io::Result<usize> {
     let size32 = read_u32(data, 0)?;
     if size32 == 0 {
@@ -832,6 +863,7 @@ fn box_size_prefix(data: &[u8]) -> io::Result<usize> {
     }
 }
 
+/// 从指定偏移读取大端 u16。
 fn read_u16(data: &[u8], offset: usize) -> io::Result<u16> {
     let b: [u8; 2] = data
         .get(offset..offset + 2)
@@ -841,6 +873,7 @@ fn read_u16(data: &[u8], offset: usize) -> io::Result<u16> {
     Ok(u16::from_be_bytes(b))
 }
 
+/// 从指定偏移读取大端 u32。
 fn read_u32(data: &[u8], offset: usize) -> io::Result<u32> {
     let b: [u8; 4] = data
         .get(offset..offset + 4)
@@ -850,6 +883,7 @@ fn read_u32(data: &[u8], offset: usize) -> io::Result<u32> {
     Ok(u32::from_be_bytes(b))
 }
 
+/// 从指定偏移读取大端 u64。
 fn read_u64(data: &[u8], offset: usize) -> io::Result<u64> {
     let b: [u8; 8] = data
         .get(offset..offset + 8)
@@ -859,6 +893,7 @@ fn read_u64(data: &[u8], offset: usize) -> io::Result<u64> {
     Ok(u64::from_be_bytes(b))
 }
 
+/// 构建 MP4 数据无效的错误。
 fn invalid(message: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message.into())
 }

@@ -3,6 +3,7 @@ use reqwest::Client;
 use std::io::Cursor;
 use std::time::Duration;
 
+/// 读取远端 MP4 头部并解析视频时长。
 pub async fn get_mp4_duration(url: &str) -> Result<Duration> {
     let client = Client::builder().use_rustls_tls().build()?;
 

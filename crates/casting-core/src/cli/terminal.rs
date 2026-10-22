@@ -31,6 +31,7 @@ impl Log for ProgressLogger {
 
 const VOLUME_STEP: u32 = 5;
 
+/// 负责监听键盘输入，并在后台线程中处理快捷键事件
 pub(super) fn spawn_keyboard_handler() {
     let _ = terminal::enable_raw_mode();
     tokio::task::spawn_blocking(move || {
@@ -110,6 +111,7 @@ pub(super) fn spawn_keyboard_handler() {
     });
 }
 
+/// 设置进度条样式
 fn setup_pb_style(pb: &ProgressBar) {
     pb.set_style(
         ProgressStyle::with_template("{bar:40.green/blue} {my_pos} / {my_len}")
@@ -130,6 +132,7 @@ fn setup_pb_style(pb: &ProgressBar) {
     );
     pb.set_draw_target(ProgressDrawTarget::hidden());
 }
+
 
 pub(super) fn setup_env() -> ProgressBar {
     if std::env::var("RUST_LOG").is_err() {

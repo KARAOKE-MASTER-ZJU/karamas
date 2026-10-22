@@ -1,3 +1,4 @@
+//! 投屏进度条
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -12,6 +13,7 @@ pub struct LocalProgressTracker {
     paused_at: Mutex<Option<u32>>,
 }
 
+/// 本地进度条追踪器
 impl LocalProgressTracker {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
@@ -22,6 +24,7 @@ impl LocalProgressTracker {
         })
     }
 
+    /// 开始播放，设置总时长
     pub async fn start(&self, total_secs: u32) {
         self.total_secs.store(total_secs, Ordering::Relaxed);
         self.start_offset.store(0, Ordering::Relaxed);
@@ -29,11 +32,13 @@ impl LocalProgressTracker {
         *self.paused_at.lock().await = None;
     }
 
+    /// 停止播放，重置状态
     pub async fn pause(&self) {
         let curr = self.running_secs().await;
         *self.paused_at.lock().await = Some(curr);
     }
 
+    /// 恢复播放，继续计时
     pub async fn resume(&self) {
         let pos = self.paused_at.lock().await.take();
         if let Some(p) = pos {
@@ -42,12 +47,14 @@ impl LocalProgressTracker {
         }
     }
 
+    /// 停止播放，重置状态
     pub async fn seek(&self, secs: u32) {
         self.start_offset.store(secs, Ordering::Relaxed);
         *self.started_at.lock().await = Some(Instant::now());
         *self.paused_at.lock().await = None;
     }
 
+    /// 获取当前播放时间（秒）
     async fn running_secs(&self) -> u32 {
         let offset = self.start_offset.load(Ordering::Relaxed);
         let guard = self.started_at.lock().await;
@@ -55,6 +62,7 @@ impl LocalProgressTracker {
         offset + elapsed
     }
 
+    /// 获取当前播放进度
     pub async fn get_progress(&self) -> Progress {
         let current_secs = if let Some(p) = *self.paused_at.lock().await {
             p

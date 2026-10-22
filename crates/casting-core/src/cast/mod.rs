@@ -99,6 +99,7 @@ impl fmt::Display for CastError {
 
 impl std::error::Error for CastError {}
 
+/// Caster 抽象接口
 #[async_trait]
 pub trait Caster: Send + Sync {
     async fn play_song(&self, song: &SongRef) -> Result<(), CastError>;

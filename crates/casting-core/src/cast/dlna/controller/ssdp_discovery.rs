@@ -6,11 +6,13 @@ use std::time::Duration;
 use tokio::net::UdpSocket;
 use tokio::time::{Instant, sleep_until};
 
+/// SSDP 目标服务类型
 const TARGETS: [&str; 3] = [
     "urn:schemas-upnp-org:service:AVTransport:1",
     "urn:schemas-upnp-org:device:MediaRenderer:1",
     "ssdp:all",
 ];
+/// SSDP 目标地址
 const DESTINATION: &str = "239.255.255.250:1900";
 const DETAIL_LIMIT: usize = 50;
 
@@ -30,6 +32,7 @@ struct Reply<'a> {
     usn: &'a str,
 }
 
+/// 解析 SSDP 响应，返回 Reply 结构体或错误信息
 fn parse_reply(bytes: &[u8]) -> Result<Reply<'_>, &'static str> {
     let text = std::str::from_utf8(bytes).map_err(|_| "响应不是UTF-8")?;
     let mut lines = text.lines();
@@ -59,10 +62,12 @@ fn parse_reply(bytes: &[u8]) -> Result<Reply<'_>, &'static str> {
     Ok(Reply { location, st, usn })
 }
 
+/// 将日志字段中的控制字符过滤掉，并限制长度为200个字符
 fn log_field(value: &str) -> String {
     value.chars().filter(|c| !c.is_control()).take(200).collect()
 }
 
+/// 探测指定目标的设备，返回探测报告
 async fn probe_target(
     target: &str,
     local_ip: IpAddr,
@@ -142,6 +147,7 @@ async fn probe_target(
     Ok(report)
 }
 
+/// SSDP 发现设备，返回设备描述地址列表
 pub(super) async fn discover_locations() -> Result<Vec<String>, rupnp::Error> {
     let destination: SocketAddr = DESTINATION.parse().expect("constant IPv4 endpoint");
     // UDP connect selects a route without sending a packet. Do not connect the
@@ -158,6 +164,7 @@ pub(super) async fn discover_locations() -> Result<Vec<String>, rupnp::Error> {
     compare_targets(route, destination, Duration::from_secs(5)).await
 }
 
+/// 对比所有目标，返回合并后的描述地址列表
 async fn compare_targets(route: IpAddr, destination: SocketAddr, window: Duration) -> Result<Vec<String>, rupnp::Error> {
     let results = futures::future::join_all(TARGETS.iter().map(|target| {
         probe_target(target, route, destination, window)
@@ -179,4 +186,5 @@ async fn compare_targets(route: IpAddr, destination: SocketAddr, window: Duratio
 }
 
 #[cfg(test)]
+#[path = "tests/ssdp_discovery.rs"]
 mod tests;

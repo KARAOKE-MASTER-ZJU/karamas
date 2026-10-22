@@ -4,6 +4,7 @@ use std::net::IpAddr;
 use crate::cast::dlna::controller::{DlnaController, DlnaDevice};
 use crate::cast::{Capabilities, CastError, Caster, Progress, Quality, SongRef};
 
+/// Dlna投屏器
 pub struct DlnaCaster {
     controller: DlnaController,
     device: DlnaDevice,
@@ -17,6 +18,7 @@ pub struct DlnaCaster {
     loaded_generation: std::sync::atomic::AtomicU64,
 }
 
+/// Dlna投屏器实现
 impl DlnaCaster {
     pub fn new(
         controller: DlnaController,
@@ -24,6 +26,7 @@ impl DlnaCaster {
         server_ip: IpAddr,
         server_port: u16,
     ) -> Self {
+        // 初始化dlna投屏器
         Self {
             controller,
             device,
@@ -41,6 +44,7 @@ impl DlnaCaster {
         }
     }
 
+    /// 设置媒体会话
     pub fn with_sessions(
         mut self,
         sessions: std::sync::Arc<crate::media::session::MediaSessions>,
@@ -49,6 +53,7 @@ impl DlnaCaster {
         self
     }
 
+    /// 重新加载曲目，指定播放位置
     async fn reload_song_at(
         &self,
         song: &str,
@@ -138,6 +143,7 @@ impl DlnaCaster {
     }
 }
 
+/// 解析直连媒体链接，返回媒体地址或错误信息
 async fn resolve_direct_url(song: &str, quality: Quality) -> Result<String, CastError> {
     if crate::sources::youtube::is_youtube_url(song) {
         return Err(CastError::Device("此媒体需要在线混流，请启用 DLNA 媒体代理".into()));
@@ -158,6 +164,7 @@ async fn resolve_direct_url(song: &str, quality: Quality) -> Result<String, Cast
         .map_err(CastError::Device)
 }
 
+/// 添加开始时间参数到媒体链接
 fn with_start_offset(song: &str, position: u32) -> String {
     let (path, query) = song.split_once('?').unwrap_or((song, ""));
     let parameters: Vec<&str> = query
@@ -172,6 +179,7 @@ fn with_start_offset(song: &str, position: u32) -> String {
     }
 }
 
+/// 实现 DlnaCaster 结构体的 Drop 特征
 impl Drop for DlnaCaster {
     fn drop(&mut self) {
         if let Some(sessions) = &self.sessions {
@@ -180,8 +188,10 @@ impl Drop for DlnaCaster {
     }
 }
 
+/// 实现 DlnaCaster 结构体的 Caster 特征
 #[async_trait]
 impl Caster for DlnaCaster {
+    /// 播放曲目
     async fn play_song(&self, song: &SongRef) -> Result<(), CastError> {
         if let Ok(mut current) = self.current_song.lock() {
             *current = Some(song.0.clone());
@@ -191,18 +201,21 @@ impl Caster for DlnaCaster {
         self.reload_song_at(&song.0, 0, "播放歌曲").await
     }
 
+    /// 继续播放
     async fn resume(&self) -> Result<(), CastError> {
         let _transport = self.transport.lock().await;
         self.controller.play(&self.device).await
             .map_err(|error| self.failure("继续播放", error))
     }
 
+    /// 暂停播放
     async fn pause(&self) -> Result<(), CastError> {
         let _transport = self.transport.lock().await;
         self.controller.pause(&self.device).await
             .map_err(|error| self.failure("暂停", error))
     }
 
+    /// 停止播放
     async fn stop(&self) -> Result<(), CastError> {
         self.seek_sequence
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -211,6 +224,7 @@ impl Caster for DlnaCaster {
             .map_err(|error| self.failure("停止播放", error))
     }
 
+    /// 播放指定位置
     async fn seek(&self, secs: u32) -> Result<(), CastError> {
         let loaded_generation = self.loaded_generation.load(std::sync::atomic::Ordering::Relaxed);
         if !crate::cast::dlna::settings::get_dlna_direct() && self.sessions.is_none() && crate::cast::dlna::settings::get_dlna_quality() == Quality::P1080 {
@@ -263,6 +277,7 @@ impl Caster for DlnaCaster {
         result
     }
 
+    /// 查询播放进度
     async fn get_progress(&self) -> Result<Progress, CastError> {
         self.controller
             .get_secs(&self.device)
@@ -274,6 +289,7 @@ impl Caster for DlnaCaster {
             .map_err(|error| self.failure("查询进度", error))
     }
 
+    /// 设置音量
     async fn set_volume(&self, volume: u32) -> Result<(), CastError> {
         self.controller
             .set_volume(&self.device, volume.clamp(0, 100))
@@ -281,6 +297,7 @@ impl Caster for DlnaCaster {
             .map_err(|error| self.failure("设置音量", error))
     }
 
+    /// 查询音量
     async fn get_volume(&self) -> Result<Option<u32>, CastError> {
         self.controller
             .get_volume(&self.device)
@@ -289,6 +306,7 @@ impl Caster for DlnaCaster {
             .map_err(|error| self.failure("查询音量", error))
     }
 
+    /// 设置清晰度
     async fn set_quality(&self, quality: Quality) -> Result<(), CastError> {
         if crate::cast::dlna::settings::get_dlna_direct() && quality == Quality::P1080 {
             return Err(CastError::Device("DLNA 直连模式不支持 B站 1080P，请先启用媒体代理".into()));
@@ -325,10 +343,12 @@ impl Caster for DlnaCaster {
         Ok(())
     }
 
+    /// 查询当前清晰度
     fn get_quality(&self) -> Result<Quality, CastError> {
         Ok(crate::cast::dlna::settings::get_dlna_quality())
     }
 
+    /// 查询设备能力
     fn capabilities(&self) -> Capabilities {
         Capabilities {
             absolute_volume: true,

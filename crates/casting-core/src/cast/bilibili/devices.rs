@@ -14,12 +14,14 @@ pub struct BilibiliDevice {
     pub buvid: String,
 }
 
+/// 实现 BilibiliDevice 结构体的 Display 特征
 impl std::fmt::Display for BilibiliDevice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} ({}-{}) [{}]", self.name, self.brand, self.model, self.buvid)
     }
 }
 
+/// 判断是否是认证过期错误
 fn is_auth_error(code: i64, message: &str) -> bool {
     code == -101
         || message.contains("未登录")
@@ -27,6 +29,7 @@ fn is_auth_error(code: i64, message: &str) -> bool {
         || message.to_ascii_lowercase().contains("token")
 }
 
+/// 解析设备列表响应，返回设备列表或错误信息
 fn parse_devices_response(json: Value) -> Result<Vec<BilibiliDevice>, String> {
     if let Some(code) = json["code"].as_i64() {
         if code != 0 {
@@ -60,6 +63,7 @@ fn parse_devices_response(json: Value) -> Result<Vec<BilibiliDevice>, String> {
         .collect())
 }
 
+/// 获取当前登录用户的设备列表
 pub async fn list_devices(session: &BilibiliSession) -> Result<Vec<BilibiliDevice>, String> {
     let endpoint = format!("{}/x/tv/projection/devices", API_HOST);
     let started = Instant::now();
@@ -85,6 +89,7 @@ pub async fn list_devices(session: &BilibiliSession) -> Result<Vec<BilibiliDevic
     parse_devices_response(json)
 }
 
+/// 处理设备列表请求失败的情况
 fn devices_request_failure(
     stage: &str,
     endpoint: &str,
