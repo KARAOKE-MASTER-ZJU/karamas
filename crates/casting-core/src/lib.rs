@@ -113,7 +113,46 @@ pub struct EngineContext {
     /// 仅 Bilibili 投屏使用：本地跟踪的弹幕/清晰度状态（设备侧没有读回接口）。
     // pub danmaku_on: AtomicBool,
     // pub quality_qn: AtomicU32,
-    pub rt: tokio::runtime::Runtime,
+    /// 调用方需持有运行时，直到引擎停止。
+    pub rt: tokio::runtime::Handle,
+    tasks: std::sync::Mutex<Vec<tokio::task::AbortHandle>>,
+    stopped: AtomicBool,
+}
+
+impl EngineContext {
+    fn spawn_task(&self, task: impl std::future::Future<Output = ()> + Send + 'static) {
+        let mut tasks = self.tasks.lock().unwrap_or_else(|error| error.into_inner());
+        if self.stopped.load(Ordering::SeqCst) {
+            return;
+        }
+        tasks.retain(|task| !task.is_finished());
+        tasks.push(self.rt.spawn(task).abort_handle());
+    }
+
+    fn stop_tasks(&self) {
+        if self.stopped.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let tasks =
+            std::mem::take(&mut *self.tasks.lock().unwrap_or_else(|error| error.into_inner()));
+        for task in tasks {
+            task.abort();
+        }
+        let gate = self.playlist_manager.progress_gate.clone();
+        if let Ok(mut gate) = gate.try_lock() {
+            gate.auto_next.cancel_pending_request();
+        } else {
+            self.rt.spawn(async move {
+                gate.lock().await.auto_next.cancel_pending_request();
+            });
+        }
+    }
+}
+
+impl Drop for EngineContext {
+    fn drop(&mut self) {
+        self.stop_tasks();
+    }
 }
 
 pub struct SharedState {
@@ -147,8 +186,9 @@ pub(crate) fn get_best_local_ip(target_device_ip: &str) -> String {
 }
 
 pub fn reset_engine() {
-    if let Ok(mut guard) = ENGINE_STATE.write() {
-        *guard = None;
+    let previous = ENGINE_STATE.write().ok().and_then(|mut guard| guard.take());
+    if let Some(ctx) = previous {
+        ctx.stop_tasks();
     }
     if let Ok(mut guard) = MEDIA_SERVER_SHUTDOWN.write() {
         if let Some(notify) = guard.take() {
@@ -197,12 +237,15 @@ async fn read_progress(ctx: &EngineContext, trigger_next: bool) -> (i32, i32) {
         Err(_) => (-1, -1),
     };
     let mut gate = ctx.playlist_manager.progress_gate.lock().await;
+    if ctx.stopped.load(Ordering::SeqCst) {
+        return (-1, -1);
+    }
     let (current, total) = gate.filter(revision, current, total);
     // Validate the sample and consume once under the same lock as song updates
     // and play confirmations. An old poll cannot trigger after a new playback.
     if trigger_next && gate.auto_next.observe(current, total) {
         info!("歌曲即将结束，启动一次自动切歌任务");
-        gate.auto_next.start_request(ctx.playlist_manager.clone(), hash, ctx.rt.handle());
+        gate.auto_next.start_request(ctx.playlist_manager.clone(), hash, &ctx.rt);
     }
     (current, total)
 }
@@ -210,9 +253,8 @@ async fn read_progress(ctx: &EngineContext, trigger_next: bool) -> (i32, i32) {
 pub fn trigger_next_song() {
     if let Ok(guard) = ENGINE_STATE.read() {
         if let Some(ctx) = guard.as_ref() {
-            let ctx_task = Arc::clone(ctx);
-            ctx.rt.spawn(async move {
-                let mut pm = ctx_task.playlist_manager.clone();
+            let mut pm = ctx.playlist_manager.clone();
+            ctx.spawn_task(async move {
                 if let Err(e) = pm.next_song().await {
                     log::warn!("切下一首失败: {}", e);
                 }
@@ -223,9 +265,8 @@ pub fn trigger_next_song() {
 pub fn trigger_prev_song() {
     if let Ok(guard) = ENGINE_STATE.read() {
         if let Some(ctx) = guard.as_ref() {
-            let ctx_task = Arc::clone(ctx);
-            ctx.rt.spawn(async move {
-                let mut pm = ctx_task.playlist_manager.clone();
+            let mut pm = ctx.playlist_manager.clone();
+            ctx.spawn_task(async move {
                 if let Err(e) = pm.prev_song().await {
                     log::warn!("切上一首失败: {}", e);
                 }
@@ -281,24 +322,19 @@ pub async fn start_engine_core(
     base_url_str: String,
     room_id: String,
     loc_str: String,
-    rt: tokio::runtime::Runtime,
+    rt: tokio::runtime::Handle,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     info!("开始初始化核心引擎: {}, Room: {}", loc_str, room_id);
 
-    if let Ok(mut guard) = ENGINE_STATE.write() {
-        if guard.is_some() {
-            info!("检测到旧引擎正在运行，正在重置...");
-            *guard = None;
-        }
-    }
+    reset_engine();
 
     // 每次进入 DLNA 会话都从已验证最稳定的 720P 开始。静态清晰度状态会
     // 跨引擎重建存活，若不显式重置会让上一会话的 1080P 误成为默认值。
     set_dlna_quality(cast::Quality::P720).expect("720P is a supported DLNA quality");
     info!(target: "DLNA1080", "DLNA 新会话默认清晰度: 720P");
 
-    let handle = rt.handle().clone();
+    let handle = rt.clone();
     let (controller, device, local_ip_addr, port, cache, shared_state) =
         connect_dlna_device(loc_str, handle).await?;
 
@@ -381,6 +417,7 @@ pub async fn connect_dlna_device(
     }
 
     let shared_state_clone = shared_state.clone();
+    let media_sessions = shared_state.media_sessions.clone();
     handle.spawn(async move {
         info!("正在启动媒体服务器...");
         let app_factory = move || {
@@ -396,14 +433,20 @@ pub async fn connect_dlna_device(
                 .service(media_server::proxy_handler)
         };
         let server = HttpServer::new(app_factory)
+            .disable_signals()
             .workers(1)
             .listen(listener)
             .expect("使用预绑定 listener 不应失败")
             .run();
+        let server_handle = server.handle();
+        tokio::pin!(server);
         tokio::select! {
-            _ = server => {},
+            _ = &mut server => {},
             _ = shutdown_clone.notified() => {
                 info!("媒体服务器收到关闭信号，正在停止...");
+                media_sessions.clear();
+                drop(server_handle.stop(false));
+                let _ = server.await;
             },
         }
     });
@@ -419,7 +462,7 @@ pub async fn connect_room(
     local_ip_addr: std::net::IpAddr,
     port: u16,
     cache: Arc<Mutex<std::collections::HashMap<String, u32>>>,
-    rt: tokio::runtime::Runtime,
+    rt: tokio::runtime::Handle,
 ) -> Result<(), Box<dyn std::error::Error>> {
     info!("开始连接房间: {}", room_id);
 
@@ -430,7 +473,7 @@ pub async fn connect_room(
     let gate_cb = Arc::clone(&pm.progress_gate);
     let playback_lock = Arc::new(Mutex::new(()));
     let playback_cb = Arc::clone(&playback_lock);
-    pm.start_sync(move |video_url| {
+    let sync_task = pm.start_sync(&rt, move |video_url| {
         let c = Arc::clone(&caster_cb);
         let cache = Arc::clone(&cache_cb);
         let gate = Arc::clone(&gate_cb);
@@ -459,6 +502,8 @@ pub async fn connect_room(
         // danmaku_on: AtomicBool::new(false),
         // quality_qn: AtomicU32::new(cast::Quality::default().as_qn()),
         rt,
+        tasks: std::sync::Mutex::new(vec![sync_task.abort_handle()]),
+        stopped: AtomicBool::new(false),
     });
 
     if let Ok(mut guard) = ENGINE_STATE.write() {
@@ -510,12 +555,14 @@ fn extract_bvid(video_url: &str) -> Option<(String,u32)> {
 }
 
 pub async fn get_total_duration() -> u32 {
-    if let Ok(guard) = ENGINE_STATE.read() {
-        if let Some(ctx) = guard.as_ref() {
-            if let Some(playing) = ctx.playlist_manager.get_song_playing().await {
-                if let Some(&d) = ctx.duration_cache.lock().await.get(&playing) {
-                    return d;
-                }
+    let ctx = {
+        let guard = ENGINE_STATE.read().ok();
+        guard.and_then(|g| g.as_ref().cloned())
+    };
+    if let Some(ctx) = ctx {
+        if let Some(playing) = ctx.playlist_manager.get_song_playing().await {
+            if let Some(&d) = ctx.duration_cache.lock().await.get(&playing) {
+                return d;
             }
         }
     }
@@ -640,16 +687,12 @@ pub async fn start_bilibili_engine_core(
     room_id: String,
     session: cast::bilibili_caster::BilibiliSession,
     device_buvid: String,
-    rt: tokio::runtime::Runtime,
+    rt: tokio::runtime::Handle,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     info!("开始初始化Bilibili引擎, Room: {}", room_id);
 
-    if let Ok(mut guard) = ENGINE_STATE.write() {
-        if guard.is_some() {
-            *guard = None;
-        }
-    }
+    reset_engine();
 
     let caster: Arc<dyn cast::Caster> = Arc::new(
         cast::bilibili_caster::BilibiliCaster::new(session, device_buvid)
@@ -685,11 +728,13 @@ pub async fn get_current_song_id_core() -> String {
 }
 
 pub async fn get_current_song_title_core() -> String {
-    if let Ok(guard) = ENGINE_STATE.read() {
-        if let Some(ctx) = guard.as_ref() {
-            return ctx.playlist_manager.get_song_title().await
-                .unwrap_or_else(|| "暂无歌曲".to_string());
-        }
+    let ctx = {
+        let guard = ENGINE_STATE.read().ok();
+        guard.and_then(|g| g.as_ref().cloned())
+    };
+    if let Some(ctx) = ctx {
+        return ctx.playlist_manager.get_song_title().await
+            .unwrap_or_else(|| "暂无歌曲".to_string());
     }
     "未连接".to_string()
 }

@@ -7,6 +7,11 @@ use jni::JavaVM;
 use log::{info, Log, Metadata, Record};
 use std::sync::OnceLock;
 
+fn engine_runtime() -> &'static tokio::runtime::Runtime {
+    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+    RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().expect("无法创建 JNI 运行时"))
+}
+
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
 pub extern "C" fn Java_zju_bangdream_ktv_casting_RustEngine_setDlnaDirect(
@@ -228,15 +233,12 @@ pub extern "C" fn Java_zju_bangdream_ktv_casting_RustEngine_startEngine(
         // 启动前先尝试清理旧状态，防止冲突
         crate::reset_engine();
 
-        // 创建 Runtime
-        let rt = tokio::runtime::Runtime::new().unwrap();
-
-        // 在这个 Runtime 里跑异步初始化
-        // 我们需要把 rt 的所有权传给 start_engine_core，所以这里用 handle 来 block_on
-        let handle = rt.handle().clone();
+        let handle = engine_runtime().handle().clone();
         handle.block_on(async {
             // 使用 match 代替 expect，防止 panic 污染全局锁
-            if let Err(e) = crate::start_engine_core(base_url_str, room_id_str, loc_str, rt).await {
+            if let Err(e) =
+                crate::start_engine_core(base_url_str, room_id_str, loc_str, handle.clone()).await
+            {
                 log::error!("Failed to start engine: {}", e);
             }
         });
@@ -740,11 +742,14 @@ pub extern "C" fn Java_zju_bangdream_ktv_casting_RustEngine_startBilibiliEngine(
 
     std::thread::spawn(move || {
         crate::reset_engine();
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let handle = rt.handle().clone();
+        let handle = engine_runtime().handle().clone();
         handle.block_on(async {
             if let Err(e) = crate::start_bilibili_engine_core(
-                base_url_str, room_id_str, session, buvid_str, rt,
+                base_url_str,
+                room_id_str,
+                session,
+                buvid_str,
+                handle.clone(),
             )
             .await
             {

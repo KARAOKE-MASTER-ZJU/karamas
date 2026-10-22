@@ -276,7 +276,7 @@ async fn periodic_sync_plays_distinct_entries_with_the_same_url() {
     .await;
     let (played, mut received) = mpsc::unbounded_channel();
     let callback_manager = manager.clone();
-    manager.start_periodic_update(move |url| {
+    manager.start_periodic_update(&tokio::runtime::Handle::current(), move |url| {
         let manager = callback_manager.clone();
         let played = played.clone();
         Box::pin(async move {

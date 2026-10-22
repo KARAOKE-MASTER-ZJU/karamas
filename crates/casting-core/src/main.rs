@@ -50,22 +50,30 @@ mod cli {
 
         if mode_input.trim() == "2" {
             // --- Bilibili 模式 ---
-            // 先完成所有可能失败的操作，再创建 Runtime，避免在 async 上下文里 drop Runtime
             let session = acquire_bilibili_session().await?;
             info!("登录成功，UID: {}", session.mid);
             let device_buvid = select_bilibili_device_interactively(&session).await?;
-            let engine_rt = tokio::runtime::Runtime::new().context("Failed to create engine runtime")?;
-            start_bilibili_engine_core(base_url, room_id, session, device_buvid, engine_rt)
-                .await
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
+            start_bilibili_engine_core(
+                base_url,
+                room_id,
+                session,
+                device_buvid,
+                tokio::runtime::Handle::current(),
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
         } else {
             // --- DLNA 模式 ---
             let controller = DlnaController::new();
             let device = select_dlna_device_interactively(&controller).await?;
-            let engine_rt = tokio::runtime::Runtime::new().context("Failed to create engine runtime")?;
-            start_engine_core(base_url, room_id, device.location.clone(), engine_rt)
-                .await
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
+            start_engine_core(
+                base_url,
+                room_id,
+                device.location.clone(),
+                tokio::runtime::Handle::current(),
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
         }
 
         pb.set_draw_target(ProgressDrawTarget::stdout());

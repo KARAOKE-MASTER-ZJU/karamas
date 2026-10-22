@@ -159,16 +159,20 @@ impl PlaylistManager {
 
     // 根据环境变量切换同步驱动（WS / POLLING）
     // 环境变量：KTV_SYNC_MODE = "WS" 或 "POLLING"（不区分大小写），默认为 WS
-    pub fn start_sync<F>(&self, f_on_update: F)
+    pub fn start_sync<F>(
+        &self,
+        runtime: &tokio::runtime::Handle,
+        f_on_update: F,
+    ) -> tokio::task::JoinHandle<()>
     where
         F: Fn(String) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
     {
         let mode = env::var("KTV_SYNC_MODE").unwrap_or_else(|_| "WS".to_string());
         info!("播放列表同步模式: {}", mode);
         if mode.to_uppercase() != "POLLING" {
-            self.start_ws_update(f_on_update);
+            self.start_ws_update(runtime, f_on_update)
         } else {
-            self.start_periodic_update(f_on_update);
+            self.start_periodic_update(runtime, f_on_update)
         }
     }
 
@@ -190,12 +194,16 @@ impl PlaylistManager {
         Ok(())
     }
 
-    fn start_ws_update<F>(&self, mut f_on_update: F)
+    fn start_ws_update<F>(
+        &self,
+        runtime: &tokio::runtime::Handle,
+        mut f_on_update: F,
+    ) -> tokio::task::JoinHandle<()>
     where
         F: Fn(String) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
     {
         let self_clone = self.clone();
-        tokio::spawn(async move {
+        runtime.spawn(async move {
             /*
                这是维护WebSocket连接的循环
                负责连接、重连
@@ -398,15 +406,19 @@ impl PlaylistManager {
                 tokio::time::sleep(Duration::from_secs(3)).await;
                 debug!("重连 WS...");
             }
-        });
+        })
     }
 
-    pub fn start_periodic_update<F>(&self, mut f_on_update: F)
+    pub fn start_periodic_update<F>(
+        &self,
+        runtime: &tokio::runtime::Handle,
+        mut f_on_update: F,
+    ) -> tokio::task::JoinHandle<()>
     where
         F: Fn(String) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
     {
         let self_clone = self.clone();
-        tokio::spawn(async move {
+        runtime.spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_millis(300));
             let mut song_playing = None;
             loop {
@@ -415,7 +427,7 @@ impl PlaylistManager {
                     error!("定时更新播放列表失败: {}", e);
                 }
             }
-        });
+        })
     }
 
     /// Read song and hash from one authoritative room response, without consuming
@@ -638,7 +650,7 @@ async fn test_playlist_manager() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // --- 后台任务开始 ---
-    manager.start_periodic_update(|url: String| {
+    manager.start_periodic_update(&tokio::runtime::Handle::current(), |url: String| {
         println!("Song singing changed to {}!", url);
         Box::pin(async {})
     });
