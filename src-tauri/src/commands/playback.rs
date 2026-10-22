@@ -1,0 +1,129 @@
+use crate::{
+    error::{CommandError, CommandResult},
+    models::{PlaybackState, RecastResult},
+    state::current_engine,
+};
+use std::sync::{Arc, atomic::Ordering};
+
+/// 轮询播放状态并驱动核心库的自动切歌；未连接时返回 null。
+#[tauri::command]
+pub async fn poll_playback() -> CommandResult<Option<PlaybackState>> {
+    let ctx = match current_engine() {
+        Ok(ctx) => ctx,
+        Err(error) if error.code == "NOT_CONNECTED" => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let (current, total) = casting_core::poll_playback_progress().await;
+    // 将核心库表示无效进度的负数转换为 null，保留有效的零进度。
+    let result = PlaybackState {
+        song_id: ctx.playlist_manager.get_song_id().await,
+        title: ctx.playlist_manager.get_song_title().await,
+        current_secs: u32::try_from(current).ok(),
+        total_secs: u32::try_from(total).ok(),
+        is_playing: ctx.is_playing.load(Ordering::SeqCst),
+        queued_count: ctx.playlist_manager.get_queued_count().await,
+        sung_count: ctx.playlist_manager.get_sung_count().await,
+        quality_qn: ctx.caster.get_quality().ok().map(|q| q.as_qn()),
+        danmaku: ctx.caster.get_danmaku().ok(),
+        capabilities: ctx.caster.capabilities().into(),
+    };
+    // 重连期间不把旧会话的结果返回给界面。
+    if !current_engine().is_ok_and(|current| Arc::ptr_eq(&current, &ctx)) {
+        return Ok(None);
+    }
+    Ok(Some(result))
+}
+
+/// 切换播放状态，返回是否正在播放。
+#[tauri::command]
+pub async fn toggle_pause() -> CommandResult<bool> {
+    Ok(casting_core::toggle_pause_core().await?)
+}
+
+/// 等待点歌台确认切换下一首的请求。
+#[tauri::command]
+pub async fn next_song() -> CommandResult<()> {
+    Ok(casting_core::trigger_next_song().await?)
+}
+
+/// 等待点歌台确认切换上一首的请求。
+#[tauri::command]
+pub async fn previous_song() -> CommandResult<()> {
+    Ok(casting_core::trigger_prev_song().await?)
+}
+
+/// 重新投屏当前曲目，并等待核心库返回结果。
+#[tauri::command]
+pub async fn recast_current_song() -> CommandResult<RecastResult> {
+    let ctx = current_engine()?;
+    match casting_core::recast_current_song(&ctx).await {
+        1 => Ok(RecastResult::Played),
+        0 => Ok(RecastResult::NoCurrentSong),
+        -2 => Ok(RecastResult::Busy),
+        _ => Err(CommandError::new(
+            "PLAYBACK_FAILED",
+            "重新投屏失败或超时，请查看日志",
+        )),
+    }
+}
+
+/// 跳转到指定秒数。
+#[tauri::command]
+pub async fn seek(seconds: u32) -> CommandResult<()> {
+    Ok(casting_core::jump_to_secs(seconds).await?)
+}
+
+/// 设置绝对音量，返回设置后的值。
+#[tauri::command]
+pub async fn set_volume(volume: u32) -> CommandResult<u32> {
+    Ok(casting_core::set_volume_core(volume).await?)
+}
+
+/// 读取支持绝对音量的设备音量。
+#[tauri::command]
+pub async fn get_volume() -> CommandResult<u32> {
+    Ok(casting_core::get_volume_core().await?)
+}
+
+/// 调高或调低音量，步长限定在有效音量范围内。
+#[tauri::command]
+pub async fn change_volume(step: u32, increase: bool) -> CommandResult<()> {
+    if step > 100 {
+        return Err(CommandError::new(
+            "INVALID_ARGUMENT",
+            "音量步长必须在 0 到 100 之间",
+        ));
+    }
+    if increase {
+        casting_core::volume_up_core(step).await?;
+    } else {
+        casting_core::volume_down_core(step).await?;
+    }
+    Ok(())
+}
+
+/// 设置设备弹幕状态。
+#[tauri::command]
+pub async fn set_danmaku(enabled: bool) -> CommandResult<bool> {
+    Ok(casting_core::set_danmaku_core(enabled).await?)
+}
+
+/// 校验协议清晰度数值后调用核心库。
+#[tauri::command]
+pub async fn set_quality(qn: u32) -> CommandResult<u32> {
+    let quality = casting_core::cast::Quality::from_qn(qn)
+        .ok_or_else(|| CommandError::new("INVALID_ARGUMENT", "不支持的清晰度"))?;
+    Ok(casting_core::set_quality_core(quality).await?.as_qn())
+}
+
+/// 查询当前歌曲可选的 B站分 P。
+#[tauri::command]
+pub async fn get_current_bilibili_parts() -> CommandResult<casting_core::CurrentBilibiliParts> {
+    Ok(casting_core::get_current_bilibili_parts_core().await?)
+}
+
+/// 提交分 P 修改，返回是否已提交。
+#[tauri::command]
+pub async fn select_current_bilibili_part(song_id: String, page_index: u32) -> CommandResult<bool> {
+    Ok(casting_core::select_current_bilibili_part_core(&song_id, page_index).await?)
+}

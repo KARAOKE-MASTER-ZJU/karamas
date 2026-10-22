@@ -2542,8 +2542,12 @@ name = "ktv-casting-app"
 version = "0.1.0"
 dependencies = [
  "ktv-casting",
+ "log",
+ "serde",
  "tauri",
  "tauri-build",
+ "tokio",
+ "url",
 ]
 
 [[package]]
