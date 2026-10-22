@@ -1,6 +1,8 @@
-pub mod bilibili_caster;
-pub mod dlna_caster;
+//! 设备能力、控制契约和协议实现。
+pub mod bilibili;
+pub mod dlna;
 pub mod progress;
+mod request;
 
 use async_trait::async_trait;
 use std::fmt;
@@ -96,34 +98,6 @@ impl fmt::Display for CastError {
 }
 
 impl std::error::Error for CastError {}
-
-/// Retry control requests only on timeout, before receiving response headers.
-/// Media preparation and response body reads stay outside this loop.
-pub(crate) async fn retry_cast_request<T, F, Fut>(context: &str, mut send: F) -> Result<T, reqwest::Error>
-where
-    F: FnMut() -> Fut,
-    Fut: std::future::Future<Output = Result<T, reqwest::Error>>,
-{
-    for attempt in 0..=2 {
-        match send().await {
-            Err(error) if attempt < 2 && error.is_timeout() => {
-                log::warn!(
-                    "{}：请求超时，1 秒后重发（{}/2），错误={}",
-                    context,
-                    attempt + 1,
-                    error
-                );
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            }
-            result => return result,
-        }
-    }
-    unreachable!("the third attempt always returns")
-}
-
-#[cfg(test)]
-#[path = "../../test/cast_request.rs"]
-mod request_tests;
 
 #[async_trait]
 pub trait Caster: Send + Sync {
