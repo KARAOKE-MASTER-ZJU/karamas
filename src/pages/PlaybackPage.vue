@@ -1,17 +1,9 @@
 <!-- 播放页面 -->
 
 <script setup lang="ts">
-import {
-  Cast,
-  Music2,
-  SkipBack,
-  Play,
-  Pause,
-  SkipForward,
-  Volume2,
-  Minus,
-  Plus,
-} from "@lucide/vue";
+import { Cast, Music2, SkipBack, Play, Pause, SkipForward } from "@lucide/vue";
+import PlaybackProgress from "@/components/playback/PlaybackProgress.vue";
+import VolumeControl from "@/components/playback/VolumeControl.vue";
 import { computed } from "vue";
 import { storeToRefs } from "pinia";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -23,20 +15,6 @@ const casting = useCastingStore();
 const { notify } = useOperationNotice();
 const { playback, volume } = storeToRefs(casting);
 const room = computed(() => casting.room ?? preferences.value);
-const progress = computed(() => {
-  if (playback.value?.currentSecs == null || !playback.value.totalSecs)
-    return 0;
-  return Math.min(
-    100,
-    (100 * playback.value.currentSecs) / playback.value.totalSecs,
-  );
-});
-function time(seconds: number | null | undefined) {
-  if (seconds == null) return "--:--";
-  return `${Math.floor(seconds / 60)
-    .toString()
-    .padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
-}
 async function run(action: () => Promise<unknown>) {
   try {
     await action();
@@ -50,8 +28,7 @@ function previousSong() {
 function nextSong() {
   void run(() => casting.control(castingApi.nextSong));
 }
-function seek(event: Event) {
-  const seconds = Number((event.target as HTMLInputElement).value);
+function seek(seconds: number) {
   void run(() => casting.control(() => castingApi.seek(seconds)));
 }
 </script>
@@ -90,29 +67,12 @@ function seek(event: Event) {
           <h3>{{ playback?.title || "暂无播放内容" }}</h3>
         </div>
       </div>
-      <div class="progress-track">
-        <div class="progress-fill" :style="{ width: `${progress}%` }" />
-        <input
-          class="progress-input"
-          type="range"
-          min="0"
-          :max="playback?.totalSecs || 1"
-          :value="playback?.currentSecs ?? 0"
-          :disabled="
-            !playback?.capabilities.seek ||
-            !playback?.totalSecs ||
-            playback.currentSecs === null ||
-            casting.busy
-          "
-          aria-label="播放进度"
-          :aria-valuetext="time(playback?.currentSecs)"
-          @change="seek"
-        />
-      </div>
-      <div class="time-labels">
-        <span>{{ time(playback?.currentSecs) }}</span
-        ><span>{{ time(playback?.totalSecs) }}</span>
-      </div>
+      <PlaybackProgress
+        :current-secs="playback?.currentSecs ?? null"
+        :total-secs="playback?.totalSecs ?? null"
+        :disabled="!playback?.capabilities.seek || casting.busy"
+        @seek="seek"
+      />
       <fieldset
         class="player-controls"
         :disabled="!casting.connected || casting.busy"
@@ -133,45 +93,13 @@ function seek(event: Event) {
           <SkipForward :size="24" />
         </button>
       </fieldset>
-      <div class="volume-heading">
-        <label for="volume"><Volume2 :size="16" />音量</label>
-      </div>
-      <fieldset
-        class="volume-control"
+      <VolumeControl
+        :volume="volume"
         :disabled="!casting.connected || casting.busy"
-      >
-        <legend class="sr-only">音量控制，连接设备后可用</legend>
-        <button
-          class="icon-button"
-          aria-label="降低音量"
-          @click="run(() => casting.changeVolume(false))"
-        >
-          <Minus :size="18" />
-        </button>
-        <input
-          id="volume"
-          type="range"
-          min="0"
-          max="100"
-          :value="volume ?? 0"
-          :disabled="!playback?.capabilities.absoluteVolume || volume === null"
-          aria-label="音量"
-          @change="
-            run(() =>
-              casting.setVolume(
-                Number(($event.target as HTMLInputElement).value),
-              ),
-            )
-          "
-        />
-        <button
-          class="icon-button"
-          aria-label="提高音量"
-          @click="run(() => casting.changeVolume(true))"
-        >
-          <Plus :size="18" />
-        </button>
-      </fieldset>
+        :absolute="!!playback?.capabilities.absoluteVolume"
+        @change="(increase) => run(() => casting.changeVolume(increase))"
+        @set-volume="(value) => run(() => casting.setVolume(value))"
+      />
     </section>
   </div>
 </template>
@@ -230,41 +158,9 @@ function seek(event: Event) {
   background: var(--subtle);
   color: var(--muted);
 }
-.progress-track {
-  position: relative;
-  height: 4px;
-  background: var(--line);
-  border-radius: 2px;
-}
-.progress-fill {
-  height: 100%;
-  border-radius: inherit;
-  background: var(--accent);
-}
-.progress-input {
-  position: absolute;
-  inset: -8px 0;
-  width: 100%;
-  height: 20px;
-  margin: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-.progress-track:has(input:focus-visible) {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-}
 .track-placeholder > div {
   min-width: 0;
   overflow-wrap: anywhere;
-}
-.time-labels {
-  display: flex;
-  justify-content: space-between;
-  color: var(--muted);
-  font-size: 12px;
-  margin-top: 8px;
-  font-variant-numeric: tabular-nums;
 }
 .player-controls {
   display: flex;
@@ -282,35 +178,6 @@ function seek(event: Event) {
   place-items: center;
   background: var(--accent-soft);
   color: var(--accent);
-}
-.volume-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  max-width: 320px;
-  margin: 0 auto 4px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 20px;
-}
-.volume-heading label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.volume-control {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 0 auto;
-  max-width: 336px;
-}
-.volume-control input {
-  flex: 1;
-  width: 0;
-  min-width: 0;
-  margin: 0;
-  accent-color: var(--accent);
 }
 @media (max-width: 640px) {
   .player-section > h2 {

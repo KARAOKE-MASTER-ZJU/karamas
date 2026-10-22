@@ -1,13 +1,11 @@
 <script setup lang="ts">
-import { X } from "@lucide/vue";
-import { onMounted, ref, watch } from "vue";
+import AppDialog from "@/components/base/AppDialog.vue";
+import { ref, watch } from "vue";
 import { toCanvas } from "qrcode";
 import { useBilibiliStore } from "@/stores/bilibili";
 const auth = useBilibiliStore();
-const dialog = ref<HTMLDialogElement | null>(null);
 const canvas = ref<HTMLCanvasElement | null>(null);
 const qrError = ref("");
-onMounted(() => dialog.value?.showModal());
 watch(
   [() => auth.qrUrl, canvas],
   async ([url]) => {
@@ -29,23 +27,12 @@ function retry() {
 </script>
 
 <template>
-  <dialog
-    ref="dialog"
+  <AppDialog
     class="login-dialog"
-    aria-labelledby="login-title"
-    @click="$event.target === dialog && dialog?.close()"
+    title="哔哩哔哩扫码登录"
+    close-label="关闭登录"
     @close="auth.closeLogin"
   >
-    <div class="dialog-heading">
-      <h2 id="login-title" tabindex="-1" autofocus>哔哩哔哩扫码登录</h2>
-      <button
-        class="icon-button"
-        aria-label="关闭登录"
-        @click="dialog?.close()"
-      >
-        <X />
-      </button>
-    </div>
     <div class="qr-content" :aria-busy="auth.loggingIn && !auth.qrUrl">
       <canvas
         v-show="auth.qrUrl && !qrError"
@@ -67,32 +54,10 @@ function retry() {
         重新获取
       </button>
     </div>
-  </dialog>
+  </AppDialog>
 </template>
 
 <style scoped>
-.login-dialog {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface);
-  color: var(--text);
-  width: min(460px, calc(100% - 40px));
-  padding: 24px;
-  box-shadow: 0 16px 64px #0003;
-}
-.login-dialog::backdrop {
-  background: #0006;
-}
-.dialog-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 20px;
-  gap: 12px;
-}
-.dialog-heading h2:focus {
-  outline: none;
-}
 .qr-content {
   display: flex;
   flex-direction: column;
