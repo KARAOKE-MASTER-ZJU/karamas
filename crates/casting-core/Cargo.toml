@@ -73,6 +73,3 @@ default = []
 
 [dev-dependencies]
 tokio = { version = "1.49.0", features = ["test-util"] }
-
-[patch.crates-io]
-rupnp = { git = "https://github.com/aspromise/rupnp.git", branch = "fix/control-endpoint-leading-slash" }
