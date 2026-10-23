@@ -192,6 +192,18 @@ export const useCastingStore = defineStore("casting", () => {
       controlling.value = false;
     }
   }
+  async function play() {
+    await control(async () => {
+      const playing = await castingApi.play();
+      if (playback.value) playback.value.isPlaying = playing;
+    });
+  }
+  async function pause() {
+    await control(async () => {
+      const playing = await castingApi.pause();
+      if (playback.value) playback.value.isPlaying = playing;
+    });
+  }
   async function togglePause() {
     await control(async () => {
       const playing = await castingApi.togglePause();
@@ -262,6 +274,8 @@ export const useCastingStore = defineStore("casting", () => {
     disconnect,
     poll,
     control,
+    play,
+    pause,
     togglePause,
     changeVolume,
     setVolume,

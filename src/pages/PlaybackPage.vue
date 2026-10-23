@@ -95,7 +95,8 @@ const room = computed(() => casting.room ?? preferences.value);
         :sung-count="playback?.sungCount ?? 0"
         @previous="controls.previousSong"
         @next="controls.nextSong"
-        @toggle-pause="controls.togglePause"
+        @play="controls.play"
+        @pause="controls.pause"
       />
       <VolumeControl
         :volume="volume"

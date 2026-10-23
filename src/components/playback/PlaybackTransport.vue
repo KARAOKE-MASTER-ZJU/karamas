@@ -7,7 +7,12 @@ defineProps<{
   queuedCount: number;
   sungCount: number;
 }>();
-const emit = defineEmits<{ previous: []; next: []; togglePause: [] }>();
+const emit = defineEmits<{
+  previous: [];
+  next: [];
+  play: [];
+  pause: [];
+}>();
 </script>
 
 <template>
@@ -25,7 +30,7 @@ const emit = defineEmits<{ previous: []; next: []; togglePause: [] }>();
       class="play-button"
       :aria-label="isPlaying ? '暂停' : '播放'"
       :disabled="!hasSong"
-      @click="emit('togglePause')"
+      @click="isPlaying ? emit('pause') : emit('play')"
     >
       <component :is="isPlaying ? Pause : Play" :size="25" />
     </button>

@@ -34,6 +34,18 @@ pub async fn poll_playback() -> CommandResult<Option<PlaybackState>> {
     Ok(Some(result))
 }
 
+/// 恢复播放，成功后返回 true。
+#[tauri::command]
+pub async fn play() -> CommandResult<bool> {
+    Ok(casting_core::play_core().await?)
+}
+
+/// 暂停播放，成功后返回 false。
+#[tauri::command]
+pub async fn pause() -> CommandResult<bool> {
+    Ok(casting_core::pause_core().await?)
+}
+
 /// 切换播放状态，返回是否正在播放。
 #[tauri::command]
 pub async fn toggle_pause() -> CommandResult<bool> {

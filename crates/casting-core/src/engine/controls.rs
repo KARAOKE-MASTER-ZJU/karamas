@@ -1,6 +1,6 @@
 use super::state::{ENGINE_STATE, EngineContext};
 use crate::{cast, error::CoreError};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// 等待点歌台确认下一首请求，设备播放由后续歌单同步处理。
 pub async fn trigger_next_song() -> Result<(), CoreError> {
@@ -36,6 +36,40 @@ pub async fn jump_to_secs(target_secs: u32) -> Result<(), CoreError> {
     Ok(())
 }
 
+/// 恢复播放，成功后返回 true。
+pub async fn play_core() -> Result<bool, CoreError> {
+    set_playing_core(true).await
+}
+
+/// 暂停播放，成功后返回 false。
+pub async fn pause_core() -> Result<bool, CoreError> {
+    set_playing_core(false).await
+}
+
+async fn set_playing_core(playing: bool) -> Result<bool, CoreError> {
+    let ctx = {
+        let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
+        guard.as_ref().cloned().ok_or("Engine not initialized")?
+    };
+    let _playback = ctx.playback_lock.lock().await;
+    apply_playback_state(ctx.caster.as_ref(), &ctx.is_playing, playing).await
+}
+
+// 调用方持有 playback_lock；本地状态可能过期，始终向设备发送明确命令。
+async fn apply_playback_state(
+    caster: &dyn cast::Caster,
+    is_playing: &AtomicBool,
+    playing: bool,
+) -> Result<bool, CoreError> {
+    if playing {
+        caster.resume().await?;
+    } else {
+        caster.pause().await?;
+    }
+    is_playing.store(playing, Ordering::SeqCst);
+    Ok(playing)
+}
+
 /// 切换播放/暂停状态，返回切换后的状态
 pub async fn toggle_pause_core() -> Result<bool, CoreError> {
     let ctx = {
@@ -50,14 +84,7 @@ pub(super) async fn toggle_pause(ctx: &EngineContext) -> Result<bool, CoreError>
     let _playback = ctx.playback_lock.lock().await;
     let target_state = !ctx.is_playing();
 
-    if target_state {
-        ctx.caster.resume().await?;
-    } else {
-        ctx.caster.pause().await?;
-    }
-    ctx.is_playing.store(target_state, Ordering::SeqCst);
-
-    Ok(target_state)
+    apply_playback_state(ctx.caster.as_ref(), &ctx.is_playing, target_state).await
 }
 
 /// 设置音量，返回设置后的值

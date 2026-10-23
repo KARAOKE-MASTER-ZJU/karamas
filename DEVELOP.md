@@ -18,6 +18,12 @@ Cargo 包名为 `ktv-casting`，库名为 `ktv_casting_lib`，应用通过依赖
 
 `engine` 负责组合设备协议、房间同步和媒体服务；`cast`、`playlist`、`media` 和 `sources` 不反向依赖引擎。内部调用使用所属模块的接口，`lib.rs` 只声明模块和导出宿主入口。单元测试跟随所属模块。
 
+## 播放与暂停接口
+
+界面根据按钮显示的动作调用独立的 `play` 或 `pause` Tauri 命令，分别转发到核心库的 `play_core()` 和 `pause_core()`。播放成功返回 `true`，暂停成功返回 `false`，前端据此更新 `playback.isPlaying`。命令失败时保留原状态。
+
+两个接口始终向设备发送明确命令，不根据本地记录跳过操作，并与新曲播放共用 `playback_lock`。原有 `toggle_pause` / `toggle_pause_core()` 和前端 `togglePause()` 保留。播放状态轮询和自动切歌沿用原有逻辑。
+
 ## 检查命令
 
 浏览器预览用于检查界面，投屏和登录需通过 `pnpm tauri dev` 启动。

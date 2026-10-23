@@ -22,6 +22,8 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         session::get_dlna_direct,
         session::set_dlna_direct,
         playback::poll_playback,
+        playback::play,
+        playback::pause,
         playback::toggle_pause,
         playback::next_song,
         playback::previous_song,

@@ -25,6 +25,8 @@ export function usePlaybackControls() {
     recast,
     previousSong: () => run(() => casting.control(castingApi.previousSong)),
     nextSong: () => run(() => casting.control(castingApi.nextSong)),
+    play: () => run(casting.play),
+    pause: () => run(casting.pause),
     togglePause: () => run(casting.togglePause),
     seek: (seconds: number) => run(() => casting.seek(seconds)),
     changeVolume: (increase: boolean) =>
