@@ -58,7 +58,8 @@ const emit = defineEmits<{ recast: [] }>();
   line-height: 1.6;
   color: var(--muted);
 }
-.recast-button {
+.recast-button,
+.recast-button:hover:not(:disabled) {
   color: var(--accent);
 }
 .spinning {

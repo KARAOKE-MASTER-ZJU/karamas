@@ -188,7 +188,7 @@ fieldset {
   min-height: 36px;
 }
 .text-button:hover {
-  background: var(--accent-soft);
+  background: var(--hover);
 }
 .icon-button {
   display: inline-flex;
