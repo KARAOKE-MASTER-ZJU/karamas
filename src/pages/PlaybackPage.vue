@@ -66,7 +66,7 @@ const controls = usePlaybackControls();
         :song-id="playback?.songId ?? null"
         :queued-count="playback?.queuedCount ?? null"
         :sung-count="playback?.sungCount ?? null"
-        :disabled="!casting.connected || casting.busy"
+        :disabled="!casting.connected || casting.sessionBusy"
         :recasting="recasting"
         @recast="controls.recast"
       />
@@ -74,17 +74,17 @@ const controls = usePlaybackControls();
         v-if="playback?.songId"
         :key="playback.songId"
         :song-id="playback.songId"
-        :disabled="casting.busy"
+        :disabled="casting.sessionBusy"
       />
       <PlaybackProgress
         :key="playback?.songId ?? undefined"
         :current-secs="playback?.currentSecs ?? null"
         :total-secs="playback?.totalSecs ?? null"
-        :disabled="!playback?.capabilities.seek || casting.busy"
+        :disabled="!playback?.capabilities.seek || casting.sessionBusy"
         @seek="controls.seek"
       />
       <PlaybackTransport
-        :disabled="!casting.connected || casting.busy"
+        :disabled="!casting.connected || casting.sessionBusy"
         :is-playing="playback?.isPlaying ?? false"
         :has-song="!!playback?.songId"
         :queued-count="playback?.queuedCount ?? 0"
@@ -96,7 +96,7 @@ const controls = usePlaybackControls();
       />
       <VolumeControl
         :volume="volume"
-        :disabled="!casting.connected || casting.busy"
+        :disabled="!casting.connected || casting.sessionBusy"
         :absolute="!!playback?.capabilities.absoluteVolume"
         @change="controls.changeVolume"
         @set-volume="controls.setVolume"
@@ -107,7 +107,7 @@ const controls = usePlaybackControls();
         :dlna-proxy-enabled="casting.dlnaProxyEnabled"
         :quality-qn="playback?.qualityQn ?? null"
         :danmaku="playback?.danmaku ?? null"
-        :disabled="casting.busy"
+        :disabled="casting.sessionBusy"
         @quality="controls.setQuality"
         @danmaku="controls.setDanmaku"
       />

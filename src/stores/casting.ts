@@ -22,13 +22,13 @@ export const useCastingStore = defineStore("casting", () => {
   const connected = computed(
     () => activeDevice.value !== null || playback.value !== null,
   );
-  const busy = computed(
+  const sessionBusy = computed(
     () =>
       connecting.value ||
       enteringRoom.value ||
-      controlling.value ||
       changingDlnaProxy.value,
   );
+  const busy = computed(() => sessionBusy.value || controlling.value);
   const auth = useBilibiliStore();
   // 会话变化后丢弃尚未返回的旧状态，避免重连时界面回退。
   let revision = 0;
@@ -211,15 +211,22 @@ export const useCastingStore = defineStore("casting", () => {
     });
   }
   async function changeVolume(increase: boolean) {
-    await control(async () => {
+    if (!connected.value || sessionBusy.value) return;
+    if (playback.value?.capabilities.absoluteVolume) {
+      if (volume.value !== null)
+        await setVolume(volume.value + (increase ? 5 : -5));
+    } else {
       await castingApi.changeVolume(increase);
-      await refreshVolume();
-    });
+    }
   }
   async function setVolume(value: number) {
-    await control(async () => {
-      volume.value = await castingApi.setVolume(value);
-    });
+    if (!connected.value || sessionBusy.value) return;
+    if (!playback.value?.capabilities.absoluteVolume) return;
+    // 立即显示目标值，连续操作无需等待响应；旧的音量读取不能覆盖它。
+    ++revision;
+    const target = Math.max(0, Math.min(100, value));
+    volume.value = target;
+    await castingApi.setVolume(target);
   }
 
   async function recast() {
@@ -268,6 +275,7 @@ export const useCastingStore = defineStore("casting", () => {
     controlling,
     recasting,
     connected,
+    sessionBusy,
     busy,
     connect,
     enterRoom,

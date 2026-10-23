@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Volume2, Minus, Plus } from "@lucide/vue";
-import { useId } from "vue";
+import { ref, useId } from "vue";
 
 defineProps<{ volume: number | null; disabled: boolean; absolute: boolean }>();
 const emit = defineEmits<{
@@ -8,8 +8,13 @@ const emit = defineEmits<{
   setVolume: [value: number];
 }>();
 const inputId = useId();
+const draft = ref<number | null>(null);
+function preview(event: Event) {
+  draft.value = Number((event.target as HTMLInputElement).value);
+}
 function setVolume(event: Event) {
   emit("setVolume", Number((event.target as HTMLInputElement).value));
+  draft.value = null;
 }
 </script>
 
@@ -22,6 +27,7 @@ function setVolume(event: Event) {
     <button
       class="icon-button"
       aria-label="降低音量"
+      :disabled="absolute && volume === null"
       @click="emit('change', false)"
     >
       <Minus :size="18" />
@@ -31,14 +37,18 @@ function setVolume(event: Event) {
       type="range"
       min="0"
       max="100"
-      :value="volume ?? 0"
+      :value="draft ?? volume ?? 0"
       :disabled="!absolute || volume === null"
       aria-label="音量"
+      @input="preview"
       @change="setVolume"
+      @pointercancel="draft = null"
+      @blur="draft = null"
     />
     <button
       class="icon-button"
       aria-label="提高音量"
+      :disabled="absolute && volume === null"
       @click="emit('change', true)"
     >
       <Plus :size="18" />
