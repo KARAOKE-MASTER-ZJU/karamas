@@ -81,11 +81,11 @@ flowchart LR
 
 `cast/bilibili/broadcast` 通过 TLS 连接 `broadcast.chat.bilibili.com:7824`，在 `BroadcastTunnel/CreateTunnel` 双向流上完成 Auth，并分别订阅 `Tv/Proj` 和 `Tv/ProjCore`。引擎启动时在后台建立订阅，播放直接发送 HTTP 命令，不等待订阅就绪。连接、鉴权、订阅失败或 15 秒握手超时只记录日志，不影响房间连接和播放。每次播放会检查后台任务，任务已退出时重新发起订阅。
 
-发送端 buvid 保存在应用现有的持久化配置 `ktv-casting.preferences.v1` 的 `bilibiliBuvid` 字段中。扫码登录时生成并保存，投屏时复用；退出账号不清除这个字段。当前使用随机生成的安装标识。登录请求、广播 metadata、HTTP 命令的 `extra.buvid` 和 `device_info.pink_buvid` 共用这个值，由应用传入核心库。
+发送端 buvid 保存在应用现有的持久化配置 `ktv-casting.preferences.v1` 的 `bilibiliBuvid` 字段中。扫码登录时生成并保存，投屏时复用；退出账号不清除这个字段。当前使用随机生成的安装标识。登录请求、广播 metadata、HTTP 命令的 `extra.buvid` 共用这个值，由应用传入核心库。
 
-CLI 和实机检查示例通过环境变量 `BILIBILI_BUVID` 接收发送端标识。JNI 的登录和投屏入口增加 `sender_buvid` 参数，由宿主从自己的持久化配置传入。
+CLI 和实机检查示例通过环境变量 `BILIBILI_BUVID` 接收发送端标识。JNI 的登录和投屏入口通过 `sender_buvid` 参数接收发送端标识，由宿主从自己的持久化配置传入。
 
-目标电视使用设备列表中的 `ott_buvid`。播放参数采用普通 UGC 格式，顶层传 `aid`、`cid` 和 `video_type=0`，`extra.type=0`。每次播放生成新的 `bizSessionId`，广播接收端据此过滤旧会话消息，并校验消息中提供的 aid、cid。buvid 持久化仅保持发送端身份，当前播放会话仍保存在内存中。
+目标电视使用设备列表中的 `ott_buvid`。HTTP 请求通过 `extra.buvid` 指定回传接收端，通过 `extra.bizSessionId` 关联播放会话。播放使用顶层 `cid`、`video_type=4`，以及 `extra.oid=aid`、`extra.type=101`。每次播放生成新的 `bizSessionId`，广播接收端据此过滤旧会话消息，并校验消息中提供的 aid、cid。buvid 持久化仅保持发送端身份，当前播放会话仍保存在内存中。
 
 接收循环每 25 秒发送 Heartbeat，按服务端要求回复 MessageAck；订阅、ACK 和心跳通过同一发送者串行发送。`-bin` metadata 使用原始 protobuf 字节，由 tonic 编码。协议字段子集保存在 `broadcast/proto.rs`，字段编号与参考 Go 项目附带的 protobuf 对应，构建时无需 protoc。
 
@@ -100,8 +100,6 @@ HTTP 播放成功后启用当前会话的进度；若回传先到，保留已收
 ```bash
 BILIBILI_BUVID=发送端标识 cargo run -p ktv-casting --example bilibili_broadcast_probe -- /path/to/bili_session.json BV号-page0
 ```
-
-2026-10-23 已用当前 Rust 实现完成实机验证：收到同一播放会话的 0、9、19、29 秒进度、恢复播放通知和 2606466 毫秒时长，监听结束后正常关闭广播连接。
 
 ## 会话结束
 

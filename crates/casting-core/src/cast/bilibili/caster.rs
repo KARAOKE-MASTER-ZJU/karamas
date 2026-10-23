@@ -1,6 +1,6 @@
 //! Bilibili 投屏器
 use super::{
-    broadcast::{BroadcastReceiver, MOBILE_BUILD},
+    broadcast::BroadcastReceiver,
     client::{API_HOST, APPKEY, bili_client, form_body},
     session::{BilibiliSession, now_ts},
 };
@@ -20,7 +20,6 @@ pub struct BilibiliCaster {
     mid: u64,
     device_buvid: String,
     broadcast: BroadcastReceiver,
-    session_id: String,
     #[cfg(test)]
     test_api: Option<(String, (u64, u32))>,
     // 保存配置项
@@ -36,7 +35,6 @@ impl BilibiliCaster {
             mid: session.mid,
             device_buvid,
             broadcast: BroadcastReceiver::new(buvid),
-            session_id: uuid::Uuid::new_v4().to_string(),
             #[cfg(test)]
             test_api: None,
             quality: AtomicU32::new(Quality::default().as_qn()) ,
@@ -69,7 +67,7 @@ impl BilibiliCaster {
         self.broadcast.start(&self.access_token, self.mid);
     }
 
-    /// 按普通 UGC 云投屏格式构建命令，携带广播接收端和播放会话标识。
+    /// 构建云投屏命令，携带广播接收端和播放会话标识。
     fn command_body(
         &self,
         command: u32,
@@ -78,9 +76,6 @@ impl BilibiliCaster {
         seek_ts: u32,
     ) -> String {
         let device_info = serde_json::json!({
-            "pink_mobi_app": "android",
-            "pink_build": MOBILE_BUILD,
-            "pink_buvid": self.broadcast.buvid,
             "ott_buvid": self.device_buvid,
             "ott_mid": self.mid,
             "ott_build": 108500,
@@ -92,11 +87,8 @@ impl BilibiliCaster {
         let mut full_extra = serde_json::json!({
             "accessKey": self.access_token.as_str(),
             "buvid": self.broadcast.buvid,
-            "sessionId": self.session_id,
-            "mobileVersion": MOBILE_BUILD,
-            "autoNext": false, "biz_id": 0, "oid": 0,
-            "userDesireSpeed": 1.0, "type": 0, "desc": 0, "proj_type": 1,
-            "danmakuSwitchSave": false
+            "autoNext": false, "biz_id": 6213332, "oid": oid,
+            "userDesireSpeed": 1.0, "type": 101, "userVipInfo": 1
         });
         if let Some(id) = self.broadcast.session_id() {
             full_extra["bizSessionId"] = id.into();
@@ -110,8 +102,6 @@ impl BilibiliCaster {
         let cmd_str = command.to_string();
         let seek_str = seek_ts.to_string();
         let ts_str = now_ts().to_string();
-        let aid_str = oid.to_string();
-        let build_str = MOBILE_BUILD.to_string();
 
         // 提取cid作为顶级参数（如果存在）
         let cid_str = full_extra.get("cid")
@@ -141,14 +131,8 @@ impl BilibiliCaster {
             ("device_info", &device_info),
             ("extra", &extra_str),
             ("seek_ts", &seek_str),
-            ("video_type", "0"),
-            ("aid", &aid_str),
-            ("epid", "0"),
-            ("season_id", "0"),
-            ("room_id", ""),
-            ("by_code", "false"),
-            ("danmakuSwitchSave", "false"),
-            ("build", &build_str),
+            ("video_type", "4"),
+            ("room_id", "0"),
             ("mobi_app", "android"),
             ("platform", "android"),
             ("s_locale", "zh-Hans_CN"),
@@ -185,7 +169,6 @@ impl BilibiliCaster {
             bili_client()
                 .post(&endpoint)
                 .header("Content-Type", "application/x-www-form-urlencoded")
-                .header("User-Agent", "Mozilla/5.0 BiliDroid/8.94.0 (android)")
                 .body(body.clone())
                 .send()
                 .await
@@ -284,7 +267,7 @@ impl Caster for BilibiliCaster {
         // extra的cid会被解析提取到外层
         self.start_broadcast();
         let session = self.broadcast.begin_play(aid, cid);
-        let extra = serde_json::json!({ "cid": cid, "bizSessionId": session.id, "quality": current_quality, "danmaku_switch": current_danmaku });
+        let extra = serde_json::json!({ "oid": aid, "cid": cid, "type": 101, "bizSessionId": session.id, "quality": current_quality, "danmaku_switch": current_danmaku });
 
         log::info!("[Bilibili] sending play command: aid={}, cid={}, page={}, extra={}", aid, cid, page, extra);
         if let Err(error) = self.send_cmd(1, aid, Some(extra), 0).await {
