@@ -74,6 +74,6 @@ function setVolume(event: Event) {
   width: 0;
   min-width: 0;
   margin: 0;
-  accent-color: var(--accent);
+  accent-color: var(--accent-base);
 }
 </style>

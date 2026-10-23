@@ -31,10 +31,17 @@
   --line: #e7e8ec;
   /* 控件边框色 */
   --input-line: #d7d9df;
-  /* 主题强调色 */
-  --accent: #ff3377;
+  /* 基础主题色 */
+  --accent-base: #ff3377;
+  /* 按 WebKit 控件机制调整 XYZ，浅色亮度上限为 0.5。 */
+  --accent: color(
+    from var(--accent-base) xyz-d65 calc(x * 0.5 / max(y, 0.5)) min(y, 0.5)
+      calc(z * 0.5 / max(y, 0.5))
+  );
+  /* 强调色背景上的文字 */
+  --on-accent: #fff;
   /* 半透明主题色 */
-  --accent-soft: rgb(255 51 119 / 10%);
+  --accent-soft: color-mix(in srgb, var(--accent) 10%, transparent);
   /* 警告色 */
   --warning: #a56a1b;
   /* 错误色 */
@@ -53,8 +60,14 @@
   --muted: #a0a3ad;
   --line: #30323a;
   --input-line: #444752;
-  --accent: #ff3377;
-  --accent-soft: rgb(255 51 119 / 16%);
+  /* 深色亮度下限为 0.5；sign(y) 处理纯黑的零亮度。 */
+  --accent: color(
+    from var(--accent-base) xyz-d65
+      calc((x + 1 - sign(y)) * max(y, 0.5) / max(y, 1 - sign(y))) max(y, 0.5)
+      calc((z + 1 - sign(y)) * max(y, 0.5) / max(y, 1 - sign(y)))
+  );
+  --on-accent: var(--surface);
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
   --warning: #f0bd6a;
   --error: #ffb1a9;
 }
@@ -170,7 +183,7 @@ fieldset {
 }
 .primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 .primary:hover {
   filter: brightness(0.95);
