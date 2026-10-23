@@ -37,7 +37,8 @@ function formatEntries(items: LogEntry[]) {
     )
     .join("\n");
 }
-const formatted = computed(() => formatEntries(entries.value));
+const displayEntries = computed(() => [...entries.value].reverse());
+const formatted = computed(() => formatEntries(displayEntries.value));
 
 async function copyLogs() {
   try {
@@ -126,7 +127,7 @@ async function exportLogs() {
     </p>
     <div class="log-list" role="log" aria-label="运行日志">
       <div
-        v-for="entry in entries"
+        v-for="entry in displayEntries"
         :key="entry.id"
         class="log-entry"
         :class="entry.level"
