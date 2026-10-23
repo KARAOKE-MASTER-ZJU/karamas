@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { Cast, ExternalLink } from "@lucide/vue";
-import { computed } from "vue";
 import { RouterLink } from "vue-router";
 import { storeToRefs } from "pinia";
 import NowPlaying from "@/components/playback/NowPlaying.vue";
@@ -9,16 +8,13 @@ import PlaybackTransport from "@/components/playback/PlaybackTransport.vue";
 import VolumeControl from "@/components/playback/VolumeControl.vue";
 import PlaybackOptions from "@/components/playback/PlaybackOptions.vue";
 import BilibiliPartsControl from "@/components/playback/BilibiliPartsControl.vue";
-import { usePreferencesStore } from "@/stores/preferences";
 import { useCastingStore } from "@/stores/casting";
 import { usePlaybackControls } from "@/composables/usePlaybackControls";
 import { openSongRoom } from "@/services/songRoom";
 
-const { preferences } = storeToRefs(usePreferencesStore());
 const casting = useCastingStore();
-const { playback, volume, activeDevice, recasting } = storeToRefs(casting);
+const { playback, volume, activeDevice, recasting, room } = storeToRefs(casting);
 const controls = usePlaybackControls();
-const room = computed(() => casting.room ?? preferences.value);
 </script>
 
 <template>
@@ -43,19 +39,19 @@ const room = computed(() => casting.room ?? preferences.value);
         <button
           type="button"
           class="session-chip room-chip"
-          :disabled="!room.serverUrl || !room.roomId"
+          :disabled="!room"
           :title="
-            room.serverUrl ? `打开点歌台：${room.serverUrl}` : '服务器未设置'
+            room ? `打开点歌台：${room.serverUrl}` : '未加入房间'
           "
           :aria-label="
-            room.serverUrl && room.roomId
+            room
               ? `打开房间 ${room.roomId} 的点歌台`
-              : '房间未设置'
+              : '未加入房间'
           "
-          @click="controls.run(() => openSongRoom(room))"
+          @click="room && controls.run(() => openSongRoom(room!))"
         >
-          <span>房间：{{ room.roomId || "未设置" }}</span>
-          <ExternalLink :size="12" aria-hidden="true" />
+          <span>{{ room ? `房间：${room.roomId}` : "未加入房间" }}</span>
+          <ExternalLink v-if="room" :size="12" aria-hidden="true" />
         </button>
       </div>
     </div>
