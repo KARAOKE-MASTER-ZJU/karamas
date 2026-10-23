@@ -79,23 +79,17 @@ flowchart LR
 
 ## 小电视状态回传
 
-`cast/bilibili/broadcast` 通过 TLS 连接 `broadcast.chat.bilibili.com:7824`，在 `BroadcastTunnel/CreateTunnel` 双向流上完成 Auth，并分别订阅 `Tv/Proj` 和 `Tv/ProjCore`。引擎启动时在后台建立订阅，播放直接发送 HTTP 命令，不等待订阅就绪。连接、鉴权、订阅失败或 15 秒握手超时只记录日志，不影响房间连接和播放。每次播放会检查后台任务，任务已退出时重新发起订阅。
+`cast/bilibili/broadcast` 通过 gRPC 连接 `broadcast.chat.bilibili.com:7824`，调用 `BroadcastTunnel/CreateTunnel`，鉴权后订阅 `Tv/Proj` 和 `Tv/ProjCore`。HTTP 负责下发控制命令，gRPC 回传用于同步进度和播放状态；订阅失败不阻塞播放。断开引擎时关闭订阅，广播断流后在下次播放时重连。
 
-发送端 buvid 保存在应用现有的持久化配置 `ktv-casting.preferences.v1` 的 `bilibiliBuvid` 字段中。扫码登录时生成并保存，投屏时复用；退出账号不清除这个字段。当前使用随机生成的安装标识。登录请求、广播 metadata、HTTP 命令的 `extra.buvid` 共用这个值，由应用传入核心库。
+关键参数：
 
-CLI 和实机检查示例通过环境变量 `BILIBILI_BUVID` 接收发送端标识。JNI 的登录和投屏入口通过 `sender_buvid` 参数接收发送端标识，由宿主从自己的持久化配置传入。
+- `extra.buvid` 与 gRPC metadata 的 `buvid` 一致，指定回传接收端。桌面端保存在偏好配置的 `bilibiliBuvid` 字段，登录和投屏复用；`ott_buvid` 是目标电视标识。
+- `extra.bizSessionId` 每次播放重新生成，用于关联当前曲目、过滤旧会话回传。
+- HTTP 播放使用顶层 `cid`、`video_type=4`，以及 `extra.oid=aid`、`extra.type=101`。
 
-目标电视使用设备列表中的 `ott_buvid`。HTTP 请求通过 `extra.buvid` 指定回传接收端，通过 `extra.bizSessionId` 关联播放会话。播放使用顶层 `cid`、`video_type=4`，以及 `extra.oid=aid`、`extra.type=101`。每次播放生成新的 `bizSessionId`，广播接收端据此过滤旧会话消息，并校验消息中提供的 aid、cid。buvid 持久化仅保持发送端身份，当前播放会话仍保存在内存中。
+回传中 `cmd=4` 为进度（秒），`5/6/7` 为暂停、恢复和停止，`13` 为时长（毫秒）。进度在回传间隔内按本地时钟推进，收到回传后校正。自动切歌仍由现有歌单逻辑处理。
 
-接收循环每 25 秒发送 Heartbeat，按服务端要求回复 MessageAck；订阅、ACK 和心跳通过同一发送者串行发送。`-bin` metadata 使用原始 protobuf 字节，由 tonic 编码。协议字段子集保存在 `broadcast/proto.rs`，字段编号与参考 Go 项目附带的 protobuf 对应，构建时无需 protoc。
-
-有效回传会同步当前播放会话，并写入 `BILI_BROADCAST` 的 `debug` 日志：`cmd=4` 校正位置，`5/6` 同步暂停和恢复，`7` 同步停止状态，`13` 更新时长。位置按秒处理，回传时长由毫秒转换为秒；缺少时长时保留曲目信息提供的时长。播放中在回传间隔内继续本地计时，暂停时冻结进度。暂停和恢复通知不使用缺省的 `seek_ts=0` 重置位置。
-
-HTTP 播放成功后启用当前会话的进度；若回传先到，保留已收到的位置、时长和播放状态。旧会话回传和晚到的旧播放响应不能覆盖新会话。界面与暂停按钮读取同步后的状态，时长优先使用投屏器提供的值。自动切歌沿用原有进度判断与请求流程，`hardware_progress` 保持 `false`，继续使用按会话隔离的本地计时，不启用 DLNA 的旧进度保护窗口。
-
-断开引擎会取消广播连接。握手超时也会清理后台任务。广播流异常退出后，下次播放会重新连接；当前尚未加入后台自动重连。
-
-桌面环境可用以下命令单独检查回传。该命令会开启 `BILI_BROADCAST` 的 `debug` 日志，要求账号下只有一台在线设备，会从头投放指定曲目，监听 40 秒后关闭广播连接，电视继续播放。确认日志里出现“电视状态回传”，不能只以 HTTP 播放命令成功判断链路正常。
+调用方将持久化的发送端标识传给核心库；CLI 使用环境变量 `BILIBILI_BUVID`，JNI 使用 `sender_buvid` 参数。调试日志位于 `BILI_BROADCAST`，级别为 `debug`。以下探针要求账号下只有一台在线设备，会从头投放指定曲目，监听 40 秒后退出，电视继续播放：
 
 ```bash
 BILIBILI_BUVID=发送端标识 cargo run -p ktv-casting --example bilibili_broadcast_probe -- /path/to/bili_session.json BV号-page0
