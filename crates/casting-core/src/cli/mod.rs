@@ -30,7 +30,11 @@ pub async fn run() -> Result<()> {
 
     if mode_input.trim() == "2" {
         // --- Bilibili 模式 ---
-        let session = acquire_bilibili_session().await?;
+        let sender_buvid = std::env::var("BILIBILI_BUVID")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| anyhow::anyhow!("请通过 BILIBILI_BUVID 配置发送端设备标识"))?;
+        let session = acquire_bilibili_session(&sender_buvid).await?;
         info!("登录成功，UID: {}", session.mid);
         let device_buvid = select_bilibili_device_interactively(&session).await?;
         start_bilibili_engine_core(
@@ -38,6 +42,7 @@ pub async fn run() -> Result<()> {
             room_id,
             session,
             device_buvid,
+            sender_buvid,
             tokio::runtime::Handle::current(),
         )
         .await

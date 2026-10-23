@@ -37,17 +37,20 @@ pub(super) fn current_bilibili_session() -> Option<crate::cast::bilibili::Bilibi
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
 pub extern "C" fn Java_zju_bangdream_ktv_casting_RustEngine_startBilibiliQrLogin(
-    _env: JNIEnv,
+    mut env: JNIEnv,
     _class: JClass,
+    sender_buvid: JString,
 ) {
     use crate::cast::bilibili::{login_qr, save_session};
+
+    let sender_buvid: String = env.get_string(&sender_buvid).unwrap().into();
 
     reset_bili_auth_state();
 
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            let result = login_qr(|qr_url| {
+            let result = login_qr(&sender_buvid, |qr_url| {
                 set_bili_auth_state(BiliAuthState::AwaitingScan { qr_url });
             })
             .await

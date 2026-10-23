@@ -16,6 +16,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     theme: "system",
     logLevel: "info",
     dlnaProxyEnabled: true,
+    bilibiliBuvid: "",
   });
   // 初始化存储警告状态
   const storageWarning = ref(false);
@@ -27,6 +28,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
     );
     // 如果存储的偏好设置是对象类型，则将其应用到当前偏好设置中
     if (stored && typeof stored === "object") {
+      if ("bilibiliBuvid" in stored && typeof stored.bilibiliBuvid === "string")
+        preferences.bilibiliBuvid = stored.bilibiliBuvid;
       if ("serverUrl" in stored && typeof stored.serverUrl === "string")
         preferences.serverUrl = stored.serverUrl;
       if ("roomId" in stored && typeof stored.roomId === "string")
@@ -64,6 +67,14 @@ export const usePreferencesStore = defineStore("preferences", () => {
     }
   }
 
+  function ensureBilibiliBuvid(): string {
+    if (preferences.bilibiliBuvid) return preferences.bilibiliBuvid;
+    const bilibiliBuvid = crypto.randomUUID().replaceAll("-", "");
+    if (!save({ bilibiliBuvid }))
+      throw new Error("无法保存哔哩哔哩设备标识，请检查本地存储。");
+    return bilibiliBuvid;
+  }
+
   // 保存连接配置
   function saveConnection({ serverUrl, roomId }: ConnectionConfig): boolean {
     return save({ serverUrl, roomId });
@@ -85,6 +96,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
   return {
     preferences,
     storageWarning,
+    ensureBilibiliBuvid,
     saveConnection,
     saveTheme,
     saveLogLevel,

@@ -48,7 +48,12 @@ export const castingApi = {
     room: ConnectionConfig,
     target:
       | { kind: "dlna"; location: string }
-      | { kind: "bilibili"; session: BilibiliSession; deviceBuvid: string },
+      | {
+          kind: "bilibili";
+          session: BilibiliSession;
+          deviceBuvid: string;
+          senderBuvid: string;
+        },
   ) => call<void>("start_casting", { ...room, target }),
   disconnect: () => call<void>("disconnect_casting"),
   poll: () => call<PlaybackState | null>("poll_playback"),
@@ -71,12 +76,15 @@ export const castingApi = {
   saveSession: (session: BilibiliSession) =>
     call<void>("save_bilibili_session", { session }),
   clearSession: () => call<void>("clear_bilibili_session"),
-  login: (onQr: (url: string) => void) => {
+  login: (senderBuvid: string, onQr: (url: string) => void) => {
     if (!isTauri())
       return Promise.reject(new Error("请在 Tauri 应用中使用此功能。"));
     const channel = new Channel<string>();
     channel.onmessage = onQr;
-    return call<BilibiliSession>("login_bilibili", { onQr: channel });
+    return call<BilibiliSession>("login_bilibili", {
+      onQr: channel,
+      senderBuvid,
+    });
   },
   cancelLogin: () => call<void>("cancel_bilibili_login"),
   listenLogs: (callback: () => void) =>

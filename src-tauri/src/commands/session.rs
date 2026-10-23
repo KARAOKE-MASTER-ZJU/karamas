@@ -54,12 +54,14 @@ pub async fn start_casting(
         CastTarget::Bilibili {
             session,
             device_buvid,
+            sender_buvid,
         } => {
             casting_core::start_bilibili_engine_core(
                 server_url,
                 room_id,
                 session,
                 device_buvid,
+                sender_buvid,
                 runtime,
             )
             .await

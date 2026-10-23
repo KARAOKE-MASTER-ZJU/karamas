@@ -158,6 +158,7 @@ pub async fn start_bilibili_engine_core(
     room_id: String,
     session: cast::bilibili::BilibiliSession,
     device_buvid: String,
+    sender_buvid: String,
     rt: tokio::runtime::Handle,
 ) -> Result<(), CoreError> {
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -165,9 +166,8 @@ pub async fn start_bilibili_engine_core(
 
     reset_engine();
 
-    let caster: Arc<dyn cast::Caster> = Arc::new(
-        cast::bilibili::BilibiliCaster::new(session, device_buvid)
-    );
+    let caster = Arc::new(cast::bilibili::BilibiliCaster::new(session, device_buvid, sender_buvid));
+    caster.start_broadcast();
     let cache = Arc::new(Mutex::new(std::collections::HashMap::new()));
     connect_room(base_url_str, room_id, caster, "127.0.0.1".parse().unwrap(), 0, cache, rt).await
 }

@@ -33,6 +33,7 @@ pub enum CastTarget {
         /// 嵌套会话沿用核心库字段名，如 access_token，不受外层 camelCase 影响。
         session: BilibiliSession,
         device_buvid: String,
+        sender_buvid: String,
     },
 }
 

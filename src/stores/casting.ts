@@ -93,7 +93,12 @@ export const useCastingStore = defineStore("casting", () => {
         config,
         device.kind === "dlna"
           ? { kind: "dlna", location: device.location }
-          : { kind: "bilibili", deviceBuvid: device.buvid, session: session! },
+          : {
+              kind: "bilibili",
+              deviceBuvid: device.buvid,
+              senderBuvid: preferences.ensureBilibiliBuvid(),
+              session: session!,
+            },
       );
       activeDevice.value = device;
     } catch (error) {

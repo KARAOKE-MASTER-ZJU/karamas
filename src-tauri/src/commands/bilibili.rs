@@ -10,6 +10,7 @@ use tauri::{State, ipc::Channel};
 pub async fn login_bilibili(
     state: State<'_, BridgeState>,
     on_qr: Channel<String>,
+    sender_buvid: String,
 ) -> CommandResult<BilibiliSession> {
     let mut slot = state.login.lock().await;
     if slot.as_ref().is_some_and(|task| !task.is_finished()) {
@@ -17,7 +18,7 @@ pub async fn login_bilibili(
     }
     // 保留取消句柄，供关闭扫码流程时中止登录等待。
     let task = tauri::async_runtime::handle().inner().spawn(async move {
-        bilibili::login_qr(move |url| {
+        bilibili::login_qr(&sender_buvid, move |url| {
             let _ = on_qr.send(url);
         })
         .await

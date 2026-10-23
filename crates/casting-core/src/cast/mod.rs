@@ -102,6 +102,9 @@ impl std::error::Error for CastError {}
 /// Caster 抽象接口
 #[async_trait]
 pub trait Caster: Send + Sync {
+    /// 停止设备状态订阅并关闭接收连接，不向设备发送停止播放命令。
+    fn stop_status_subscription(&self) {}
+
     async fn play_song(&self, song: &SongRef) -> Result<(), CastError>;
     async fn resume(&self) -> Result<(), CastError>;
     async fn pause(&self) -> Result<(), CastError>;

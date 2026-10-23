@@ -44,6 +44,7 @@ impl EngineContext {
         if self.stopped.swap(true, Ordering::SeqCst) {
             return;
         }
+        self.caster.stop_status_subscription();
         let tasks =
             std::mem::take(&mut *self.tasks.lock().unwrap_or_else(|error| error.into_inner()));
         for task in tasks {

@@ -8,13 +8,13 @@ use std::io;
 use url::Url;
 
 /// 获取当前登录用户的B站会话，如果没有保存的会话，则进行扫码登录
-pub(super) async fn acquire_bilibili_session() -> Result<BilibiliSession> {
+pub(super) async fn acquire_bilibili_session(sender_buvid: &str) -> Result<BilibiliSession> {
     if let Some(session) = bili::load_session() {
         println!("已读取保存的B站会话 (UID: {})", session.mid);
         return Ok(session);
     }
     println!("未找到保存的会话，启动扫码登录...");
-    let session = bili::login_qr(|qr_url| {
+    let session = bili::login_qr(sender_buvid, |qr_url| {
         println!("\n请用B站App扫描二维码登录：");
         let _ = qr2term::print_qr(&qr_url);
         println!("等待扫码...");

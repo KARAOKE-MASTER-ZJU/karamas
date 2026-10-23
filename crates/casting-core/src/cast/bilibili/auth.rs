@@ -5,9 +5,12 @@ use super::{
 use serde_json::Value;
 
 /// 扫码登录并返回会话，保存由调用方决定。`on_qr(url)` 在获取二维码后调用一次。
-pub async fn login_qr(on_qr: impl Fn(String) + Send + Sync) -> Result<BilibiliSession, String> {
+pub async fn login_qr(
+    buvid: &str,
+    on_qr: impl Fn(String) + Send + Sync,
+) -> Result<BilibiliSession, String> {
     let client = bili_client();
-    let params = base_params();
+    let params = base_params(buvid);
     let body = sign_params(&params);
 
     // 获取二维码和授权码
@@ -34,7 +37,7 @@ pub async fn login_qr(on_qr: impl Fn(String) + Send + Sync) -> Result<BilibiliSe
         // 等待 2 秒后轮询授权码状态
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
-        let mut poll_params = base_params();
+        let mut poll_params = base_params(buvid);
         poll_params.push(("auth_code".into(), auth_code.clone()));
         let poll_body = sign_params(&poll_params);
 

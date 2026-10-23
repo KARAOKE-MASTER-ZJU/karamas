@@ -75,10 +75,12 @@ pub extern "C" fn Java_zju_bangdream_ktv_casting_RustEngine_startBilibiliEngine(
     base_url: JString,
     room_id: JString,
     device_buvid: JString,
+    sender_buvid: JString,
 ) {
     let base_url_str: String = env.get_string(&base_url).unwrap().into();
     let room_id_str: String = env.get_string(&room_id).unwrap().into();
     let buvid_str: String = env.get_string(&device_buvid).unwrap().into();
+    let sender_buvid: String = env.get_string(&sender_buvid).unwrap().into();
 
     let session = current_bilibili_session();
     let Some(session) = session else {
@@ -95,6 +97,7 @@ pub extern "C" fn Java_zju_bangdream_ktv_casting_RustEngine_startBilibiliEngine(
                 room_id_str,
                 session,
                 buvid_str,
+                sender_buvid,
                 handle.clone(),
             )
             .await

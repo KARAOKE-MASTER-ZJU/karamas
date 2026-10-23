@@ -2,9 +2,11 @@ import { acceptHMRUpdate, defineStore } from "pinia";
 import { ref } from "vue";
 import { castingApi, errorMessage } from "@/services/casting";
 import { useOperationNotice } from "@/composables/useOperationNotice";
+import { usePreferencesStore } from "@/stores/preferences";
 import type { BilibiliSession } from "@/types/casting";
 
 export const useBilibiliStore = defineStore("bilibili", () => {
+  const preferences = usePreferencesStore();
   const session = ref<BilibiliSession | null>(null);
   const showLogin = ref(false);
   const loggingIn = ref(false);
@@ -36,9 +38,12 @@ export const useBilibiliStore = defineStore("bilibili", () => {
       // 关闭后立即重开时，先等取消命令结束，避免取消新任务。
       await cancelling;
       if (currentAttempt !== attempt) return;
-      const result = await castingApi.login((url) => {
-        if (currentAttempt === attempt) qrUrl.value = url;
-      });
+      const result = await castingApi.login(
+        preferences.ensureBilibiliBuvid(),
+        (url) => {
+          if (currentAttempt === attempt) qrUrl.value = url;
+        },
+      );
       if (currentAttempt !== attempt) return;
       session.value = result;
       // 登录与保存是两个接口，由应用明确决定保存。

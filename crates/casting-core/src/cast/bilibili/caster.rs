@@ -1,5 +1,6 @@
 //! Bilibili 投屏器
 use super::{
+    broadcast::{BroadcastReceiver, MOBILE_BUILD},
     client::{API_HOST, APPKEY, bili_client, form_body},
     session::{BilibiliSession, now_ts},
 };
@@ -24,6 +25,10 @@ pub struct BilibiliCaster {
     mid: u64,
     device_buvid: String,
     progress: Arc<LocalProgressTracker>,
+    broadcast: BroadcastReceiver,
+    session_id: String,
+    #[cfg(test)]
+    test_api: Option<(String, (u64, u32))>,
     // 保存配置项
     quality: AtomicU32, // 使用 AtomicU32 保存清晰度的数值表示
     danmaku: AtomicBool,
@@ -31,26 +36,58 @@ pub struct BilibiliCaster {
 
 // Bilibili 投屏器实现
 impl BilibiliCaster {
-    pub fn new(session: BilibiliSession, device_buvid: String) -> Self {
+    pub fn new(session: BilibiliSession, device_buvid: String, buvid: String) -> Self {
         Self {
             access_token: session.access_token,
             mid: session.mid,
             device_buvid,
             progress: LocalProgressTracker::new(),
+            broadcast: BroadcastReceiver::new(buvid),
+            session_id: uuid::Uuid::new_v4().to_string(),
+            #[cfg(test)]
+            test_api: None,
             quality: AtomicU32::new(Quality::default().as_qn()) ,
             danmaku: AtomicBool::new(false),
         }
     }
 
-    /// 发送命令到 Bilibili 服务器
-    async fn send_cmd(
+    #[cfg(test)]
+    pub(super) fn with_test_transport(
+        mut self,
+        endpoint: String,
+        page_info: (u64, u32),
+        broadcast: BroadcastReceiver,
+    ) -> Self {
+        self.test_api = Some((endpoint, page_info));
+        self.broadcast = broadcast;
+        self
+    }
+
+    async fn page_info(&self, bvid: &str, page: u32) -> Result<(u64, u32), String> {
+        #[cfg(test)]
+        if let Some((_, info)) = &self.test_api {
+            return Ok(*info);
+        }
+        get_page_info(bvid, page).await
+    }
+
+    /// 后台启动状态订阅，播放命令不等待订阅结果。
+    pub fn start_broadcast(&self) {
+        self.broadcast.start(&self.access_token, self.mid);
+    }
+
+    /// 按普通 UGC 云投屏格式构建命令，携带广播接收端和播放会话标识。
+    fn command_body(
         &self,
         command: u32,
         oid: u64,
         extra_override: Option<Value>,
         seek_ts: u32,
-    ) -> Result<(), CastError> {
+    ) -> String {
         let device_info = serde_json::json!({
+            "pink_mobi_app": "android",
+            "pink_build": MOBILE_BUILD,
+            "pink_buvid": self.broadcast.buvid,
             "ott_buvid": self.device_buvid,
             "ott_mid": self.mid,
             "ott_build": 108500,
@@ -61,9 +98,16 @@ impl BilibiliCaster {
         // 构建基础 extra 参数
         let mut full_extra = serde_json::json!({
             "accessKey": self.access_token.as_str(),
-            "autoNext": false, "biz_id": 6213332, "oid": oid,
-            "userDesireSpeed": 1.0, "type": 101, "userVipInfo": 1
+            "buvid": self.broadcast.buvid,
+            "sessionId": self.session_id,
+            "mobileVersion": MOBILE_BUILD,
+            "autoNext": false, "biz_id": 0, "oid": 0,
+            "userDesireSpeed": 1.0, "type": 0, "desc": 0, "proj_type": 1,
+            "danmakuSwitchSave": false
         });
+        if let Some(id) = self.broadcast.session_id() {
+            full_extra["bizSessionId"] = id.into();
+        }
         if let (Some(obj), Some(extra)) = (full_extra.as_object_mut(), extra_override.as_ref().and_then(|v| v.as_object())) {
             for (k, v) in extra {
                 obj.insert(k.clone(), v.clone());
@@ -73,6 +117,8 @@ impl BilibiliCaster {
         let cmd_str = command.to_string();
         let seek_str = seek_ts.to_string();
         let ts_str = now_ts().to_string();
+        let aid_str = oid.to_string();
+        let build_str = MOBILE_BUILD.to_string();
 
         // 提取cid作为顶级参数（如果存在）
         let cid_str = full_extra.get("cid")
@@ -102,8 +148,14 @@ impl BilibiliCaster {
             ("device_info", &device_info),
             ("extra", &extra_str),
             ("seek_ts", &seek_str),
-            ("video_type", "4"),
-            ("room_id", "0"),
+            ("video_type", "0"),
+            ("aid", &aid_str),
+            ("epid", "0"),
+            ("season_id", "0"),
+            ("room_id", ""),
+            ("by_code", "false"),
+            ("danmakuSwitchSave", "false"),
+            ("build", &build_str),
             ("mobi_app", "android"),
             ("platform", "android"),
             ("s_locale", "zh-Hans_CN"),
@@ -114,15 +166,33 @@ impl BilibiliCaster {
             params.insert(8, ("cid", cid.as_str()));
         }
 
-        let body = form_body(&params);
+        form_body(&params)
+    }
+
+    /// 发送 HTTP 控制命令，广播状态由独立连接接收。
+    async fn send_cmd(
+        &self,
+        command: u32,
+        oid: u64,
+        extra_override: Option<Value>,
+        seek_ts: u32,
+    ) -> Result<(), CastError> {
+        let body = self.command_body(command, oid, extra_override, seek_ts);
 
         // 发送请求
         let endpoint = format!("{}/x/tv/stream/cmd", API_HOST);
+        #[cfg(test)]
+        let endpoint = self
+            .test_api
+            .as_ref()
+            .map(|(endpoint, _)| endpoint.clone())
+            .unwrap_or(endpoint);
         let context = format!("[Bilibili] {}：command={}，设备={}，端点={}", command_name(command), command, self.device_buvid, endpoint);
         let send = || async {
             bili_client()
                 .post(&endpoint)
                 .header("Content-Type", "application/x-www-form-urlencoded")
+                .header("User-Agent", "Mozilla/5.0 BiliDroid/8.94.0 (android)")
                 .body(body.clone())
                 .send()
                 .await
@@ -206,7 +276,7 @@ impl Caster for BilibiliCaster {
         let aid = bv_to_aid(&bvid);
         log::debug!("[Bilibili] BV to AID: {} -> {}", bvid, aid);
 
-        let (cid, duration) = get_page_info(&bvid, page).await.map_err(|error| {
+        let (cid, duration) = self.page_info(&bvid, page).await.map_err(|error| {
             let message = format!("[Bilibili] 获取曲目信息失败：BV={}，page={}，错误={}", bvid, page, error);
             log::error!("{}", message);
             CastError::Device(message)
@@ -219,12 +289,16 @@ impl Caster for BilibiliCaster {
         let current_danmaku = self.danmaku.load(Ordering::Relaxed);
 
         // extra的cid会被解析提取到外层
-        let extra = serde_json::json!({ "oid": aid, "cid": cid, "type": 101, "quality": current_quality, "danmaku_switch": current_danmaku });
+        self.start_broadcast();
+        let session = self.broadcast.begin_play(aid, cid);
+        let extra = serde_json::json!({ "cid": cid, "bizSessionId": session.id, "quality": current_quality, "danmaku_switch": current_danmaku });
 
         log::info!("[Bilibili] sending play command: aid={}, cid={}, page={}, extra={}", aid, cid, page, extra);
-        self.send_cmd(1, aid, Some(extra), 0).await?;
-        // The cloud API response is our only playback acknowledgement. Start the
-        // simulated clock only after success, including clearing stale duration.
+        if let Err(error) = self.send_cmd(1, aid, Some(extra), 0).await {
+            self.broadcast.clear_play(&session.id);
+            return Err(error);
+        }
+        // 本轮仅记录广播回传；进度和播放确认仍沿用 HTTP 成功后的本地计时。
         self.progress.start(duration).await;
 
         // 已保存状态，无需再次设置
@@ -320,6 +394,10 @@ impl Caster for BilibiliCaster {
             seek: true,
             hardware_progress: false,
         }
+    }
+
+    fn stop_status_subscription(&self) {
+        self.broadcast.stop_status_subscription();
     }
 }
 

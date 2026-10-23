@@ -1,5 +1,6 @@
 //! B 站扫码认证、会话存储、设备枚举和投屏控制。
 mod auth;
+mod broadcast;
 mod caster;
 mod client;
 mod devices;

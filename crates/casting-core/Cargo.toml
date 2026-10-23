@@ -53,6 +53,12 @@ async-trait = "0.1"
 bytes = "1.10"
 md5 = "0.7"
 innertube-rs = "0.9.0"
+base64 = "0.22"
+prost = "0.13"
+prost-types = "0.13"
+tonic = { version = "0.12", default-features = false, features = ["channel", "codegen", "prost", "tls-webpki-roots"] }
+tokio-stream = "0.1"
+uuid = { version = "1", features = ["v4"] }
 
 # CLI 专用依赖（仅非 Android target 可见）
 [target.'cfg(not(target_os = "android"))'.dependencies]
