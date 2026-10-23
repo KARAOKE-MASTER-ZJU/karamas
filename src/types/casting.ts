@@ -39,3 +39,18 @@ export interface NativeLog {
   target: string;
   message: string;
 }
+
+export type RecastResult = "played" | "noCurrentSong" | "busy";
+export interface BilibiliPart {
+  pageIndex: number;
+  page: number;
+  cid: number;
+  part: string;
+  durationSecs: number;
+}
+export interface CurrentBilibiliParts {
+  songId: string;
+  bvid: string;
+  currentPageIndex: number;
+  parts: BilibiliPart[];
+}

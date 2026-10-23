@@ -90,17 +90,19 @@ function exportLogs() {
       </div>
       <div class="log-actions">
         <button
-          class="button secondary"
+          class="icon-button toolbar-icon"
+          aria-label="复制日志"
           :disabled="!filtered.length"
           @click="copyLogs"
         >
-          <Copy :size="16" /><span>复制</span></button
+          <Copy :size="18" aria-hidden="true" /></button
         ><button
-          class="button secondary"
+          class="icon-button toolbar-icon"
+          aria-label="导出日志"
           :disabled="!filtered.length"
           @click="exportLogs"
         >
-          <Download :size="16" /><span>导出</span></button
+          <Download :size="18" aria-hidden="true" /></button
         ><button
           class="icon-button toolbar-icon"
           :disabled="!entries.length"
@@ -113,7 +115,7 @@ function exportLogs() {
     </div>
 
     <!-- 日志列表部分，显示过滤后的日志条目 -->
-    <p class="log-caption">当前显示 {{ filtered.length }} 条记录。</p>
+    <p class="log-caption">{{ filtered.length }} 条</p>
     <div class="log-list" role="log" aria-label="运行日志">
       <div
         v-for="entry in filtered"
@@ -129,7 +131,7 @@ function exportLogs() {
       </div>
       <div v-if="!filtered.length" class="small-empty">
         <Logs :size="32" />
-        <p>{{ entries.length ? "没有符合条件的日志" : "日志已清空" }}</p>
+        <p>{{ entries.length ? "没有匹配的日志" : "暂无日志" }}</p>
       </div>
     </div>
   </section>

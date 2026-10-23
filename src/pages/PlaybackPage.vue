@@ -1,41 +1,27 @@
-<!-- 播放页面 -->
-
 <script setup lang="ts">
-import { Cast, Music2, SkipBack, Play, Pause, SkipForward } from "@lucide/vue";
-import PlaybackProgress from "@/components/playback/PlaybackProgress.vue";
-import VolumeControl from "@/components/playback/VolumeControl.vue";
+import { Cast, ExternalLink } from "@lucide/vue";
 import { computed } from "vue";
 import { storeToRefs } from "pinia";
+import NowPlaying from "@/components/playback/NowPlaying.vue";
+import PlaybackProgress from "@/components/playback/PlaybackProgress.vue";
+import PlaybackTransport from "@/components/playback/PlaybackTransport.vue";
+import VolumeControl from "@/components/playback/VolumeControl.vue";
+import PlaybackOptions from "@/components/playback/PlaybackOptions.vue";
+import BilibiliPartsControl from "@/components/playback/BilibiliPartsControl.vue";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useCastingStore } from "@/stores/casting";
-import { castingApi, errorMessage } from "@/services/casting";
-import { useOperationNotice } from "@/composables/useOperationNotice";
+import { usePlaybackControls } from "@/composables/usePlaybackControls";
+import { openSongRoom } from "@/services/songRoom";
+
 const { preferences } = storeToRefs(usePreferencesStore());
 const casting = useCastingStore();
-const { notify } = useOperationNotice();
-const { playback, volume } = storeToRefs(casting);
+const { playback, volume, activeDevice, recasting } = storeToRefs(casting);
+const controls = usePlaybackControls();
 const room = computed(() => casting.room ?? preferences.value);
-async function run(action: () => Promise<unknown>) {
-  try {
-    await action();
-  } catch (error) {
-    notify(errorMessage(error), "error");
-  }
-}
-function previousSong() {
-  void run(() => casting.control(castingApi.previousSong));
-}
-function nextSong() {
-  void run(() => casting.control(castingApi.nextSong));
-}
-function seek(seconds: number) {
-  void run(() => casting.control(() => castingApi.seek(seconds)));
-}
 </script>
 
 <template>
   <div class="playback-page">
-    <!-- 当前投屏连接信息 -->
     <div class="session-header" aria-label="当前投屏连接">
       <div class="session-chips">
         <span class="session-chip">
@@ -46,59 +32,78 @@ function seek(seconds: number) {
                 (casting.connected ? "已连接设备" : "未连接设备"))
           }}</span>
         </span>
-        <span
+        <button
+          type="button"
           class="session-chip room-chip"
-          :title="room.serverUrl || '服务器未设置'"
+          :disabled="!room.serverUrl || !room.roomId"
+          :title="
+            room.serverUrl ? `打开点歌台：${room.serverUrl}` : '服务器未设置'
+          "
+          :aria-label="
+            room.serverUrl && room.roomId
+              ? `打开房间 ${room.roomId} 的点歌台`
+              : '房间未设置'
+          "
+          @click="controls.run(() => openSongRoom(room))"
         >
           <span>房间：{{ room.roomId || "未设置" }}</span>
-        </span>
+          <ExternalLink :size="12" aria-hidden="true" />
+        </button>
       </div>
     </div>
 
-    <!-- 播放器控制部分 -->
     <section
       class="content-section player-section"
       aria-labelledby="playing-title"
     >
       <h2 id="playing-title">正在播放</h2>
-      <div class="track-placeholder">
-        <Music2 :size="24" />
-        <div>
-          <h3>{{ playback?.title || "暂无播放内容" }}</h3>
-        </div>
-      </div>
+      <NowPlaying
+        :title="playback?.title ?? null"
+        :song-id="playback?.songId ?? null"
+        :queued-count="playback?.queuedCount ?? null"
+        :sung-count="playback?.sungCount ?? null"
+        :disabled="!casting.connected || casting.busy"
+        :recasting="recasting"
+        @recast="controls.recast"
+      />
+      <BilibiliPartsControl
+        v-if="playback?.songId"
+        :key="playback.songId"
+        :song-id="playback.songId"
+        :disabled="casting.busy"
+      />
       <PlaybackProgress
+        :key="playback?.songId ?? undefined"
         :current-secs="playback?.currentSecs ?? null"
         :total-secs="playback?.totalSecs ?? null"
         :disabled="!playback?.capabilities.seek || casting.busy"
-        @seek="seek"
+        @seek="controls.seek"
       />
-      <fieldset
-        class="player-controls"
+      <PlaybackTransport
         :disabled="!casting.connected || casting.busy"
-      >
-        <legend class="sr-only">播放控制，连接设备后可用</legend>
-        <button class="icon-button" aria-label="上一首" @click="previousSong()">
-          <SkipBack :size="24" />
-        </button>
-        <button
-          class="play-button"
-          :aria-label="playback?.isPlaying ? '暂停' : '播放'"
-          :disabled="!playback?.songId"
-          @click="run(casting.togglePause)"
-        >
-          <component :is="playback?.isPlaying ? Pause : Play" :size="25" />
-        </button>
-        <button class="icon-button" aria-label="下一首" @click="nextSong()">
-          <SkipForward :size="24" />
-        </button>
-      </fieldset>
+        :is-playing="playback?.isPlaying ?? false"
+        :has-song="!!playback?.songId"
+        :queued-count="playback?.queuedCount ?? 0"
+        :sung-count="playback?.sungCount ?? 0"
+        @previous="controls.previousSong"
+        @next="controls.nextSong"
+        @toggle-pause="controls.togglePause"
+      />
       <VolumeControl
         :volume="volume"
         :disabled="!casting.connected || casting.busy"
         :absolute="!!playback?.capabilities.absoluteVolume"
-        @change="(increase) => run(() => casting.changeVolume(increase))"
-        @set-volume="(value) => run(() => casting.setVolume(value))"
+        @change="controls.changeVolume"
+        @set-volume="controls.setVolume"
+      />
+      <PlaybackOptions
+        v-if="activeDevice"
+        :mode="activeDevice.kind"
+        :quality-qn="playback?.qualityQn ?? null"
+        :danmaku="playback?.danmaku ?? null"
+        :disabled="casting.busy"
+        @quality="controls.setQuality"
+        @danmaku="controls.setDanmaku"
       />
     </section>
   </div>
@@ -138,6 +143,9 @@ function seek(seconds: number) {
   background: var(--accent-soft);
   color: var(--accent);
 }
+.room-chip:disabled {
+  opacity: 1;
+}
 .playback-page .player-section {
   padding: 0 0 16px;
   border-bottom: 0;
@@ -145,40 +153,7 @@ function seek(seconds: number) {
 .player-section > h2 {
   margin-bottom: 12px;
 }
-.track-placeholder {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 4px 0 20px;
-}
-.track-placeholder > svg {
-  box-sizing: content-box;
-  padding: 16px;
-  border-radius: 6px;
-  background: var(--subtle);
-  color: var(--muted);
-}
-.track-placeholder > div {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.player-controls {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 32px;
-  padding: 12px 0;
-}
-.play-button {
-  width: 52px;
-  height: 52px;
-  border: 0;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: var(--accent-soft);
-  color: var(--accent);
-}
+
 @media (max-width: 640px) {
   .player-section > h2 {
     margin-bottom: 18px;

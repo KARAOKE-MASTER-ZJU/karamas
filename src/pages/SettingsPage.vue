@@ -33,7 +33,6 @@ async function logout() {
   try {
     if (casting.activeDevice?.kind === "bilibili") await casting.disconnect();
     await auth.logout();
-    notify("已退出哔哩哔哩账号");
   } catch (error) {
     notify(errorMessage(error), "error");
   } finally {

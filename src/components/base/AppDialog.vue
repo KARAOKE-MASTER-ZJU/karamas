@@ -25,9 +25,17 @@ function closeOnBackdrop(event: MouseEvent) {
   >
     <div class="dialog-heading">
       <h2 :id="titleId" tabindex="-1" autofocus>{{ title }}</h2>
-      <button class="icon-button" :aria-label="closeLabel" @click="close">
-        <X />
-      </button>
+      <div class="dialog-heading-actions">
+        <slot name="actions" />
+        <button
+          type="button"
+          class="icon-button"
+          :aria-label="closeLabel"
+          @click="close"
+        >
+          <X />
+        </button>
+      </div>
     </div>
     <slot :close="close" />
   </dialog>
@@ -52,6 +60,12 @@ function closeOnBackdrop(event: MouseEvent) {
   justify-content: space-between;
   margin-bottom: 20px;
   gap: 12px;
+}
+.dialog-heading-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 4px;
 }
 .dialog-heading h2:focus {
   outline: none;

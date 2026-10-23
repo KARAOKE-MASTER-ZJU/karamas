@@ -7,10 +7,13 @@ const emit = defineEmits<{ select: [device: CastDevice] }>();
 </script>
 
 <template>
-  <li class="device-row">
+  <li class="device-row" :class="{ active }">
     <component :is="device.kind === 'dlna' ? Cast : Tv" :size="20" />
     <div class="device-info">
-      <h3>{{ device.name }}</h3>
+      <div class="device-heading">
+        <h3>{{ device.name }}</h3>
+        <span v-if="active" class="connection-status">已连接</span>
+      </div>
       <p>
         {{
           device.kind === "dlna"
@@ -42,6 +45,28 @@ const emit = defineEmits<{ select: [device: CastDevice] }>();
 }
 .device-row > svg {
   color: var(--muted);
+}
+.device-row.active > svg {
+  color: var(--accent);
+}
+.device-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+.device-heading h3 {
+  min-width: 0;
+  max-width: 100%;
+}
+.connection-status {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  line-height: 18px;
 }
 .device-info {
   flex: 1;

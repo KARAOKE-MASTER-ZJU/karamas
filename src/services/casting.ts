@@ -7,6 +7,8 @@ import type {
   DlnaDevice,
   NativeLog,
   PlaybackState,
+  RecastResult,
+  CurrentBilibiliParts,
 } from "@/types/casting";
 
 // 所有原生调用集中在此，页面不直接拼接 IPC 命令和参数。
@@ -45,6 +47,13 @@ export const castingApi = {
   togglePause: () => call<boolean>("toggle_pause"),
   nextSong: () => call<void>("next_song"),
   previousSong: () => call<void>("previous_song"),
+  recast: () => call<RecastResult>("recast_current_song"),
+  setQuality: (qn: number) => call<number>("set_quality", { qn }),
+  setDanmaku: (enabled: boolean) => call<boolean>("set_danmaku", { enabled }),
+  getBilibiliParts: () =>
+    call<CurrentBilibiliParts>("get_current_bilibili_parts"),
+  selectBilibiliPart: (songId: string, pageIndex: number) =>
+    call<boolean>("select_current_bilibili_part", { songId, pageIndex }),
   seek: (seconds: number) => call<void>("seek", { seconds }),
   getVolume: () => call<number>("get_volume"),
   setVolume: (volume: number) => call<number>("set_volume", { volume }),

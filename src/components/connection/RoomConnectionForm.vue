@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive } from "vue";
+import { computed, reactive } from "vue";
 import FormField from "@/components/base/FormField.vue";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useCastingStore } from "@/stores/casting";
@@ -15,6 +15,12 @@ const form = reactive({
   roomId: store.preferences.roomId,
 });
 const errors = reactive({ serverUrl: "", roomId: "" });
+const isJoined = computed(
+  () =>
+    casting.room !== null &&
+    casting.room.serverUrl === form.serverUrl.trim().replace(/\/$/, "") &&
+    casting.room.roomId === form.roomId.trim(),
+);
 
 async function enterRoom(entryMode: RoomEntryMode) {
   errors.serverUrl = "";
@@ -42,9 +48,8 @@ async function enterRoom(entryMode: RoomEntryMode) {
   try {
     await casting.enterRoom(config, entryMode);
     Object.assign(form, config);
-    if (store.saveConnection(config))
-      notify(entryMode === "create" ? "房间已创建并加入" : "已加入房间");
-    else notify("已加入房间，但无法保存本机配置。", "warning");
+    if (!store.saveConnection(config))
+      notify("已加入房间，但无法保存本机配置。", "warning");
   } catch (error) {
     notify(errorMessage(error), "error");
   }
@@ -53,7 +58,23 @@ async function enterRoom(entryMode: RoomEntryMode) {
 
 <template>
   <section class="content-section" aria-labelledby="room-title">
-    <h2 id="room-title">点歌房间</h2>
+    <div class="room-heading">
+      <h2 id="room-title">点歌房间</h2>
+      <p
+        class="room-status"
+        :class="{ joined: casting.room !== null }"
+        :title="casting.room?.serverUrl"
+        role="status"
+      >
+        {{
+          casting.enteringRoom
+            ? "正在加入…"
+            : casting.room
+              ? `已加入：${casting.room.roomId}`
+              : "未加入"
+        }}
+      </p>
+    </div>
     <form
       class="room-form"
       :aria-busy="casting.enteringRoom"
@@ -77,14 +98,13 @@ async function enterRoom(entryMode: RoomEntryMode) {
         label="房间号"
         :error="errors.roomId"
         :disabled="casting.enteringRoom || casting.connecting"
-        placeholder="输入房间号"
         autocomplete="off"
       />
       <div class="room-actions">
         <button
           class="button primary"
           type="submit"
-          :disabled="casting.busy"
+          :disabled="casting.busy || isJoined"
           aria-label="创建并加入"
         >
           <span class="room-action-label">创建并加入</span>
@@ -93,12 +113,16 @@ async function enterRoom(entryMode: RoomEntryMode) {
         <button
           class="button secondary"
           type="button"
-          aria-label="加入房间"
-          :disabled="casting.busy"
+          :aria-label="isJoined ? '已加入房间' : '加入房间'"
+          :disabled="casting.busy || isJoined"
           @click="enterRoom('join')"
         >
-          <span class="room-action-label">加入房间</span>
-          <span class="room-action-compact" aria-hidden="true">加入</span>
+          <span class="room-action-label">{{
+            isJoined ? "已加入" : "加入房间"
+          }}</span>
+          <span class="room-action-compact" aria-hidden="true">{{
+            isJoined ? "已加入" : "加入"
+          }}</span>
         </button>
       </div>
     </form>
@@ -106,6 +130,25 @@ async function enterRoom(entryMode: RoomEntryMode) {
 </template>
 
 <style scoped>
+.room-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 20px;
+}
+.room-status {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.room-status.joined {
+  color: var(--accent);
+}
 .room-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -151,6 +194,11 @@ async function enterRoom(entryMode: RoomEntryMode) {
   }
   .room-action-compact {
     display: inline;
+  }
+}
+@media (max-width: 640px) {
+  .room-heading {
+    margin-bottom: 18px;
   }
 }
 </style>

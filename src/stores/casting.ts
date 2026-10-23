@@ -13,6 +13,7 @@ export const useCastingStore = defineStore("casting", () => {
   const connecting = ref(false);
   const enteringRoom = ref(false);
   const controlling = ref(false);
+  const recasting = ref(false);
   const connected = computed(
     () => activeDevice.value !== null || playback.value !== null,
   );
@@ -101,13 +102,13 @@ export const useCastingStore = defineStore("casting", () => {
       polling = false;
     }
   }
-  async function control(action: () => Promise<unknown>) {
+  async function control<T>(action: () => Promise<T>): Promise<T | undefined> {
     if (!connected.value || busy.value) return;
     controlling.value = true;
     // 先前开始的轮询不能覆盖刚完成的控制结果。
     ++revision;
     try {
-      await action();
+      return await action();
     } finally {
       controlling.value = false;
     }
@@ -129,6 +130,38 @@ export const useCastingStore = defineStore("casting", () => {
       volume.value = await castingApi.setVolume(value);
     });
   }
+
+  async function recast() {
+    return control(async () => {
+      recasting.value = true;
+      try {
+        const result = await castingApi.recast();
+        if (result === "played" && playback.value)
+          playback.value.isPlaying = true;
+        return result;
+      } finally {
+        recasting.value = false;
+      }
+    });
+  }
+  async function seek(seconds: number) {
+    await control(async () => {
+      await castingApi.seek(seconds);
+      if (playback.value) playback.value.currentSecs = seconds;
+    });
+  }
+  async function setQuality(qn: number) {
+    await control(async () => {
+      const quality = await castingApi.setQuality(qn);
+      if (playback.value) playback.value.qualityQn = quality;
+    });
+  }
+  async function setDanmaku(enabled: boolean) {
+    await control(async () => {
+      const danmaku = await castingApi.setDanmaku(enabled);
+      if (playback.value) playback.value.danmaku = danmaku;
+    });
+  }
   return {
     room,
     activeDevice,
@@ -137,6 +170,7 @@ export const useCastingStore = defineStore("casting", () => {
     connecting,
     enteringRoom,
     controlling,
+    recasting,
     connected,
     busy,
     connect,
@@ -147,6 +181,10 @@ export const useCastingStore = defineStore("casting", () => {
     togglePause,
     changeVolume,
     setVolume,
+    recast,
+    seek,
+    setQuality,
+    setDanmaku,
   };
 });
 if (import.meta.hot)

@@ -39,6 +39,7 @@
   "dependencies": {
     "@lucide/vue": "^1.60.0",
     "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/plugin-opener": "^2.7.2",
     "pinia": "^4.1.0",
     "qrcode": "^1.5.4",
     "vue": "^3.5.44",

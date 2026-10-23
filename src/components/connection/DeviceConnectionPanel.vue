@@ -1,6 +1,13 @@
 <script setup lang="ts">
-import { Cast, Tv, ChevronDown, RefreshCw, ScanQrCode } from "@lucide/vue";
-import { ref } from "vue";
+import {
+  Cast,
+  Tv,
+  ChevronDown,
+  RefreshCw,
+  ScanQrCode,
+  LoaderCircle,
+} from "@lucide/vue";
+import { computed, ref } from "vue";
 import { storeToRefs } from "pinia";
 import DeviceRow from "@/components/connection/DeviceRow.vue";
 import ManualDeviceForm from "@/components/connection/ManualDeviceForm.vue";
@@ -29,12 +36,20 @@ const {
   deviceKey,
   isActive,
 } = useDeviceDiscovery(activeDevice);
+const searchLabel = computed(() =>
+  searching[mode.value]
+    ? "正在搜索设备"
+    : mode.value === "dlna"
+      ? "搜索设备"
+      : auth.session
+        ? "刷新设备"
+        : "扫码登录",
+);
 
 async function selectDevice(device: CastDevice) {
   try {
     if (isActive(device)) {
       await casting.disconnect();
-      notify("已断开设备");
     } else {
       await casting.connect(device);
       emit("connected");
@@ -67,22 +82,29 @@ async function selectDevice(device: CastDevice) {
       </h2>
       <div class="device-actions">
         <button
-          class="button text-button"
+          :class="
+            mode === 'bilibili' && !auth.session
+              ? 'button text-button'
+              : 'icon-button'
+          "
           :disabled="searching[mode] || auth.loggingIn"
+          :aria-label="searchLabel"
+          :aria-busy="searching[mode]"
           @click="searchDevices()"
         >
           <component
-            :is="mode === 'dlna' || auth.session ? RefreshCw : ScanQrCode"
-            :size="17"
-          />{{
-            searching[mode]
-              ? "搜索中…"
-              : mode === "dlna"
-                ? "搜索设备"
-                : auth.session
-                  ? "刷新设备"
-                  : "扫码登录"
-          }}
+            :is="
+              searching[mode]
+                ? LoaderCircle
+                : mode === 'dlna' || auth.session
+                  ? RefreshCw
+                  : ScanQrCode
+            "
+            :size="18"
+            :class="{ searching: searching[mode] }"
+            aria-hidden="true"
+          />
+          <span v-if="mode === 'bilibili' && !auth.session">扫码登录</span>
         </button>
         <button
           v-if="mode === 'dlna'"
@@ -213,5 +235,18 @@ async function selectDevice(device: CastDevice) {
 }
 .manual-toggle[aria-expanded="true"] > svg {
   transform: rotate(180deg);
+}
+.searching {
+  animation: search-spin 1s linear infinite;
+}
+@keyframes search-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .searching {
+    animation: none;
+  }
 }
 </style>

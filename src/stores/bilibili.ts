@@ -44,7 +44,6 @@ export const useBilibiliStore = defineStore("bilibili", () => {
       // 登录与保存是两个接口，由应用明确决定保存。
       try {
         await castingApi.saveSession(result);
-        notify("哔哩哔哩登录成功");
       } catch (error) {
         notify(`已登录，但未能保存会话：${errorMessage(error)}`, "warning");
       }

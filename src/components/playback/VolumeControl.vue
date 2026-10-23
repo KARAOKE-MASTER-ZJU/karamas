@@ -18,7 +18,7 @@ function setVolume(event: Event) {
     <label :for="inputId"><Volume2 :size="16" />音量</label>
   </div>
   <fieldset class="volume-control" :disabled="disabled">
-    <legend class="sr-only">音量控制，连接设备后可用</legend>
+    <legend class="sr-only">音量控制</legend>
     <button
       class="icon-button"
       aria-label="降低音量"
