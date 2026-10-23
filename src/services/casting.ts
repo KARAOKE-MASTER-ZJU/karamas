@@ -1,6 +1,6 @@
 import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { ConnectionConfig, RoomEntryMode } from "@/types";
+import type { ConnectionConfig, LogLevel, RoomEntryMode } from "@/types";
 import type {
   BilibiliDevice,
   BilibiliSession,
@@ -29,6 +29,7 @@ export function errorMessage(error: unknown): string {
   return "操作失败，请查看运行日志。";
 }
 export const castingApi = {
+  setLogLevel: (level: LogLevel) => call<void>("set_log_level", { level }),
   enterRoom: (room: ConnectionConfig, mode: RoomEntryMode) =>
     call<void>("enter_room", { ...room, mode }),
   discoverDlnaDevices: () => call<DlnaDevice[]>("discover_dlna_devices"),

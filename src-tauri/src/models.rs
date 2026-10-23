@@ -86,3 +86,27 @@ pub enum RecastResult {
     /// 当前已有播放操作正在处理。
     Busy,
 }
+
+/// 应用记录日志的最低级别。
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LogLevel {
+    Trace,
+    Debug,
+    Info,
+    #[serde(rename = "warning")]
+    Warn,
+    Error,
+}
+
+impl From<LogLevel> for log::LevelFilter {
+    fn from(level: LogLevel) -> Self {
+        match level {
+            LogLevel::Trace => Self::Trace,
+            LogLevel::Debug => Self::Debug,
+            LogLevel::Info => Self::Info,
+            LogLevel::Warn => Self::Warn,
+            LogLevel::Error => Self::Error,
+        }
+    }
+}

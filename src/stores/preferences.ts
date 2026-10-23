@@ -1,6 +1,8 @@
 import { acceptHMRUpdate, defineStore } from "pinia";
 import { reactive, ref } from "vue";
-import type { ConnectionConfig, Preferences, Theme } from "@/types";
+import type { ConnectionConfig, LogLevel, Preferences, Theme } from "@/types";
+
+import { isLogLevel } from "@/utils/logs";
 
 // 偏好设置的存储键
 const storageKey = "ktv-casting.preferences.v1";
@@ -12,6 +14,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     serverUrl: "",
     roomId: "",
     theme: "system",
+    logLevel: "info",
   });
   // 初始化存储警告状态
   const storageWarning = ref(false);
@@ -27,6 +30,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
         preferences.serverUrl = stored.serverUrl;
       if ("roomId" in stored && typeof stored.roomId === "string")
         preferences.roomId = stored.roomId;
+      if ("logLevel" in stored && isLogLevel(stored.logLevel))
+        preferences.logLevel = stored.logLevel;
       if (
         "theme" in stored &&
         (stored.theme === "system" ||
@@ -63,7 +68,17 @@ export const usePreferencesStore = defineStore("preferences", () => {
     return save({ theme });
   }
 
-  return { preferences, storageWarning, saveConnection, saveTheme };
+  function saveLogLevel(logLevel: LogLevel): boolean {
+    return save({ logLevel });
+  }
+
+  return {
+    preferences,
+    storageWarning,
+    saveConnection,
+    saveTheme,
+    saveLogLevel,
+  };
 });
 
 // 热更新

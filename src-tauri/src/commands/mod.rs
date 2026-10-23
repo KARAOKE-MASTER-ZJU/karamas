@@ -1,5 +1,6 @@
 pub mod bilibili;
 pub mod devices;
+pub mod logging;
 pub mod playback;
 pub mod room;
 pub mod session;
@@ -8,6 +9,7 @@ pub mod session;
 pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static
 {
     tauri::generate_handler![
+        logging::set_log_level,
         room::enter_room,
         devices::discover_dlna_devices,
         devices::discover_dlna_device,

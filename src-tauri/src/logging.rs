@@ -17,7 +17,7 @@ struct AppLogger<R: Runtime>(AppHandle<R>);
 
 impl<R: Runtime> Log for AppLogger<R> {
     fn enabled(&self, metadata: &Metadata<'_>) -> bool {
-        metadata.level() <= log::Level::Debug
+        metadata.level() <= log::max_level()
     }
 
     fn log(&self, record: &Record<'_>) {
@@ -28,7 +28,8 @@ impl<R: Runtime> Log for AppLogger<R> {
             log::Level::Error => "error",
             log::Level::Warn => "warning",
             log::Level::Info => "info",
-            log::Level::Debug | log::Level::Trace => "debug",
+            log::Level::Debug => "debug",
+            log::Level::Trace => "trace",
         };
         let message = LogMessage {
             level,
@@ -46,6 +47,6 @@ impl<R: Runtime> Log for AppLogger<R> {
 pub fn initialize<R: Runtime>(app: AppHandle<R>) -> Result<(), log::SetLoggerError> {
     // log 注册器为进程全局资源，仅在应用初始化时注册。
     log::set_boxed_logger(Box::new(AppLogger(app)))?;
-    log::set_max_level(log::LevelFilter::Debug);
+    log::set_max_level(log::LevelFilter::Info);
     Ok(())
 }

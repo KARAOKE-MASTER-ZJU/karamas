@@ -10,12 +10,16 @@ import { useBilibiliStore } from "@/stores/bilibili";
 import { useCastingStore } from "@/stores/casting";
 import { errorMessage } from "@/services/casting";
 import { ref } from "vue";
-import type { Theme } from "@/types";
+import type { LogLevel, Theme } from "@/types";
+import { useLogsStore } from "@/stores/logs";
+import { logLevelLabels } from "@/utils/logs";
 import { version } from "../../package.json";
 const store = usePreferencesStore();
 const auth = useBilibiliStore();
 const casting = useCastingStore();
 const loggingOut = ref(false);
+const logs = useLogsStore();
+const changingLogLevel = ref(false);
 const { preferences } = storeToRefs(store);
 const { notify } = useOperationNotice();
 const themes: { value: Theme; label: string }[] = [
@@ -27,6 +31,17 @@ const themes: { value: Theme; label: string }[] = [
 function updateTheme(theme: Theme) {
   if (!store.saveTheme(theme))
     notify("无法保存主题设置，请检查本机存储是否可用。", "error");
+}
+async function updateLogLevel(level: LogLevel) {
+  changingLogLevel.value = true;
+  try {
+    if (!(await logs.setRecordingLevel(level)))
+      notify("日志记录级别已生效，但无法保存本机配置。", "warning");
+  } catch (error) {
+    notify(errorMessage(error), "error");
+  } finally {
+    changingLogLevel.value = false;
+  }
 }
 async function logout() {
   loggingOut.value = true;
@@ -47,7 +62,7 @@ async function logout() {
       <h2 id="general-title">通用</h2>
       <div class="settings-row">
         <label for="theme">外观</label>
-        <div class="select-control theme-select">
+        <div class="select-control settings-select">
           <select
             id="theme"
             :value="preferences.theme"
@@ -61,6 +76,30 @@ async function logout() {
               :value="option.value"
             >
               {{ option.label }}
+            </option>
+          </select>
+          <ChevronDown :size="16" aria-hidden="true" />
+        </div>
+      </div>
+      <div class="settings-row">
+        <label for="recording-level">日志记录级别</label>
+        <div class="select-control settings-select">
+          <select
+            id="recording-level"
+            :value="logs.recordingLevel"
+            :disabled="changingLogLevel"
+            @change="
+              updateLogLevel(
+                ($event.target as HTMLSelectElement).value as LogLevel,
+              )
+            "
+          >
+            <option
+              v-for="(label, level) in logLevelLabels"
+              :key="level"
+              :value="level"
+            >
+              {{ label }}
             </option>
           </select>
           <ChevronDown :size="16" aria-hidden="true" />
@@ -131,7 +170,7 @@ async function logout() {
   color: inherit;
   text-decoration: none;
 }
-.theme-select {
+.settings-select {
   width: 140px;
 }
 .about-row {

@@ -42,6 +42,12 @@ export function useCastingRuntime() {
       logs.add(`订阅原生日志失败：${errorMessage(error)}`, "error");
     }
     if (disposed) return;
+    try {
+      await castingApi.setLogLevel(logs.recordingLevel);
+    } catch (error) {
+      notify(`设置日志记录级别失败：${errorMessage(error)}`, "error");
+    }
+    if (disposed) return;
     void auth
       .restore()
       .catch((error: unknown) =>

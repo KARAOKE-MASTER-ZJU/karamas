@@ -7,23 +7,19 @@ import { storeToRefs } from "pinia";
 import { useLogsStore } from "@/stores/logs";
 import { useOperationNotice } from "@/composables/useOperationNotice";
 import type { LogLevel } from "@/types";
+import { logLevelLabels as levelLabels, meetsLogLevel } from "@/utils/logs";
 
 const logs = useLogsStore();
 const { entries } = storeToRefs(logs);
 const { notify } = useOperationNotice();
-const filter = ref<"all" | LogLevel>("all");
+const filter = ref<LogLevel>("info");
 const query = ref("");
-const levelLabels = {
-  debug: "调试",
-  info: "信息",
-  warning: "提醒",
-  error: "错误",
-} satisfies Record<LogLevel, string>;
+
 // 计算过滤后的日志条目，根据选定的日志级别和搜索查询进行筛选
 const filtered = computed(() =>
   entries.value.filter(
     (entry) =>
-      (filter.value === "all" || entry.level === filter.value) &&
+      meetsLogLevel(entry.level, filter.value) &&
       entry.message
         .toLocaleLowerCase()
         .includes(query.value.trim().toLocaleLowerCase()),
@@ -67,9 +63,8 @@ function exportLogs() {
     <div class="logs-toolbar">
       <div class="log-filters">
         <div class="select-control log-level-select">
-          <label class="sr-only" for="log-filter">日志级别</label>
+          <label class="sr-only" for="log-filter">显示级别</label>
           <select id="log-filter" v-model="filter">
-            <option value="all">全部级别</option>
             <option
               v-for="(label, level) in levelLabels"
               :key="level"
@@ -180,7 +175,7 @@ function exportLogs() {
 }
 .log-entry {
   display: grid;
-  grid-template-columns: 64px 36px 1fr;
+  grid-template-columns: 64px 56px 1fr;
   gap: 12px;
   padding: 14px 0;
   border-bottom: 1px solid var(--line);
@@ -188,6 +183,7 @@ function exportLogs() {
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
+.log-entry.trace,
 .log-entry.debug {
   color: var(--muted);
 }
@@ -225,7 +221,7 @@ function exportLogs() {
     margin-left: auto;
   }
   .log-entry {
-    grid-template-columns: 58px 30px 1fr;
+    grid-template-columns: 58px 56px 1fr;
     gap: 8px;
   }
 }
