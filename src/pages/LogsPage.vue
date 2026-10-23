@@ -3,38 +3,42 @@
 <script setup lang="ts">
 import { Copy, Download, Trash2, Logs, ChevronDown } from "@lucide/vue";
 import { computed, ref } from "vue";
-import { storeToRefs } from "pinia";
-import { useLogsStore } from "@/stores/logs";
+import { useLogViewer } from "@/composables/useLogViewer";
 import { useOperationNotice } from "@/composables/useOperationNotice";
-import type { LogLevel } from "@/types";
-import { logLevelLabels as levelLabels, meetsLogLevel } from "@/utils/logs";
+import type { LogEntry } from "@/types";
+import {
+  logLevelLabels as levelLabels,
+  formatLogTime,
+  formatLogMessage,
+} from "@/utils/logs";
+import { errorMessage } from "@/services/casting";
 
-const logs = useLogsStore();
-const { entries } = storeToRefs(logs);
+const {
+  entries,
+  filter,
+  query,
+  total,
+  retained,
+  loading,
+  clearing,
+  hasMore,
+  clear,
+  loadMore,
+  readAll,
+} = useLogViewer();
 const { notify } = useOperationNotice();
-const filter = ref<LogLevel>("info");
-const query = ref("");
+const exporting = ref(false);
 
-// 计算过滤后的日志条目，根据选定的日志级别和搜索查询进行筛选
-const filtered = computed(() =>
-  entries.value.filter(
-    (entry) =>
-      meetsLogLevel(entry.level, filter.value) &&
-      entry.message
-        .toLocaleLowerCase()
-        .includes(query.value.trim().toLocaleLowerCase()),
-  ),
-);
-// 将过滤后的日志条目格式化为文本字符串，便于复制或导出
-const formatted = computed(() =>
-  filtered.value
+function formatEntries(items: LogEntry[]) {
+  return items
     .map(
-      (entry) => `${entry.time} [${levelLabels[entry.level]}] ${entry.message}`,
+      (entry) =>
+        `${formatLogTime(entry.time)} [${levelLabels[entry.level]}] ${formatLogMessage(entry)}`,
     )
-    .join("\n"),
-);
+    .join("\n");
+}
+const formatted = computed(() => formatEntries(entries.value));
 
-// 复制过滤后的日志条目到剪贴板
 async function copyLogs() {
   try {
     await navigator.clipboard.writeText(formatted.value);
@@ -44,16 +48,23 @@ async function copyLogs() {
   }
 }
 
-// 导出过滤后的日志条目到文本文件
-function exportLogs() {
-  const url = URL.createObjectURL(
-    new Blob([formatted.value], { type: "text/plain;charset=utf-8" }),
-  );
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `ktv-casting-${new Date().toISOString().slice(0, 10)}.log`;
-  link.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+async function exportLogs() {
+  exporting.value = true;
+  try {
+    const items = await readAll();
+    const url = URL.createObjectURL(
+      new Blob([formatEntries(items)], { type: "text/plain;charset=utf-8" }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `ktv-casting-${new Date().toISOString().slice(0, 10)}.log`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (error) {
+    notify(`导出日志失败：${errorMessage(error)}`, "error");
+  } finally {
+    exporting.value = false;
+  }
 }
 </script>
 
@@ -87,22 +98,22 @@ function exportLogs() {
         <button
           class="icon-button toolbar-icon"
           aria-label="复制日志"
-          :disabled="!filtered.length"
+          :disabled="loading || !entries.length"
           @click="copyLogs"
         >
           <Copy :size="18" aria-hidden="true" /></button
         ><button
           class="icon-button toolbar-icon"
           aria-label="导出日志"
-          :disabled="!filtered.length"
+          :disabled="loading || exporting || !entries.length"
           @click="exportLogs"
         >
           <Download :size="18" aria-hidden="true" /></button
         ><button
           class="icon-button toolbar-icon"
-          :disabled="!entries.length"
+          :disabled="!retained || clearing"
           aria-label="清空日志"
-          @click="logs.clear"
+          @click="clear"
         >
           <Trash2 :size="18" />
         </button>
@@ -110,25 +121,41 @@ function exportLogs() {
     </div>
 
     <!-- 日志列表部分，显示过滤后的日志条目 -->
-    <p class="log-caption">{{ filtered.length }} 条</p>
+    <p class="log-caption">
+      {{ entries.length }}<template v-if="hasMore"> / {{ total }}</template> 条
+    </p>
     <div class="log-list" role="log" aria-label="运行日志">
       <div
-        v-for="entry in filtered"
+        v-for="entry in entries"
         :key="entry.id"
         class="log-entry"
         :class="entry.level"
       >
-        <time>{{ entry.time }}</time
+        <time :datetime="new Date(entry.time).toISOString()">{{
+          formatLogTime(entry.time)
+        }}</time
         ><span class="log-level" :class="entry.level">{{
           levelLabels[entry.level]
         }}</span
-        ><span>{{ entry.message }}</span>
+        ><span>{{ formatLogMessage(entry) }}</span>
       </div>
-      <div v-if="!filtered.length" class="small-empty">
+      <div v-if="!entries.length" class="small-empty">
         <Logs :size="32" />
-        <p>{{ entries.length ? "没有匹配的日志" : "暂无日志" }}</p>
+        <p>
+          {{
+            loading ? "正在读取日志…" : retained ? "没有匹配的日志" : "暂无日志"
+          }}
+        </p>
       </div>
     </div>
+    <button
+      v-if="hasMore"
+      class="button text-button"
+      :disabled="loading"
+      @click="loadMore"
+    >
+      加载更早日志
+    </button>
   </section>
 </template>
 

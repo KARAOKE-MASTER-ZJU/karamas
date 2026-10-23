@@ -1,19 +1,17 @@
+mod buffer;
+
+pub use buffer::{LogBuffer, LogSnapshot};
 use log::{Log, Metadata, Record};
-use serde::Serialize;
-use tauri::{AppHandle, Emitter, Runtime};
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
-/// 前端通过事件订阅接收 Rust 日志。
-pub const LOG_EVENT: &str = "casting://log";
+/// 通知查看页面重新读取日志，记录本身保存在 Rust。
+pub const LOG_EVENT: &str = "casting://logs-changed";
 
-/// 日志事件载荷，级别名称与前端 LogLevel 一致。
-#[derive(Clone, Serialize)]
-pub struct LogMessage {
-    level: &'static str,
-    target: String,
-    message: String,
+struct AppLogger<R: Runtime> {
+    app: AppHandle<R>,
+    buffer: Arc<LogBuffer>,
 }
-
-struct AppLogger<R: Runtime>(AppHandle<R>);
 
 impl<R: Runtime> Log for AppLogger<R> {
     fn enabled(&self, metadata: &Metadata<'_>) -> bool {
@@ -24,29 +22,29 @@ impl<R: Runtime> Log for AppLogger<R> {
         if !self.enabled(record.metadata()) {
             return;
         }
-        let level = match record.level() {
-            log::Level::Error => "error",
-            log::Level::Warn => "warning",
-            log::Level::Info => "info",
-            log::Level::Debug => "debug",
-            log::Level::Trace => "trace",
-        };
-        let message = LogMessage {
-            level,
-            target: record.target().to_owned(),
-            message: record.args().to_string(),
-        };
-        // 发送失败时不再记录日志，避免日志桥接递归。
-        let _ = self.0.emit(LOG_EVENT, message);
+        self.buffer.write(
+            record.level().into(),
+            record.target().to_owned(),
+            record.args().to_string(),
+        );
+        // 通知失败不影响留存，也不再记录日志，避免递归。
+        let _ = self.app.emit(LOG_EVENT, ());
     }
 
     fn flush(&self) {}
 }
 
-/// 将 Rust 日志转发为独立事件，不与界面提示条耦合。
+/// 注册应用日志器和内存留存，默认记录 info 及更严重的日志。
 pub fn initialize<R: Runtime>(app: AppHandle<R>) -> Result<(), log::SetLoggerError> {
-    // log 注册器为进程全局资源，仅在应用初始化时注册。
-    log::set_boxed_logger(Box::new(AppLogger(app)))?;
+    let buffer = Arc::new(LogBuffer::default());
+    log::set_boxed_logger(Box::new(AppLogger {
+        app: app.clone(),
+        buffer: buffer.clone(),
+    }))?;
+    app.manage(buffer);
     log::set_max_level(log::LevelFilter::Info);
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

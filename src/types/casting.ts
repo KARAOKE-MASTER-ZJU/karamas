@@ -1,4 +1,4 @@
-import type { LogLevel } from "@/types";
+import type { LogEntry } from "@/types";
 
 // 嵌套会话沿用 Rust 的字段名，仅通过原生接口保存。
 export interface BilibiliSession {
@@ -34,10 +34,10 @@ export interface PlaybackState {
     hardwareProgress: boolean;
   };
 }
-export interface NativeLog {
-  level: LogLevel;
-  target: string;
-  message: string;
+export interface LogSnapshot {
+  entries: LogEntry[];
+  total: number;
+  retained: number;
 }
 
 export type RecastResult = "played" | "noCurrentSong" | "busy";

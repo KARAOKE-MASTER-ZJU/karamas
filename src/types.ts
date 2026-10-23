@@ -19,7 +19,8 @@ export interface Preferences extends ConnectionConfig {
 // 日志接口
 export interface LogEntry {
   id: number;
-  time: string;
+  time: number;
   level: LogLevel;
+  target: string;
   message: string;
 }

@@ -5,7 +5,7 @@ import type {
   BilibiliDevice,
   BilibiliSession,
   DlnaDevice,
-  NativeLog,
+  LogSnapshot,
   PlaybackState,
   RecastResult,
   CurrentBilibiliParts,
@@ -30,6 +30,11 @@ export function errorMessage(error: unknown): string {
 }
 export const castingApi = {
   setLogLevel: (level: LogLevel) => call<void>("set_log_level", { level }),
+  writeLog: (message: string, level: LogLevel) =>
+    call<void>("write_log", { message, level }),
+  getLogs: (level: LogLevel, query: string, limit?: number) =>
+    call<LogSnapshot>("get_logs", { level, query, limit: limit ?? null }),
+  clearLogs: () => call<void>("clear_logs"),
   enterRoom: (room: ConnectionConfig, mode: RoomEntryMode) =>
     call<void>("enter_room", { ...room, mode }),
   discoverDlnaDevices: () => call<DlnaDevice[]>("discover_dlna_devices"),
@@ -72,7 +77,7 @@ export const castingApi = {
     return call<BilibiliSession>("login_bilibili", { onQr: channel });
   },
   cancelLogin: () => call<void>("cancel_bilibili_login"),
-  listenLogs: (callback: (log: NativeLog) => void) =>
-    listen<NativeLog>("casting://log", ({ payload }) => callback(payload)),
+  listenLogs: (callback: () => void) =>
+    listen<void>("casting://logs-changed", callback),
 };
 export { isTauri };

@@ -1,4 +1,4 @@
-import type { LogLevel } from "@/types";
+import type { LogEntry, LogLevel } from "@/types";
 
 export const logLevelLabels = {
   trace: "trace",
@@ -15,14 +15,10 @@ export function isLogLevel(value: unknown): value is LogLevel {
   );
 }
 
-const severity: Record<LogLevel, number> = {
-  trace: 0,
-  debug: 1,
-  info: 2,
-  warning: 3,
-  error: 4,
-};
+export function formatLogTime(time: number): string {
+  return new Date(time).toLocaleTimeString("zh-CN", { hour12: false });
+}
 
-export function meetsLogLevel(level: LogLevel, minimum: LogLevel): boolean {
-  return severity[level] >= severity[minimum];
+export function formatLogMessage(entry: LogEntry): string {
+  return `[${entry.target}] ${entry.message}`;
 }

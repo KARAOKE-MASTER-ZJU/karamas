@@ -87,8 +87,8 @@ pub enum RecastResult {
     Busy,
 }
 
-/// 应用记录日志的最低级别。
-#[derive(Deserialize)]
+/// 日志级别按详细程度到严重程度排序。
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
     Trace,
@@ -99,7 +99,7 @@ pub enum LogLevel {
     Error,
 }
 
-impl From<LogLevel> for log::LevelFilter {
+impl From<LogLevel> for log::Level {
     fn from(level: LogLevel) -> Self {
         match level {
             LogLevel::Trace => Self::Trace,
@@ -107,6 +107,24 @@ impl From<LogLevel> for log::LevelFilter {
             LogLevel::Info => Self::Info,
             LogLevel::Warn => Self::Warn,
             LogLevel::Error => Self::Error,
+        }
+    }
+}
+
+impl From<LogLevel> for log::LevelFilter {
+    fn from(level: LogLevel) -> Self {
+        log::Level::from(level).to_level_filter()
+    }
+}
+
+impl From<log::Level> for LogLevel {
+    fn from(level: log::Level) -> Self {
+        match level {
+            log::Level::Trace => Self::Trace,
+            log::Level::Debug => Self::Debug,
+            log::Level::Info => Self::Info,
+            log::Level::Warn => Self::Warn,
+            log::Level::Error => Self::Error,
         }
     }
 }

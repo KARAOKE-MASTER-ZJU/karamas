@@ -10,6 +10,9 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
 {
     tauri::generate_handler![
         logging::set_log_level,
+        logging::write_log,
+        logging::get_logs,
+        logging::clear_logs,
         room::enter_room,
         devices::discover_dlna_devices,
         devices::discover_dlna_device,
