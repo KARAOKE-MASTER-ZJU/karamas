@@ -16,6 +16,13 @@ pub struct Progress {
     pub total_secs: u32,
 }
 
+/// 投屏器维护的当前播放状态，包含回传校正后的进度。
+#[derive(Debug, Clone, Copy)]
+pub struct PlaybackSnapshot {
+    pub progress: Progress,
+    pub is_playing: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct Capabilities {
     pub absolute_volume: bool,
@@ -111,6 +118,11 @@ pub trait Caster: Send + Sync {
     async fn stop(&self) -> Result<(), CastError>;
     async fn seek(&self, secs: u32) -> Result<(), CastError>;
     async fn get_progress(&self) -> Result<Progress, CastError>;
+
+    /// 有状态回传的投屏器提供同步快照，其余协议沿用原有查询方式。
+    fn playback_snapshot(&self) -> Option<PlaybackSnapshot> {
+        None
+    }
     async fn set_volume(&self, volume: u32) -> Result<(), CastError>;
     async fn get_volume(&self) -> Result<Option<u32>, CastError>;
 

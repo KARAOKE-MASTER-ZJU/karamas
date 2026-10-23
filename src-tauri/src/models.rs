@@ -66,7 +66,7 @@ pub struct PlaybackState {
     pub title: Option<String>,
     pub current_secs: Option<u32>,
     pub total_secs: Option<u32>,
-    /// 核心库记录的播放状态，不是设备状态的实时读回。
+    /// 当前播放状态，B站投屏由设备回传同步。
     pub is_playing: bool,
     pub queued_count: usize,
     pub sung_count: usize,

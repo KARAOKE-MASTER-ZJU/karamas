@@ -1,4 +1,4 @@
-use super::state::ENGINE_STATE;
+use super::state::{ENGINE_STATE, EngineContext};
 use crate::{cast, error::CoreError};
 use std::sync::atomic::Ordering;
 
@@ -42,9 +42,13 @@ pub async fn toggle_pause_core() -> Result<bool, CoreError> {
         let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
         guard.as_ref().cloned().ok_or("Engine not initialized")?
     };
+    toggle_pause(&ctx).await
+}
+
+pub(super) async fn toggle_pause(ctx: &EngineContext) -> Result<bool, CoreError> {
     // 与新曲播放串行处理，避免播放确认覆盖刚完成的暂停状态。
     let _playback = ctx.playback_lock.lock().await;
-    let target_state = !ctx.is_playing.load(Ordering::SeqCst);
+    let target_state = !ctx.is_playing();
 
     if target_state {
         ctx.caster.resume().await?;

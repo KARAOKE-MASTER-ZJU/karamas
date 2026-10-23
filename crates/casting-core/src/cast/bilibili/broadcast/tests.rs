@@ -152,7 +152,11 @@ async fn rejected_auth_does_not_subscribe() {
 }
 
 // 只替换外部曲目信息和服务地址；play_song、HTTP 发送、响应处理和本地计时均走实际实现。
-async fn play_with_unavailable_subscription(connection_fails: bool, http_code: i32) {
+async fn play_with_unavailable_subscription(
+    connection_fails: bool,
+    http_code: i32,
+    early_report: bool,
+) {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let grpc = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut receiver = BroadcastReceiver::new("sender".into());
@@ -265,6 +269,15 @@ async fn play_with_unavailable_subscription(connection_fails: bool, http_code: i
         0,
         "HTTP 尚未成功不能启动本地计时"
     );
+    if early_report {
+        let session = active.read().unwrap().as_ref().unwrap().clone();
+        deliver_reports(
+            active.clone(),
+            &session,
+            &[(4, 37, Some(212393)), (5, 0, None)],
+        )
+        .await;
+    }
     respond.send(()).unwrap();
     let result = tokio::time::timeout(Duration::from_secs(2), task)
         .await
@@ -272,7 +285,17 @@ async fn play_with_unavailable_subscription(connection_fails: bool, http_code: i
         .unwrap();
     if http_code == 0 {
         result.unwrap();
-        assert_eq!(caster.get_progress().await.unwrap().total_secs, 180);
+        let snapshot = caster.playback_snapshot().unwrap();
+        if early_report {
+            assert_eq!(
+                (snapshot.progress.current_secs, snapshot.progress.total_secs),
+                (37, 212)
+            );
+            assert!(!snapshot.is_playing, "HTTP 播放响应不能覆盖先到的暂停回传");
+        } else {
+            assert_eq!(snapshot.progress.total_secs, 180);
+            assert!(snapshot.is_playing);
+        }
         assert!(active.read().unwrap().is_some());
     } else {
         assert!(result.unwrap_err().to_string().contains("业务错误=-101"));
@@ -294,15 +317,135 @@ async fn play_with_unavailable_subscription(connection_fails: bool, http_code: i
 
 #[tokio::test]
 async fn pending_subscription_does_not_delay_http_play_or_progress_start() {
-    play_with_unavailable_subscription(false, 0).await;
+    play_with_unavailable_subscription(false, 0, false).await;
 }
 
 #[tokio::test]
 async fn failed_subscription_does_not_fail_http_play() {
-    play_with_unavailable_subscription(true, 0).await;
+    play_with_unavailable_subscription(true, 0, false).await;
 }
 
 #[tokio::test]
 async fn http_play_failure_still_clears_session_and_does_not_start_progress() {
-    play_with_unavailable_subscription(false, -101).await;
+    play_with_unavailable_subscription(false, -101, false).await;
+}
+
+// 将服务端帧送入实际接收循环，验证解析、会话过滤和状态更新整条路径。
+async fn deliver_reports(
+    active: Arc<RwLock<Option<PlaySession>>>,
+    session: &PlaySession,
+    reports: &[(i64, i64, Option<u64>)],
+) {
+    let mut frames = vec![
+        reply("Auth", 0),
+        reply("Subscribe", 1),
+        reply("Subscribe", 2),
+    ];
+    for &(command, position, duration) in reports {
+        frames.push(BroadcastFrame {
+            target_path: PROJ.into(),
+            body: Some(prost_types::Any {
+                type_url: "type.googleapis.com/bilibili.broadcast.message.tv.ProjReply".into(),
+                value: ProjReply {
+                    cmd_type: command,
+                    seek_ts: position,
+                    aid: session.aid as i64,
+                    cid: session.cid as i64,
+                    extra: serde_json::json!({"bizSessionId": session.id, "duration": duration})
+                        .to_string(),
+                    ..Default::default()
+                }
+                .encode_to_vec(),
+            }),
+            options: None,
+        });
+    }
+    let (tx, _sent) = mpsc::channel(32);
+    let (ready, _subscribed) = oneshot::channel();
+    let result = receive(
+        futures_util::stream::iter(frames.into_iter().map(Ok)),
+        FrameSender { tx, sequence: 1 },
+        active,
+        ready,
+        |_| {},
+    )
+    .await;
+    assert!(result.unwrap_err().contains("关闭"));
+}
+
+#[tokio::test]
+async fn late_http_success_preserves_progress_duration_and_pause_already_reported() {
+    play_with_unavailable_subscription(false, 0, true).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn tv_pause_resume_seek_and_song_switch_update_the_current_timeline() {
+    let receiver = BroadcastReceiver::new("sender".into());
+    let first = receiver.begin_play(1, 2);
+    receiver.confirm_play(&first.id, 180);
+    tokio::time::advance(Duration::from_secs(5)).await;
+    assert_eq!(
+        receiver.playback_snapshot().unwrap().progress.current_secs,
+        5
+    );
+
+    deliver_reports(
+        receiver.active.clone(),
+        &first,
+        &[(4, 30, None), (13, 0, Some(212393)), (5, 0, None)],
+    )
+    .await;
+    tokio::time::advance(Duration::from_secs(10)).await;
+    let paused = receiver.playback_snapshot().unwrap();
+    assert_eq!(
+        (
+            paused.progress.current_secs,
+            paused.progress.total_secs,
+            paused.is_playing
+        ),
+        (30, 212, false)
+    );
+    // 暂停期间拖动进度不应恢复本地计时；状态通知省略的位置也不能把进度归零。
+    deliver_reports(receiver.active.clone(), &first, &[(4, 60, None)]).await;
+    tokio::time::advance(Duration::from_secs(5)).await;
+    assert_eq!(
+        receiver.playback_snapshot().unwrap().progress.current_secs,
+        60
+    );
+    deliver_reports(receiver.active.clone(), &first, &[(6, 0, None)]).await;
+    tokio::time::advance(Duration::from_secs(3)).await;
+    let resumed = receiver.playback_snapshot().unwrap();
+    assert!(resumed.is_playing);
+    assert_eq!(resumed.progress.current_secs, 63);
+
+    receiver.update_local_playback(None, Some(true));
+    deliver_reports(
+        receiver.active.clone(),
+        &first,
+        &[(4, 80, None), (5, 0, None)],
+    )
+    .await;
+    assert!(
+        !receiver.playback_snapshot().unwrap().is_playing,
+        "本地状态应被后续回传校正"
+    );
+
+    let second = receiver.begin_play(3, 4);
+    receiver.confirm_play(&second.id, 100);
+    deliver_reports(
+        receiver.active.clone(),
+        &first,
+        &[(4, 200, Some(900000)), (5, 0, None)],
+    )
+    .await;
+    receiver.confirm_play(&first.id, 900);
+    let current = receiver.playback_snapshot().unwrap();
+    assert_eq!(
+        (
+            current.progress.current_secs,
+            current.progress.total_secs,
+            current.is_playing
+        ),
+        (0, 100, true)
+    );
 }

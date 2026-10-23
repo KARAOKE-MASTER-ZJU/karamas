@@ -25,6 +25,13 @@ pub struct EngineContext {
 }
 
 impl EngineContext {
+    pub fn is_playing(&self) -> bool {
+        self.caster
+            .playback_snapshot()
+            .map(|state| state.is_playing)
+            .unwrap_or_else(|| self.is_playing.load(Ordering::SeqCst))
+    }
+
     pub(super) fn spawn_task<F>(&self, task: F) -> Result<tokio::task::JoinHandle<F::Output>, CoreError>
     where
         F: std::future::Future + Send + 'static,

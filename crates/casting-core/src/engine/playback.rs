@@ -32,13 +32,24 @@ async fn read_progress(ctx: &EngineContext, trigger_next: bool) -> (i32, i32) {
     };
     drop(gate);
 
-    let (current, total) = match ctx.caster.get_progress().await {
+    let snapshot = ctx.caster.playback_snapshot();
+    let progress = match snapshot {
+        Some(state) => Ok(state.progress),
+        None => ctx.caster.get_progress().await,
+    };
+    let (current, total) = match progress {
         Ok(p) => {
             trace!(
                 "progress: curr={} device_total={} cached_total={} playing={:?}",
                 p.current_secs, p.total_secs, cached_total, playing
             );
-            let total = if cached_total > 0 { cached_total } else { p.total_secs } as i32;
+            let total = if snapshot.is_some() && p.total_secs > 0 {
+                p.total_secs
+            } else if cached_total > 0 {
+                cached_total
+            } else {
+                p.total_secs
+            } as i32;
             (p.current_secs as i32, total)
         }
         Err(_) => (-1, -1),

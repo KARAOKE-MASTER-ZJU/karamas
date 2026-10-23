@@ -7,24 +7,18 @@ use super::{
 
 // 解析歌曲引用，返回 BV 号和页码
 use crate::{
-    cast::{
-        Capabilities, CastError, Caster, Progress, Quality, SongRef, progress::LocalProgressTracker,
-    },
+    cast::{Capabilities, CastError, Caster, PlaybackSnapshot, Progress, Quality, SongRef},
     sources::bilibili::{bv_to_aid, get_page_info},
 };
 use async_trait::async_trait;
 use serde_json::Value;
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, AtomicU32, Ordering},
-};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 // Bilibili 投屏器
 pub struct BilibiliCaster {
     access_token: String,
     mid: u64,
     device_buvid: String,
-    progress: Arc<LocalProgressTracker>,
     broadcast: BroadcastReceiver,
     session_id: String,
     #[cfg(test)]
@@ -41,7 +35,6 @@ impl BilibiliCaster {
             access_token: session.access_token,
             mid: session.mid,
             device_buvid,
-            progress: LocalProgressTracker::new(),
             broadcast: BroadcastReceiver::new(buvid),
             session_id: uuid::Uuid::new_v4().to_string(),
             #[cfg(test)]
@@ -298,8 +291,7 @@ impl Caster for BilibiliCaster {
             self.broadcast.clear_play(&session.id);
             return Err(error);
         }
-        // 本轮仅记录广播回传；进度和播放确认仍沿用 HTTP 成功后的本地计时。
-        self.progress.start(duration).await;
+        self.broadcast.confirm_play(&session.id, duration);
 
         // 已保存状态，无需再次设置
         // 每次开始投屏都重置为默认状态：弹幕关闭、清晰度 1080P。
@@ -316,13 +308,13 @@ impl Caster for BilibiliCaster {
 
     /// 继续播放
     async fn resume(&self) -> Result<(), CastError> {
-        self.progress.resume().await;
+        self.broadcast.update_local_playback(None, Some(true));
         self.send_cmd(6, 0, None, 0).await
     }
 
     /// 暂停播放
     async fn pause(&self) -> Result<(), CastError> {
-        self.progress.pause().await;
+        self.broadcast.update_local_playback(None, Some(false));
         self.send_cmd(5, 0, None, 0).await
     }
 
@@ -333,13 +325,20 @@ impl Caster for BilibiliCaster {
 
     /// 定位到指定时间点（秒）
     async fn seek(&self, secs: u32) -> Result<(), CastError> {
-        self.progress.seek(secs).await;
+        self.broadcast.update_local_playback(Some(secs), None);
         self.send_cmd(4, 0, None, secs).await
     }
 
     /// 获取当前播放进度（秒），返回 Progress 结构体
     async fn get_progress(&self) -> Result<Progress, CastError> {
-        Ok(self.progress.get_progress().await)
+        Ok(self
+            .playback_snapshot()
+            .map(|state| state.progress)
+            .unwrap_or_default())
+    }
+
+    fn playback_snapshot(&self) -> Option<PlaybackSnapshot> {
+        self.broadcast.playback_snapshot()
     }
 
     /// 设置音量（0-100），B站投屏没有绝对音量接口，返回 CastError::Unsupported

@@ -11,6 +11,7 @@ struct TestCaster {
     started: Notify,
     reply: Notify,
     songs: Mutex<Vec<String>>,
+    snapshot: std::sync::Mutex<Option<crate::cast::PlaybackSnapshot>>,
 }
 
 impl TestCaster {
@@ -22,6 +23,7 @@ impl TestCaster {
             started: Notify::new(),
             reply: Notify::new(),
             songs: Mutex::new(Vec::new()),
+            snapshot: std::sync::Mutex::new(None),
         }
     }
 }
@@ -41,10 +43,19 @@ impl Caster for TestCaster {
     async fn get_progress(&self) -> Result<Progress, CastError> {
         Ok(self.progress.get_progress().await)
     }
+    fn playback_snapshot(&self) -> Option<crate::cast::PlaybackSnapshot> {
+        *self.snapshot.lock().unwrap()
+    }
     async fn resume(&self) -> Result<(), CastError> {
+        if let Some(state) = self.snapshot.lock().unwrap().as_mut() {
+            state.is_playing = true;
+        }
         Ok(())
     }
     async fn pause(&self) -> Result<(), CastError> {
+        if let Some(state) = self.snapshot.lock().unwrap().as_mut() {
+            state.is_playing = false;
+        }
         Ok(())
     }
     async fn stop(&self) -> Result<(), CastError> {
@@ -237,4 +248,50 @@ async fn late_success_cannot_release_a_newer_switch() {
     let rev = state.revision();
     assert!(!state.auto_next.observe(298, 300));
     assert_eq!(state.filter(rev, 0, 180), (-1, -1));
+}
+
+
+#[tokio::test]
+async fn reported_pause_drives_display_and_next_toggle_while_other_casters_keep_the_fallback() {
+    use std::sync::atomic::AtomicBool;
+    let caster = Arc::new(TestCaster::new(false, false));
+    caster.progress.start(180).await;
+    *caster.snapshot.lock().unwrap() = Some(crate::cast::PlaybackSnapshot {
+        progress: Progress {
+            current_secs: 37,
+            total_secs: 212,
+        },
+        is_playing: false,
+    });
+    let ctx = EngineContext {
+        caster: caster.clone(),
+        playlist_manager: crate::playlist::PlaylistManager::new(
+            "http://127.0.0.1:1",
+            "test".into(),
+        ),
+        duration_cache: Arc::new(Mutex::new(Default::default())),
+        local_ip: "127.0.0.1".parse().unwrap(),
+        server_port: 0,
+        is_playing: AtomicBool::new(true),
+        playback_lock: Arc::new(Mutex::new(())),
+        rt: tokio::runtime::Handle::current(),
+        tasks: std::sync::Mutex::new(vec![]),
+        stopped: AtomicBool::new(false),
+    };
+    {
+        let mut gate = ctx.playlist_manager.progress_gate.lock().await;
+        gate.update_song(Some("A".into()), Some("A".into()));
+        let revision = gate.revision();
+        gate.play_succeeded(revision, false, std::time::Instant::now());
+    }
+    assert_eq!(read_progress(&ctx, false).await, (37, 212));
+    assert!(!ctx.is_playing(), "回传暂停应覆盖引擎保存的播放状态");
+    assert!(
+        super::super::controls::toggle_pause(&ctx).await.unwrap(),
+        "电视暂停后点击按钮应发送恢复"
+    );
+    assert!(ctx.is_playing());
+    *caster.snapshot.lock().unwrap() = None;
+    assert!(ctx.is_playing());
+    assert_eq!(read_progress(&ctx, false).await, (0, 180));
 }

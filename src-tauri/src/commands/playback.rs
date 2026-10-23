@@ -3,7 +3,7 @@ use crate::{
     models::{PlaybackState, RecastResult},
     state::current_engine,
 };
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::Arc;
 
 /// 轮询播放状态并驱动核心库的自动切歌；未连接时返回 null。
 #[tauri::command]
@@ -20,7 +20,7 @@ pub async fn poll_playback() -> CommandResult<Option<PlaybackState>> {
         title: ctx.playlist_manager.get_song_title().await,
         current_secs: u32::try_from(current).ok(),
         total_secs: u32::try_from(total).ok(),
-        is_playing: ctx.is_playing.load(Ordering::SeqCst),
+        is_playing: ctx.is_playing(),
         queued_count: ctx.playlist_manager.get_queued_count().await,
         sung_count: ctx.playlist_manager.get_sung_count().await,
         quality_qn: ctx.caster.get_quality().ok().map(|q| q.as_qn()),

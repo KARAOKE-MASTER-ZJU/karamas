@@ -1,5 +1,8 @@
-//! 小电视广播接收。当前仅记录设备回传，不修改播放进度和自动切歌状态。
+//! 小电视广播接收与当前播放状态同步。
+mod playback;
 mod proto;
+
+use playback::PlaybackTimeline;
 
 use crate::cast::CastError;
 use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD};
@@ -34,6 +37,7 @@ pub(super) struct PlaySession {
     pub id: String,
     pub aid: u64,
     pub cid: u64,
+    timeline: PlaybackTimeline,
 }
 
 /// 使用本应用持久化的发送端身份，广播重连和引擎重建均复用该标识。
@@ -72,6 +76,7 @@ impl BroadcastReceiver {
             id: Uuid::new_v4().to_string(),
             aid,
             cid,
+            timeline: PlaybackTimeline::default(),
         };
         *self.active.write().unwrap_or_else(|e| e.into_inner()) = Some(session.clone());
         session
@@ -81,6 +86,28 @@ impl BroadcastReceiver {
         let mut active = self.active.write().unwrap_or_else(|e| e.into_inner());
         if active.as_ref().is_some_and(|session| session.id == id) {
             *active = None;
+        }
+    }
+
+    pub fn confirm_play(&self, id: &str, duration: u32) {
+        let mut active = self.active.write().unwrap_or_else(|e| e.into_inner());
+        if let Some(session) = active.as_mut().filter(|session| session.id == id) {
+            session.timeline.confirm_play(duration);
+        }
+    }
+
+    pub fn playback_snapshot(&self) -> Option<crate::cast::PlaybackSnapshot> {
+        self.active
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .and_then(|session| session.timeline.snapshot())
+    }
+
+    pub fn update_local_playback(&self, position: Option<u32>, playing: Option<bool>) {
+        let mut active = self.active.write().unwrap_or_else(|e| e.into_inner());
+        if let Some(session) = active.as_mut() {
+            session.timeline.update(position, playing);
         }
     }
 
@@ -371,8 +398,16 @@ async fn receive(
                 }
             }
             PROJ | PROJ_CORE if ready.is_none() => {
-                let session = active.read().unwrap_or_else(|e| e.into_inner()).clone();
-                match decode_event(frame.body, session.as_ref()) {
+                let event = {
+                    // 校验会话与更新状态共用一把锁，切歌后不能写入旧曲目的回传。
+                    let mut session = active.write().unwrap_or_else(|e| e.into_inner());
+                    let event = decode_event(frame.body, session.as_ref());
+                    if let (Ok(Some(event)), Some(session)) = (&event, session.as_mut()) {
+                        session.timeline.apply(event);
+                    }
+                    event
+                };
+                match event {
                     Ok(Some(event)) => on_event(event),
                     Ok(None) => {}
                     Err(error) => {
@@ -436,7 +471,8 @@ fn decode_event(
     Ok(Some(DeviceEvent {
         name,
         command: message.cmd_type,
-        position_secs: if matches!(message.cmd_type, 4..=6) {
+        // 暂停/恢复通知可能不带 seek_ts，不能把 protobuf 默认零值当成回到开头。
+        position_secs: if message.cmd_type == 4 {
             u64::try_from(message.seek_ts).ok()
         } else {
             None
