@@ -1,18 +1,33 @@
 <script setup lang="ts">
-import { Cast, Tv } from "@lucide/vue";
+import { Cast, Tv, RotateCw } from "@lucide/vue";
 import type { CastDevice } from "@/types/casting";
 
-defineProps<{ device: CastDevice; active: boolean; disabled: boolean }>();
-const emit = defineEmits<{ select: [device: CastDevice] }>();
+defineProps<{
+  device: CastDevice;
+  status: "waiting" | "connecting" | "connected" | "disconnected" | null;
+  disabled: boolean;
+}>();
+const emit = defineEmits<{
+  select: [device: CastDevice];
+  retry: [device: CastDevice];
+}>();
+const statusLabels = {
+  waiting: "待加入房间",
+  connecting: "连接中…",
+  connected: "已连接",
+  disconnected: "未连接",
+};
 </script>
 
 <template>
-  <li class="device-row" :class="{ active }">
+  <li class="device-row" :class="{ active: status === 'connected' }">
     <component :is="device.kind === 'dlna' ? Cast : Tv" :size="20" />
     <div class="device-info">
       <div class="device-heading">
         <h3>{{ device.name }}</h3>
-        <span v-if="active" class="connection-status">已连接</span>
+        <span v-if="status" class="connection-status" role="status">{{
+          statusLabels[status]
+        }}</span>
       </div>
       <p>
         {{
@@ -23,11 +38,20 @@ const emit = defineEmits<{ select: [device: CastDevice] }>();
       </p>
     </div>
     <button
+      v-if="status === 'disconnected'"
+      class="icon-button"
+      aria-label="重试连接"
+      :disabled="disabled"
+      @click="emit('retry', device)"
+    >
+      <RotateCw :size="18" aria-hidden="true" />
+    </button>
+    <button
       class="button secondary"
       :disabled="disabled"
       @click="emit('select', device)"
     >
-      {{ active ? "断开" : "连接" }}
+      {{ status === "connected" ? "断开" : status ? "取消" : "连接" }}
     </button>
   </li>
 </template>

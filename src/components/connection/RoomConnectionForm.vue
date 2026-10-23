@@ -47,11 +47,17 @@ async function enterRoom(entryMode: RoomEntryMode) {
   };
   try {
     await casting.enterRoom(config, entryMode);
+  } catch (error) {
+    notify(errorMessage(error), "error");
+  }
+  // 投屏启动失败不影响已经确认的房间及其本机配置。
+  if (
+    casting.room?.serverUrl === config.serverUrl &&
+    casting.room.roomId === config.roomId
+  ) {
     Object.assign(form, config);
     if (!store.saveConnection(config))
       notify("已加入房间，但无法保存本机配置。", "warning");
-  } catch (error) {
-    notify(errorMessage(error), "error");
   }
 }
 </script>

@@ -18,10 +18,9 @@ import { useOperationNotice } from "@/composables/useOperationNotice";
 import { errorMessage } from "@/services/casting";
 import type { CastDevice } from "@/types/casting";
 
-const emit = defineEmits<{ connected: [] }>();
 const casting = useCastingStore();
 const auth = useBilibiliStore();
-const { activeDevice } = storeToRefs(casting);
+const { selectedDevice } = storeToRefs(casting);
 const { notify } = useOperationNotice();
 const showManualConnect = ref(false);
 const {
@@ -34,8 +33,8 @@ const {
   searchDevices,
   resolveDevice,
   deviceKey,
-  isActive,
-} = useDeviceDiscovery(activeDevice);
+  isSelected,
+} = useDeviceDiscovery(selectedDevice);
 const searchLabel = computed(() =>
   searching[mode.value]
     ? "正在搜索设备"
@@ -46,13 +45,27 @@ const searchLabel = computed(() =>
         : "扫码登录",
 );
 
+function deviceStatus(device: CastDevice) {
+  if (!isSelected(device)) return null;
+  if (casting.connecting) return "connecting";
+  if (casting.activeDevice) return "connected";
+  return casting.room ? "disconnected" : "waiting";
+}
+
+async function retryDevice(device: CastDevice) {
+  try {
+    await casting.connect(device);
+  } catch (error) {
+    notify(errorMessage(error), "error");
+  }
+}
+
 async function selectDevice(device: CastDevice) {
   try {
-    if (isActive(device)) {
+    if (isSelected(device)) {
       await casting.disconnect();
     } else {
       await casting.connect(device);
-      emit("connected");
     }
   } catch (error) {
     notify(errorMessage(error), "error");
@@ -134,9 +147,10 @@ async function selectDevice(device: CastDevice) {
         v-for="device in devices"
         :key="deviceKey(device)"
         :device="device"
-        :active="isActive(device)"
+        :status="deviceStatus(device)"
         :disabled="casting.busy || resolvingDevice"
         @select="selectDevice"
+        @retry="retryDevice"
       />
     </ul>
     <div v-else class="device-empty" :aria-busy="searching[mode]">

@@ -46,7 +46,7 @@ async function updateLogLevel(level: LogLevel) {
 async function logout() {
   loggingOut.value = true;
   try {
-    if (casting.activeDevice?.kind === "bilibili") await casting.disconnect();
+    if (casting.selectedDevice?.kind === "bilibili") await casting.disconnect();
     await auth.logout();
   } catch (error) {
     notify(errorMessage(error), "error");

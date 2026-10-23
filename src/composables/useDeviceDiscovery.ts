@@ -6,7 +6,7 @@ import { castingApi, errorMessage } from "@/services/casting";
 import type { CastMode } from "@/types";
 import type { CastDevice } from "@/types/casting";
 
-export function useDeviceDiscovery(activeDevice: Ref<CastDevice | null>) {
+export function useDeviceDiscovery(selectedDevice: Ref<CastDevice | null>) {
   const auth = useBilibiliStore();
   const { notify } = useOperationNotice();
   const mode = ref<CastMode>("dlna");
@@ -19,7 +19,7 @@ export function useDeviceDiscovery(activeDevice: Ref<CastDevice | null>) {
   const devices = computed(() => {
     const found =
       mode.value === "dlna" ? dlnaDevices.value : bilibiliDevices.value;
-    const active = activeDevice.value;
+    const active = selectedDevice.value;
     return active?.kind === mode.value &&
       !found.some((device) => deviceKey(device) === deviceKey(active))
       ? [active, ...found]
@@ -73,10 +73,10 @@ export function useDeviceDiscovery(activeDevice: Ref<CastDevice | null>) {
   function deviceKey(device: CastDevice) {
     return device.kind === "dlna" ? device.location : device.buvid;
   }
-  function isActive(device: CastDevice) {
+  function isSelected(device: CastDevice) {
     return (
-      activeDevice.value?.kind === device.kind &&
-      deviceKey(activeDevice.value) === deviceKey(device)
+      selectedDevice.value?.kind === device.kind &&
+      deviceKey(selectedDevice.value) === deviceKey(device)
     );
   }
 
@@ -124,6 +124,6 @@ export function useDeviceDiscovery(activeDevice: Ref<CastDevice | null>) {
     searchDevices,
     resolveDevice,
     deviceKey,
-    isActive,
+    isSelected,
   };
 }

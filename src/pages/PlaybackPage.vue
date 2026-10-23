@@ -33,7 +33,11 @@ const room = computed(() => casting.room ?? preferences.value);
             casting.connecting
               ? "连接中…"
               : (casting.activeDevice?.name ??
-                (casting.connected ? "已连接设备" : "未连接设备"))
+                (casting.selectedDevice
+                  ? `${casting.selectedDevice.name} · ${casting.room ? "未连接" : "待加入房间"}`
+                  : casting.connected
+                    ? "已连接设备"
+                    : "未连接设备"))
           }}</span>
         </RouterLink>
         <button

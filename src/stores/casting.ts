@@ -1,12 +1,13 @@
 import { acceptHMRUpdate, defineStore } from "pinia";
 import { computed, ref } from "vue";
-import { castingApi } from "@/services/casting";
+import { castingApi, errorMessage } from "@/services/casting";
 import { useBilibiliStore } from "@/stores/bilibili";
 import type { ConnectionConfig, RoomEntryMode } from "@/types";
 import type { CastDevice, PlaybackState } from "@/types/casting";
 
 export const useCastingStore = defineStore("casting", () => {
   const room = ref<ConnectionConfig | null>(null);
+  const selectedDevice = ref<CastDevice | null>(null);
   const activeDevice = ref<CastDevice | null>(null);
   const playback = ref<PlaybackState | null>(null);
   const volume = ref<number | null>(null);
@@ -25,9 +26,7 @@ export const useCastingStore = defineStore("casting", () => {
   let revision = 0;
   let polling = false;
 
-  async function connect(device: CastDevice) {
-    if (busy.value) return;
-    if (!room.value) throw new Error("请先创建或加入点歌房间。");
+  function requireSession(device: CastDevice) {
     const session = auth.session;
     if (
       device.kind === "bilibili" &&
@@ -36,22 +35,52 @@ export const useCastingStore = defineStore("casting", () => {
           session.expires_at <= Date.now() / 1000))
     )
       throw new Error("请先登录哔哩哔哩。");
+    return session;
+  }
+
+  // 房间和设备分别确认，两项齐全后才启动投屏会话。
+  async function startIfReady() {
+    const config = room.value;
+    const device = selectedDevice.value;
+    if (!config || !device) return;
     connecting.value = true;
     ++revision;
     playback.value = null;
     activeDevice.value = null;
     volume.value = null;
     try {
+      const session = requireSession(device);
       await castingApi.start(
-        room.value,
+        config,
         device.kind === "dlna"
           ? { kind: "dlna", location: device.location }
           : { kind: "bilibili", deviceBuvid: device.buvid, session: session! },
       );
       activeDevice.value = device;
+    } catch (error) {
+      // 输入校验等前置失败也需要停止旧会话，避免仍播放旧房间。
+      try {
+        await castingApi.disconnect();
+      } catch (cleanupError) {
+        throw Object.assign(
+          new Error(
+            `启动投屏失败：${errorMessage(error)}；清理会话失败：${errorMessage(cleanupError)}`,
+          ),
+          { cause: cleanupError },
+        );
+      }
+      throw Object.assign(new Error(`启动投屏失败：${errorMessage(error)}`), {
+        cause: error,
+      });
     } finally {
       connecting.value = false;
     }
+  }
+  async function connect(device: CastDevice) {
+    if (busy.value) return;
+    requireSession(device);
+    selectedDevice.value = device;
+    await startIfReady();
   }
   async function enterRoom(config: ConnectionConfig, mode: RoomEntryMode) {
     if (busy.value) return;
@@ -62,17 +91,17 @@ export const useCastingStore = defineStore("casting", () => {
     } finally {
       enteringRoom.value = false;
     }
-    // 切换房间时让实际会话跟随已确认的房间。
-    if (activeDevice.value) await connect(activeDevice.value);
+    await startIfReady();
   }
   async function disconnect() {
     if (busy.value) return;
     connecting.value = true;
     ++revision;
     try {
-      await castingApi.disconnect();
+      if (connected.value) await castingApi.disconnect();
       playback.value = null;
       activeDevice.value = null;
+      selectedDevice.value = null;
       volume.value = null;
     } finally {
       connecting.value = false;
@@ -164,6 +193,7 @@ export const useCastingStore = defineStore("casting", () => {
   }
   return {
     room,
+    selectedDevice,
     activeDevice,
     playback,
     volume,
