@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Cast, ExternalLink } from "@lucide/vue";
 import { computed } from "vue";
+import { RouterLink } from "vue-router";
 import { storeToRefs } from "pinia";
 import NowPlaying from "@/components/playback/NowPlaying.vue";
 import PlaybackProgress from "@/components/playback/PlaybackProgress.vue";
@@ -24,14 +25,17 @@ const room = computed(() => casting.room ?? preferences.value);
   <div class="playback-page">
     <div class="session-header" aria-label="当前投屏连接">
       <div class="session-chips">
-        <span class="session-chip">
+        <RouterLink
+          :to="{ name: 'connection' }"
+          class="session-chip device-chip"
+        >
           <Cast :size="14" /><span>{{
             casting.connecting
               ? "连接中…"
               : (casting.activeDevice?.name ??
                 (casting.connected ? "已连接设备" : "未连接设备"))
           }}</span>
-        </span>
+        </RouterLink>
         <button
           type="button"
           class="session-chip room-chip"
@@ -134,6 +138,10 @@ const room = computed(() => casting.room ?? preferences.value);
   font-size: 12px;
   line-height: 20px;
   text-align: left;
+  text-decoration: none;
+}
+.device-chip:hover {
+  background: var(--hover);
 }
 .session-chip > span {
   min-width: 0;

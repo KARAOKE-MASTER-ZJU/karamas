@@ -199,6 +199,8 @@ async function exportLogs() {
   line-height: 1.6;
 }
 .log-list {
+  /* 限制 WebKit 跨条目选区的绘制范围。 */
+  position: relative;
   border-top: 1px solid var(--line);
 }
 .log-entry {
