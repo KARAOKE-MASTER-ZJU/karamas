@@ -13,12 +13,12 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            logging::initialize(app.handle().clone())?;
             // 接入层只保存资源和调用协调状态，播放状态由核心库维护。
             app.manage(BridgeState::new(
                 app.path().app_data_dir()?,
                 app.path().app_cache_dir()?,
             ));
-            logging::initialize(app.handle().clone())?;
             Ok(())
         })
         .invoke_handler(commands::handler())
@@ -34,6 +34,7 @@ pub fn run() {
                 {
                     task.abort();
                 }
+                log::logger().flush();
             }
         });
 }

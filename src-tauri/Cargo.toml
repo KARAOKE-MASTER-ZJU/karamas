@@ -17,6 +17,8 @@ casting-core = { package = "ktv-casting", path = "../crates/casting-core" }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["sync"] }
 log = { version = "0.4", features = ["std"] }
+flexi_logger = { version = "0.31", default-features = false }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 url = "2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 tauri-plugin-opener = "2"
