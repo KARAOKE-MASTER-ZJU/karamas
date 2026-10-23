@@ -14,6 +14,7 @@ export interface ConnectionConfig {
 export interface Preferences extends ConnectionConfig {
   theme: Theme;
   logLevel: LogLevel;
+  dlnaProxyEnabled: boolean;
 }
 
 // 日志接口

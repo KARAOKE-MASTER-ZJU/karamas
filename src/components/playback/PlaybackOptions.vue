@@ -4,6 +4,7 @@ import { ChevronDown } from "@lucide/vue";
 import type { CastMode } from "@/types";
 const props = defineProps<{
   mode: CastMode;
+  dlnaProxyEnabled: boolean;
   qualityQn: number | null;
   danmaku: boolean | null;
   disabled: boolean;
@@ -26,7 +27,7 @@ const qualities = [
 const options = computed(() =>
   props.mode === "dlna"
     ? qualities
-        .filter(({ qn }) => qn === 64 || qn === 80)
+        .filter(({ qn }) => qn === 64 || (props.dlnaProxyEnabled && qn === 80))
         .map((option) => ({
           ...option,
           label: option.qn === 80 ? "1080P (Beta)" : option.label,

@@ -32,6 +32,12 @@ export function useCastingRuntime() {
     if (!isTauri()) return;
     if (disposed) return;
     try {
+      await casting.initializeDlnaProxy();
+    } catch (error) {
+      notify(`恢复反向代理设置失败：${errorMessage(error)}`, "error");
+    }
+    if (disposed) return;
+    try {
       await castingApi.setLogLevel(logs.recordingLevel);
     } catch (error) {
       notify(`设置日志记录级别失败：${errorMessage(error)}`, "error");

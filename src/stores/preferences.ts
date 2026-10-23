@@ -15,6 +15,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     roomId: "",
     theme: "system",
     logLevel: "info",
+    dlnaProxyEnabled: true,
   });
   // 初始化存储警告状态
   const storageWarning = ref(false);
@@ -32,6 +33,11 @@ export const usePreferencesStore = defineStore("preferences", () => {
         preferences.roomId = stored.roomId;
       if ("logLevel" in stored && isLogLevel(stored.logLevel))
         preferences.logLevel = stored.logLevel;
+      if (
+        "dlnaProxyEnabled" in stored &&
+        typeof stored.dlnaProxyEnabled === "boolean"
+      )
+        preferences.dlnaProxyEnabled = stored.dlnaProxyEnabled;
       if (
         "theme" in stored &&
         (stored.theme === "system" ||
@@ -72,12 +78,17 @@ export const usePreferencesStore = defineStore("preferences", () => {
     return save({ logLevel });
   }
 
+  function saveDlnaProxyEnabled(dlnaProxyEnabled: boolean): boolean {
+    return save({ dlnaProxyEnabled });
+  }
+
   return {
     preferences,
     storageWarning,
     saveConnection,
     saveTheme,
     saveLogLevel,
+    saveDlnaProxyEnabled,
   };
 });
 

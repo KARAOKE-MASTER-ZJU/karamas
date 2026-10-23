@@ -1,11 +1,15 @@
 import { acceptHMRUpdate, defineStore } from "pinia";
 import { computed, ref } from "vue";
-import { castingApi, errorMessage } from "@/services/casting";
+import { castingApi, errorMessage, isTauri } from "@/services/casting";
 import { useBilibiliStore } from "@/stores/bilibili";
+import { usePreferencesStore } from "@/stores/preferences";
 import type { ConnectionConfig, RoomEntryMode } from "@/types";
 import type { CastDevice, PlaybackState } from "@/types/casting";
 
 export const useCastingStore = defineStore("casting", () => {
+  const preferences = usePreferencesStore();
+  const dlnaProxyEnabled = ref(preferences.preferences.dlnaProxyEnabled);
+  const changingDlnaProxy = ref(false);
   const room = ref<ConnectionConfig | null>(null);
   const selectedDevice = ref<CastDevice | null>(null);
   const activeDevice = ref<CastDevice | null>(null);
@@ -19,12 +23,46 @@ export const useCastingStore = defineStore("casting", () => {
     () => activeDevice.value !== null || playback.value !== null,
   );
   const busy = computed(
-    () => connecting.value || enteringRoom.value || controlling.value,
+    () =>
+      connecting.value ||
+      enteringRoom.value ||
+      controlling.value ||
+      changingDlnaProxy.value,
   );
   const auth = useBilibiliStore();
   // 会话变化后丢弃尚未返回的旧状态，避免重连时界面回退。
   let revision = 0;
   let polling = false;
+  let proxyInitialization: Promise<void> | undefined;
+
+  // 启动恢复和首次连接共用同一个任务，确保加载媒体前已应用配置。
+  function initializeDlnaProxy(): Promise<void> {
+    if (!isTauri()) return Promise.resolve();
+    proxyInitialization ??= castingApi
+      .setDlnaDirect(!dlnaProxyEnabled.value)
+      .catch((error: unknown) => {
+        proxyInitialization = undefined;
+        throw error;
+      });
+    return proxyInitialization;
+  }
+
+  async function setDlnaProxyEnabled(enabled: boolean) {
+    if (busy.value) return;
+    changingDlnaProxy.value = true;
+    ++revision;
+    try {
+      await initializeDlnaProxy();
+      if (isTauri()) await castingApi.setDlnaDirect(!enabled);
+      dlnaProxyEnabled.value = enabled;
+      // 核心库在开启直连时将后续加载的清晰度重置为 720P。
+      if (!enabled && activeDevice.value?.kind === "dlna" && playback.value)
+        playback.value.qualityQn = 64;
+      return preferences.saveDlnaProxyEnabled(enabled);
+    } finally {
+      changingDlnaProxy.value = false;
+    }
+  }
 
   function requireSession(device: CastDevice) {
     const session = auth.session;
@@ -50,6 +88,7 @@ export const useCastingStore = defineStore("casting", () => {
     volume.value = null;
     try {
       const session = requireSession(device);
+      if (device.kind === "dlna") await initializeDlnaProxy();
       await castingApi.start(
         config,
         device.kind === "dlna"
@@ -114,7 +153,13 @@ export const useCastingStore = defineStore("casting", () => {
     if (currentRevision === revision) volume.value = value;
   }
   async function poll() {
-    if (polling || connecting.value || controlling.value) return;
+    if (
+      polling ||
+      connecting.value ||
+      controlling.value ||
+      changingDlnaProxy.value
+    )
+      return;
     polling = true;
     const currentRevision = revision;
     try {
@@ -192,6 +237,10 @@ export const useCastingStore = defineStore("casting", () => {
     });
   }
   return {
+    dlnaProxyEnabled,
+    changingDlnaProxy,
+    initializeDlnaProxy,
+    setDlnaProxyEnabled,
     room,
     selectedDevice,
     activeDevice,

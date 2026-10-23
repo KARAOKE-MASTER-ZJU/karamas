@@ -107,6 +107,7 @@ const room = computed(() => casting.room ?? preferences.value);
       <PlaybackOptions
         v-if="activeDevice"
         :mode="activeDevice.kind"
+        :dlna-proxy-enabled="casting.dlnaProxyEnabled"
         :quality-qn="playback?.qualityQn ?? null"
         :danmaku="playback?.danmaku ?? null"
         :disabled="casting.busy"

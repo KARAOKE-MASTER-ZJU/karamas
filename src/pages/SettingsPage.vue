@@ -1,7 +1,7 @@
 <!-- 设置页面 -->
 
 <script setup lang="ts">
-import { ChevronRight, ChevronDown } from "@lucide/vue";
+import { ChevronRight, ChevronDown, Info } from "@lucide/vue";
 import { RouterLink } from "vue-router";
 import { storeToRefs } from "pinia";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -9,7 +9,7 @@ import { useOperationNotice } from "@/composables/useOperationNotice";
 import { useBilibiliStore } from "@/stores/bilibili";
 import { useCastingStore } from "@/stores/casting";
 import { errorMessage } from "@/services/casting";
-import { ref } from "vue";
+import { onDeactivated, onMounted, onScopeDispose, ref } from "vue";
 import type { LogLevel, Theme } from "@/types";
 import { useLogsStore } from "@/stores/logs";
 import { logLevelLabels } from "@/utils/logs";
@@ -20,6 +20,9 @@ const casting = useCastingStore();
 const loggingOut = ref(false);
 const logs = useLogsStore();
 const changingLogLevel = ref(false);
+const showProxyInfo = ref(false);
+const proxyInfo = ref<HTMLElement | null>(null);
+const proxyInfoButton = ref<HTMLButtonElement | null>(null);
 const { preferences } = storeToRefs(store);
 const { notify } = useOperationNotice();
 const themes: { value: Theme; label: string }[] = [
@@ -27,6 +30,28 @@ const themes: { value: Theme; label: string }[] = [
   { value: "light", label: "浅色" },
   { value: "dark", label: "深色" },
 ];
+
+function closeProxyInfoOutside(event: PointerEvent) {
+  if (event.target instanceof Node && !proxyInfo.value?.contains(event.target))
+    showProxyInfo.value = false;
+}
+function closeProxyInfoOnEscape(event: KeyboardEvent) {
+  if (event.key === "Escape" && showProxyInfo.value) {
+    showProxyInfo.value = false;
+    proxyInfoButton.value?.focus();
+  }
+}
+onMounted(() => {
+  document.addEventListener("pointerdown", closeProxyInfoOutside);
+  document.addEventListener("keydown", closeProxyInfoOnEscape);
+});
+onDeactivated(() => {
+  showProxyInfo.value = false;
+});
+onScopeDispose(() => {
+  document.removeEventListener("pointerdown", closeProxyInfoOutside);
+  document.removeEventListener("keydown", closeProxyInfoOnEscape);
+});
 
 function updateTheme(theme: Theme) {
   if (!store.saveTheme(theme))
@@ -41,6 +66,16 @@ async function updateLogLevel(level: LogLevel) {
     notify(errorMessage(error), "error");
   } finally {
     changingLogLevel.value = false;
+  }
+}
+async function updateDlnaProxy() {
+  try {
+    if (
+      (await casting.setDlnaProxyEnabled(!casting.dlnaProxyEnabled)) === false
+    )
+      notify("反向代理设置已生效，但无法保存本机配置。", "warning");
+  } catch (error) {
+    notify(`设置反向代理失败：${errorMessage(error)}`, "error");
   }
 }
 async function logout() {
@@ -109,6 +144,46 @@ async function logout() {
         <span>运行日志</span><ChevronRight :size="18" />
       </RouterLink>
     </section>
+    <section class="content-section" aria-labelledby="dlna-title">
+      <h2 id="dlna-title">DLNA 投屏</h2>
+      <div class="settings-row">
+        <div ref="proxyInfo" class="setting-label">
+          <span id="dlna-proxy-label">反向代理</span>
+          <button
+            ref="proxyInfoButton"
+            type="button"
+            class="icon-button info-button"
+            aria-label="反向代理说明"
+            aria-controls="dlna-proxy-info"
+            :aria-expanded="showProxyInfo"
+            @click="showProxyInfo = !showProxyInfo"
+          >
+            <Info :size="15" aria-hidden="true" />
+          </button>
+          <div
+            v-if="showProxyInfo"
+            id="dlna-proxy-info"
+            class="info-popover"
+            role="note"
+            aria-label="反向代理说明"
+          >
+            <p>开启后由本机代理媒体；关闭后设备直接访问媒体源。下次切歌或点击“重新投屏”生效。</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          class="proxy-switch"
+          role="switch"
+          aria-labelledby="dlna-proxy-label"
+          :aria-checked="casting.dlnaProxyEnabled"
+          :aria-busy="casting.changingDlnaProxy"
+          :disabled="casting.busy"
+          @click="updateDlnaProxy"
+        >
+          <span />
+        </button>
+      </div>
+    </section>
     <section class="content-section" aria-labelledby="account-title">
       <h2 id="account-title">账号</h2>
       <div class="settings-row">
@@ -172,6 +247,57 @@ async function logout() {
 }
 .settings-select {
   width: 140px;
+}
+.setting-label {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.info-button {
+  width: 28px;
+  height: 28px;
+  color: var(--muted);
+}
+.info-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 10;
+  width: min(300px, calc(100vw - 40px));
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 6px 24px #0002;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.info-popover p + p {
+  margin-top: 8px;
+}
+.proxy-switch {
+  flex-shrink: 0;
+  width: 38px;
+  height: 22px;
+  border: 0;
+  border-radius: 11px;
+  padding: 3px;
+  background: var(--input-line);
+}
+.proxy-switch[aria-checked="true"] {
+  background: var(--accent);
+}
+.proxy-switch span {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+}
+.proxy-switch[aria-checked="true"] span {
+  transform: translateX(16px);
 }
 .about-row {
   display: flex;
