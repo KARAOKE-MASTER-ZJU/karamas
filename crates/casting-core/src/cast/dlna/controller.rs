@@ -139,14 +139,14 @@ fn log_upnp_action(service: &rupnp::Service, base_url: &Uri, action: &str, args_
     // Logged body is a best-effort “wire-like” payload for diffing.
     let envelope = build_soap_envelope(action, args_xml);
 
-    log::debug!(
+    log::trace!(
         "UPnP Action -> base_url={} service_id={} service_type={} SOAPAction={}",
         base_url,
         service.service_id(),
         service.service_type(),
         soap_action_header
     );
-    log::debug!("UPnP Action body (approx) => {}", envelope);
+    log::trace!("UPnP Action body (approx) => {}", envelope);
 }
 
 /// 从 SOAP 响应 XML 中解析本项目关心的字段。
@@ -163,11 +163,10 @@ fn parse_soap_response_fields(text: &str) -> HashMap<String, String> {
         "AbsCount",
     ] {
         if let Some(v) = extract_xml_tag_value(text, k) {
-            log::debug!("提取到字段 '{}' 的值: '{}'", k, v);
+            log::trace!("提取到字段 '{}' 的值: '{}'", k, v);
             out.insert(k.to_string(), v);
         }
     }
-    log::debug!("解析后的响应字段: {:?}", out);
     out
 }
 
@@ -212,7 +211,7 @@ async fn send_soap_shared(
         format!("\"urn:schemas-upnp-org:service:AVTransport:1#{}\"", action);
     let body = build_soap_envelope(action, args_xml);
 
-    log::debug!("UPnP Action (shared) -> url={} SOAPAction={}", final_url, soap_action_header);
+    log::trace!("UPnP Action (shared) -> url={} SOAPAction={}", final_url, soap_action_header);
 
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -254,15 +253,13 @@ async fn send_soap_shared(
     })?;
 
     if status.as_u16() == 200 {
-        // GetPositionInfo is polled roughly once per second by the app. A successful
-        // SOAP round-trip is useful only at DEBUG level; INFO must stay available for
-        // playback, muxing and failure diagnostics.
-        log::debug!(
+        // 正常 SOAP 请求与响应明细仅在 trace 级别输出。
+        log::trace!(
             "UPnP Action (shared) succeeded: action={}, url={}",
             action,
             final_url
         );
-        log::debug!("UPnP Action (shared) status=200 body={}", text);
+        log::trace!("UPnP Action (shared) status=200 body={}", text);
         Ok(parse_soap_response_fields(&text))
     } else {
         let message = format!("[DLNA] {}失败：步骤=设备响应，端点={}，{}", action, final_url, soap_http_failure(status, &text));
@@ -325,8 +322,8 @@ async fn avtransport_action_compat(
     // 2) 兜底：rupnp 原生 action（每次新建连接，仅用于 Debug 解析失败/路径不匹配的设备）
     match timeout_soap(service.action(base_url, action, args_xml)).await {
         Ok(response) => {
-            log::debug!("UPnP Action (native) succeeded");
-            log::debug!("UPnP Action (native) response: {:?}", response);
+            log::trace!("UPnP Action (native) succeeded");
+            log::trace!("UPnP Action (native) response: {:?}", response);
             return Ok(response);
         }
         Err(e) => {
@@ -338,7 +335,7 @@ async fn avtransport_action_compat(
     }
 
     // 3) 最后兜底：常见 control 路径遍历（共享 client，短超时）
-    log::debug!("Service Debug info: {}", service_debug);
+    log::trace!("Service Debug info: {}", service_debug);
     let mut possible_paths: Vec<String> = Vec::new();
 
     // 尝试从 debug 中解析出真实的控制路径（常见于 Windows UPnP Host）
@@ -786,7 +783,7 @@ impl DlnaController {
         let base_url = device_location_uri(device)?;
         log_upnp_action(avtransport, &base_url, action, args_str);
         let response = avtransport_action_compat(avtransport, &base_url, action, args_str, false).await?;
-        log::debug!("传输信息: {:?}", response);
+        log::trace!("传输信息: {:?}", response);
 
         Ok(())
     }
@@ -809,8 +806,6 @@ impl DlnaController {
         // 获取响应
         let response = avtransport_action_compat(avtransport, &base_url, action, args_str, false).await?;
 
-        log::debug!("GetPositionInfo响应: {:?}", response);
-
         Ok(response)
     }
 
@@ -825,7 +820,7 @@ impl DlnaController {
             .get("TrackDuration")
             .or_else(|| position_info.get("AbsTime"))
             .unwrap_or(&default_time);
-        log::debug!(
+        log::trace!(
             "get_secs() : RelTime: {}, TrackDuration: {}",
             rel_time,
             duration
@@ -840,7 +835,7 @@ impl DlnaController {
 
             for fmt in &formats {
                 if let Ok(time) = NaiveTime::parse_from_str(trimmed, fmt) {
-                    log::debug!("成功解析时间 '{}' 格式: {}", trimmed, fmt);
+                    log::trace!("成功解析时间 '{}' 格式: {}", trimmed, fmt);
                     return Ok(time);
                 }
             }
@@ -856,7 +851,7 @@ impl DlnaController {
                         parts[1].parse::<u32>().unwrap_or(0),
                         parts[2].parse::<u32>().unwrap_or(0)
                     );
-                    log::debug!("格式化时间 '{}' 为 '{}'", trimmed, formatted);
+                    log::trace!("格式化时间 '{}' 为 '{}'", trimmed, formatted);
                     if let Ok(time) = NaiveTime::parse_from_str(&formatted, "%H:%M:%S") {
                         return Ok(time);
                     }
@@ -974,14 +969,14 @@ impl DlnaController {
             "#;
 
         let base_url = device_location_uri(device)?;
-        log::debug!(
+        log::trace!(
             "UPnP Action -> base_url={} service_id={} service_type={} SOAPAction=\"urn:schemas-upnp-org:service:RenderingControl:1#{}\"",
             base_url,
             rendering_control.service_id(),
             rendering_control.service_type(),
             action
         );
-        log::debug!(
+        log::trace!(
             "UPnP Action body (approx) => {}",
             format_args!(
                 r#"<?xml version="1.0" encoding="UTF-8"?>

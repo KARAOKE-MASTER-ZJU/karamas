@@ -1,5 +1,5 @@
 use crate::playlist::progress_gate::ProgressGate;
-use log::{debug, info};
+use log::{info, trace};
 use reqwest::Client;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -60,7 +60,7 @@ impl PlaylistManager {
             self.url, self.room_id, last_hash
         );
 
-        debug!("正在获取播放列表: {}", url);
+        trace!("正在获取播放列表: {}", url);
 
         let resp = self
             .client
@@ -79,7 +79,7 @@ impl PlaylistManager {
         let changed: bool = resp_json["changed"].as_bool().unwrap_or(false);
 
         if !changed {
-            debug!("播放列表未改变，跳过更新");
+            trace!("播放列表未改变，跳过更新");
             return Ok(self.progress_gate.lock().await.song());
         }
 

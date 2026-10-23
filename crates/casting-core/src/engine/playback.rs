@@ -1,6 +1,6 @@
 use super::state::{ENGINE_STATE, EngineContext};
 use crate::{cast, playlist::progress_gate};
-use log::{debug, info, warn};
+use log::{info, trace, warn};
 use std::{sync::atomic::Ordering, time::Duration};
 use tokio::sync::Mutex;
 
@@ -34,7 +34,7 @@ async fn read_progress(ctx: &EngineContext, trigger_next: bool) -> (i32, i32) {
 
     let (current, total) = match ctx.caster.get_progress().await {
         Ok(p) => {
-            debug!(
+            trace!(
                 "progress: curr={} device_total={} cached_total={} playing={:?}",
                 p.current_secs, p.total_secs, cached_total, playing
             );
