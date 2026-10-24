@@ -14,7 +14,7 @@ const navigation: { name: string; label: string; icon: LucideIcon }[] = [
     <img
       class="app-logo"
       src="/app-icon.svg"
-      alt="KTV Casting"
+      alt="KARAM@S"
       width="36"
       height="36"
     />

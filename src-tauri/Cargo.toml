@@ -1,11 +1,11 @@
 [package]
-name = "ktv-casting-app"
+name = "karamas"
 version = "0.1.0"
 edition = "2024"
 publish = false
 
 [lib]
-name = "ktv_casting_app_lib"
+name = "karamas_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

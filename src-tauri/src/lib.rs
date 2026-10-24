@@ -12,7 +12,7 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
-    
+
     #[cfg(target_os = "android")]
     let builder = builder.plugin(platform::init());
 
@@ -29,7 +29,7 @@ pub fn run() {
         })
         .invoke_handler(commands::handler())
         .build(tauri::generate_context!())
-        .expect("failed to build KTV Casting")
+        .expect("failed to build KARAM@S")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
                 casting_core::reset_engine();

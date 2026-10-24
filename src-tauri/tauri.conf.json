@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "KTV Casting",
+  "productName": "KARAM@S",
   "version": "../package.json",
   "identifier": "zju.idol.karamas",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "KTV Casting",
+        "title": "KARAM@S",
         "width": 960,
         "height": 640
       }

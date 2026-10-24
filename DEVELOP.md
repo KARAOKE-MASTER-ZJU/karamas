@@ -4,6 +4,8 @@
 
 Tauri 命令层只负责调用转发，投屏逻辑放在 `crates/casting-core` 中。核心库保持独立，服务端可以单独依赖它，无须构建前端或 Tauri 应用。
 
+开发和打包后的可执行文件名均为 `karamas`，应用显示名为 `KARAM@S`。macOS 开发模式的 Dock 使用可执行文件名，打包后的应用使用产品名。
+
 前端源码内部导入统一使用 `@/`；导入源码目录外的文件时使用相对路径。共用样式放在全局，页面和组件的专用样式使用 `<style scoped>`。共享状态使用 Pinia，表单草稿、筛选条件和弹窗开关留在页面或组件内。
 
 ## Rust 核心
@@ -22,15 +24,15 @@ Cargo 包名为 `ktv-casting`，库名为 `ktv_casting_lib`，应用通过依赖
 
 浏览器预览用于检查界面，投屏和登录需通过 `pnpm tauri dev` 启动。
 
-| 命令                                   | 用途                           |
-| -------------------------------------- | ------------------------------ |
-| `pnpm lint`                            | 检查前端代码，警告也会导致失败 |
-| `pnpm format:check`                    | 检查前端、配置和文档格式       |
-| `pnpm check`                           | TypeScript 类型检查            |
-| `pnpm build`                           | 类型检查并构建前端             |
-| `cargo check --workspace`              | 检查 Rust 工作区               |
-| `cargo test -p ktv-casting --lib`      | 运行核心库测试                 |
-| `cargo fmt -p ktv-casting-app --check` | 检查 Tauri 应用层 Rust 格式    |
+| 命令                              | 用途                           |
+| --------------------------------- | ------------------------------ |
+| `pnpm lint`                       | 检查前端代码，警告也会导致失败 |
+| `pnpm format:check`               | 检查前端、配置和文档格式       |
+| `pnpm check`                      | TypeScript 类型检查            |
+| `pnpm build`                      | 类型检查并构建前端             |
+| `cargo check --workspace`         | 检查 Rust 工作区               |
+| `cargo test -p ktv-casting --lib` | 运行核心库测试                 |
+| `cargo fmt -p karamas --check`    | 检查 Tauri 应用层 Rust 格式    |
 
 `pnpm lint:fix` 和 `pnpm format` 会修改文件。前端检查和格式化的范围见 `eslint.config.mjs` 和 `.prettierignore`。
 

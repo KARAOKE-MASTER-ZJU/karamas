@@ -1,4 +1,4 @@
-# KTV Casting App
+# KARAM@S
 
 基于 Tauri 2、TypeScript 和 Rust 的跨平台投屏应用。
 

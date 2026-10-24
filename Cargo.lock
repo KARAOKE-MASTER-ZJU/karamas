@@ -2743,6 +2743,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "karamas"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "flexi_logger",
+ "ktv-casting",
+ "log",
+ "reqwest 0.12.28",
+ "serde",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "keyboard-types"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2792,23 +2809,6 @@ dependencies = [
  "url",
  "urlencoding",
  "uuid",
-]
-
-[[package]]
-name = "ktv-casting-app"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "flexi_logger",
- "ktv-casting",
- "log",
- "reqwest 0.12.28",
- "serde",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "tokio",
- "url",
 ]
 
 [[package]]

@@ -217,7 +217,7 @@ async function logout() {
       <div class="about-row">
         <img src="/app-icon.svg" alt="" width="44" height="44" />
         <div>
-          <strong>KTV Casting</strong>
+          <strong>KARAM@S</strong>
           <p>版本 {{ version }}</p>
         </div>
       </div>
