@@ -50,6 +50,8 @@ pub async fn start_casting<R: tauri::Runtime>(
     let runtime = tauri::async_runtime::handle().inner().clone();
     let server_url = url.as_str().trim_end_matches('/').to_owned();
     let room_id = room_id.trim().to_owned();
+    // 在仍可见时启动前台服务，避免连接设备期间切后台后无法再启动。
+    crate::platform::start_casting_service(&app, &room_id).await?;
     let result = match target {
         CastTarget::Dlna { location } => {
             casting_core::start_engine_core(server_url, room_id, location, runtime).await
@@ -73,16 +75,22 @@ pub async fn start_casting<R: tauri::Runtime>(
     // 启动失败时清理已创建的部分资源，避免媒体服务遗留。
     if result.is_err() {
         casting_core::reset_engine();
+        if let Err(error) = crate::platform::stop_casting_service(&app).await {
+            log::warn!("启动失败后停止 Android 投屏服务失败：{}", error.message);
+        }
     }
     Ok(result?)
 }
 
 /// 重置当前会话，释放核心库持有的后台任务和媒体服务。
 #[tauri::command]
-pub async fn disconnect_casting(state: State<'_, BridgeState>) -> CommandResult<()> {
+pub async fn disconnect_casting<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    state: State<'_, BridgeState>,
+) -> CommandResult<()> {
     let _lifecycle = state.lifecycle.lock().await;
     casting_core::reset_engine();
-    Ok(())
+    crate::platform::stop_casting_service(&app).await
 }
 
 /// 设置 DLNA 后续媒体加载使用的直连模式。

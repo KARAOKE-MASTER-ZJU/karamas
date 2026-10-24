@@ -4,7 +4,22 @@ use crate::error::CommandResult;
 mod android;
 
 #[cfg(target_os = "android")]
-pub use android::{ensure_network_access, init};
+pub use android::{ensure_network_access, init, start_casting_service, stop_casting_service};
+
+#[cfg(not(target_os = "android"))]
+pub async fn start_casting_service<R: tauri::Runtime>(
+    _app: &tauri::AppHandle<R>,
+    _room_id: &str,
+) -> CommandResult<()> {
+    Ok(())
+}
+
+#[cfg(not(target_os = "android"))]
+pub async fn stop_casting_service<R: tauri::Runtime>(
+    _app: &tauri::AppHandle<R>,
+) -> CommandResult<()> {
+    Ok(())
+}
 
 #[cfg(not(target_os = "android"))]
 pub async fn ensure_network_access<R: tauri::Runtime>(

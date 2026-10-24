@@ -1,5 +1,6 @@
 package zju.idol.karamas
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import androidx.activity.enableEdgeToEdge
@@ -8,6 +9,12 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 
 class MainActivity : TauriActivity() {
+  override fun onDestroy() {
+    // 配置变化保留服务，页面最终销毁时与 Rust 的退出清理一起停止服务。
+    if (!isChangingConfigurations) stopService(Intent(this, CastingService::class.java))
+    super.onDestroy()
+  }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
