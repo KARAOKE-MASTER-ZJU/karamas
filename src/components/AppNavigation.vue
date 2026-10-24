@@ -22,6 +22,7 @@ const navigation: { name: string; label: string; icon: LucideIcon }[] = [
       v-for="item in navigation"
       :key="item.name"
       :to="{ name: item.name }"
+      replace
       class="nav-item"
     >
       <span class="nav-icon"><component :is="item.icon" :size="22" /></span>

@@ -6,6 +6,17 @@ mod android;
 #[cfg(target_os = "android")]
 pub use android::{ensure_network_access, init, start_casting_service, stop_casting_service};
 
+/// Android 返回桌面时保留 Activity 和正在投屏的会话。
+#[tauri::command]
+pub async fn move_to_background<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> CommandResult<()> {
+    #[cfg(target_os = "android")]
+    return android::move_to_background(&app).await;
+    #[cfg(not(target_os = "android"))]
+    let _ = app;
+    #[cfg(not(target_os = "android"))]
+    Ok(())
+}
+
 #[cfg(not(target_os = "android"))]
 pub async fn start_casting_service<R: tauri::Runtime>(
     _app: &tauri::AppHandle<R>,

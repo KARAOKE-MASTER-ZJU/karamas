@@ -9,6 +9,7 @@ pub mod session;
 pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static
 {
     tauri::generate_handler![
+        crate::platform::move_to_background,
         logging::set_log_level,
         logging::write_log,
         logging::get_logs,

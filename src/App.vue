@@ -12,6 +12,7 @@ import { useCastingRuntime } from "@/composables/useCastingRuntime";
 import { useNotificationsStore } from "@/stores/notifications";
 import { useOperationNotice } from "@/composables/useOperationNotice";
 import { useTheme } from "@/composables/useTheme";
+import { useAndroidBack } from "@/composables/useAndroidBack";
 
 // 使用路由、偏好设置、日志和通知存储
 const route = useRoute();
@@ -23,6 +24,7 @@ const notifications = useNotificationsStore();
 const { notify } = useOperationNotice();
 useTheme();
 useCastingRuntime();
+useAndroidBack();
 onMounted(() => {
   if (preferences.storageWarning)
     notify("未能读取本机配置，已使用默认设置。", "warning");
@@ -46,6 +48,7 @@ const showHelp = ref(false);
             <RouterLink
               v-if="route.meta.back"
               :to="route.meta.back.to"
+              replace
               class="icon-button back-button"
               :aria-label="route.meta.back.label"
             >

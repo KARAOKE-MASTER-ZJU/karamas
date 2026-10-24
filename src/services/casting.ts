@@ -29,6 +29,7 @@ export function errorMessage(error: unknown): string {
   return "操作失败，请查看运行日志。";
 }
 export const castingApi = {
+  moveToBackground: () => call<void>("move_to_background"),
   setDlnaDirect: (enabled: boolean) =>
     call<void>("set_dlna_direct", { enabled }),
   setLogLevel: (level: LogLevel) => call<void>("set_log_level", { level }),

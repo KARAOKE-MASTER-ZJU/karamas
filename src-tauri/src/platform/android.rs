@@ -4,6 +4,14 @@ use tauri::{Manager, plugin::PluginHandle};
 
 struct AndroidPlatform<R: tauri::Runtime>(PluginHandle<R>);
 
+pub async fn move_to_background<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> CommandResult<()> {
+    app.state::<AndroidPlatform<R>>()
+        .0
+        .run_mobile_plugin_async::<()>("moveToBackground", ())
+        .await
+        .map_err(|error| CommandError::new("ANDROID_NAVIGATION", error.to_string()))
+}
+
 pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
     tauri::plugin::Builder::new("casting-platform")
         .setup(|app, api| {

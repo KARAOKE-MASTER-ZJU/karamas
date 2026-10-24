@@ -128,6 +128,12 @@ class CastingPlatformPlugin(private val activity: Activity) : Plugin(activity) {
         invoke.resolve()
     }
 
+    @Command
+    fun moveToBackground(invoke: Invoke) {
+        activity.moveTaskToBack(true)
+        invoke.resolve()
+    }
+
     private fun resolveNetwork(invoke: Invoke) {
         val result = JSObject()
         try {

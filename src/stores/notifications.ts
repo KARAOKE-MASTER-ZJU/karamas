@@ -17,11 +17,11 @@ export const useNotificationsStore = defineStore("notifications", () => {
   }
 
   // 显示通知
-  function show(text: string, severity: NoticeLevel = "info") {
+  function show(text: string, severity: NoticeLevel = "info", duration = 4500) {
     dismiss();
     message.value = text;
     level.value = severity;
-    timer = setTimeout(dismiss, 4500);
+    timer = setTimeout(dismiss, duration);
   }
 
   // 在组件卸载及热模块替换时销毁通知
