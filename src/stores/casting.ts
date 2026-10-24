@@ -241,8 +241,17 @@ export const useCastingStore = defineStore("casting", () => {
   }
   async function seek(seconds: number) {
     await control(async () => {
-      await castingApi.seek(seconds);
-      if (playback.value) playback.value.currentSecs = seconds;
+      const current = playback.value;
+      const previous = current?.currentSecs ?? null;
+      // 提交后立即接替拖动预览，避免等待设备响应时跳回旧位置。
+      if (current) current.currentSecs = seconds;
+      try {
+        await castingApi.seek(seconds);
+      } catch (error) {
+        if (current && playback.value === current)
+          current.currentSecs = previous;
+        throw error;
+      }
     });
   }
   async function setQuality(qn: number) {
