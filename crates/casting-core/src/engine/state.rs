@@ -15,6 +15,8 @@ pub struct EngineContext {
     pub server_port: u16,
     pub is_playing: AtomicBool,
     pub(super) playback_lock: Arc<Mutex<()>>,
+    /// 控制命令期间跳过采样；计数用于丢弃命令之前发出的查询。
+    pub(super) progress_control: Mutex<u64>,
     /// 仅 Bilibili 投屏使用：本地跟踪的弹幕/清晰度状态（设备侧没有读回接口）。
     // pub danmaku_on: AtomicBool,
     // pub quality_qn: AtomicU32,
@@ -32,7 +34,21 @@ impl EngineContext {
             .unwrap_or_else(|| self.is_playing.load(Ordering::SeqCst))
     }
 
-    pub(super) fn spawn_task<F>(&self, task: F) -> Result<tokio::task::JoinHandle<F::Output>, CoreError>
+    pub(super) async fn begin_progress_control(
+        &self,
+    ) -> Result<tokio::sync::MutexGuard<'_, u64>, CoreError> {
+        let mut control = self.progress_control.lock().await;
+        if self.stopped.load(Ordering::SeqCst) {
+            return Err("Engine stopped".into());
+        }
+        *control += 1;
+        Ok(control)
+    }
+
+    pub(super) fn spawn_task<F>(
+        &self,
+        task: F,
+    ) -> Result<tokio::task::JoinHandle<F::Output>, CoreError>
     where
         F: std::future::Future + Send + 'static,
         F::Output: Send + 'static,

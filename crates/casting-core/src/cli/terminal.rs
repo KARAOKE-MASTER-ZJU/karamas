@@ -153,7 +153,7 @@ pub(super) fn setup_env() -> ProgressBar {
     pb
 }
 
-/// 负责进度查询、自动切歌，并通过回调更新 UI
+/// 读取核心库缓存的进度，通过回调更新 UI。
 pub(super) async fn run_cli_monitor<FL, FP>(mut set_len: FL, mut set_pos: FP) -> Result<()>
 where
     FL: FnMut(u64),
@@ -170,7 +170,7 @@ where
 
         if ctx.is_none() { break; }
 
-        let (current, total) = ktv_casting_lib::poll_playback_progress().await;
+        let (current, total) = ktv_casting_lib::get_current_progress().await;
         if current >= 0 && total > 0 {
             set_len(total as u64);
             set_pos(current as u64);

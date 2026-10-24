@@ -5,7 +5,7 @@ import { useBilibiliStore } from "@/stores/bilibili";
 import { useLogsStore } from "@/stores/logs";
 import { useOperationNotice } from "@/composables/useOperationNotice";
 
-// 定期同步播放状态，并驱动自动切歌
+// 定期读取核心库状态，刷新界面；自动切歌由核心会话任务驱动。
 export function useCastingRuntime() {
   const casting = useCastingStore();
   const auth = useBilibiliStore();

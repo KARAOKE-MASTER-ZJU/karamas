@@ -4,6 +4,7 @@ use log::{info, trace, warn};
 use std::{sync::atomic::Ordering, time::Duration};
 use tokio::sync::Mutex;
 
+/// 读取会话任务最近取得的有效进度。
 pub async fn get_current_progress() -> (i32, i32) {
     let ctx = {
         let guard = ENGINE_STATE.read().ok();
@@ -11,18 +12,26 @@ pub async fn get_current_progress() -> (i32, i32) {
     };
     let Some(ctx) = ctx else { return (-1, -1) };
 
-    read_progress(&ctx, false).await
+    ctx.current_progress().await
 }
 
-/// Poll progress and run the automatic end trigger. Manual next-song stays separate.
+/// 保留宿主接口；自动切歌由会话任务驱动，此处只读取缓存。
 pub async fn poll_playback_progress() -> (i32, i32) {
-    let ctx = ENGINE_STATE.read().ok().and_then(|guard| guard.as_ref().cloned());
-    let Some(ctx) = ctx else { return (-1, -1) };
-    read_progress(&ctx, true).await
+    get_current_progress().await
 }
 
-async fn read_progress(ctx: &EngineContext, trigger_next: bool) -> (i32, i32) {
+pub(super) async fn sample_progress(ctx: &EngineContext) -> (i32, i32) {
+    let Ok(control) = ctx.progress_control.try_lock() else {
+        return (-1, -1);
+    };
+    let control_revision = *control;
+    let Ok(playback) = ctx.playback_lock.try_lock() else {
+        return (-1, -1);
+    };
     let gate = ctx.playlist_manager.progress_gate.lock().await;
+    if ctx.stopped.load(Ordering::SeqCst) || gate.song().is_none() {
+        return (-1, -1);
+    }
     let revision = gate.revision();
     let hash = ctx.playlist_manager.current_hash().await;
     let playing = ctx.playlist_manager.get_song_playing().await;
@@ -31,6 +40,8 @@ async fn read_progress(ctx: &EngineContext, trigger_next: bool) -> (i32, i32) {
         None => 0,
     };
     drop(gate);
+    drop(playback);
+    drop(control);
 
     let snapshot = ctx.caster.playback_snapshot();
     let progress = match snapshot {
@@ -54,6 +65,15 @@ async fn read_progress(ctx: &EngineContext, trigger_next: bool) -> (i32, i32) {
         }
         Err(_) => (-1, -1),
     };
+    let Ok(control) = ctx.progress_control.try_lock() else {
+        return (-1, -1);
+    };
+    if *control != control_revision {
+        return (-1, -1);
+    }
+    let Ok(_playback) = ctx.playback_lock.try_lock() else {
+        return (-1, -1);
+    };
     let mut gate = ctx.playlist_manager.progress_gate.lock().await;
     if ctx.stopped.load(Ordering::SeqCst) {
         return (-1, -1);
@@ -61,9 +81,10 @@ async fn read_progress(ctx: &EngineContext, trigger_next: bool) -> (i32, i32) {
     let (current, total) = gate.filter(revision, current, total);
     // Validate the sample and consume once under the same lock as song updates
     // and play confirmations. An old poll cannot trigger after a new playback.
-    if trigger_next && gate.auto_next.observe(current, total) {
+    if gate.auto_next.observe(current, total) {
         info!("歌曲即将结束，启动一次自动切歌任务");
-        gate.auto_next.start_request(ctx.playlist_manager.clone(), hash, &ctx.rt);
+        gate.auto_next
+            .start_request(ctx.playlist_manager.clone(), hash, &ctx.rt);
     }
     (current, total)
 }

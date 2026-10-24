@@ -1,7 +1,7 @@
 use super::*;
 use crate::cast::progress::LocalProgressTracker;
 use crate::cast::{Capabilities, CastError, Caster, Progress, SongRef};
-use std::sync::Arc;
+use std::sync::{Arc, atomic::AtomicBool};
 use tokio::sync::Notify;
 
 struct TestCaster {
@@ -12,6 +12,10 @@ struct TestCaster {
     reply: Notify,
     songs: Mutex<Vec<String>>,
     snapshot: std::sync::Mutex<Option<crate::cast::PlaybackSnapshot>>,
+    progress_response: Mutex<Option<Result<Progress, String>>>,
+    block_progress: AtomicBool,
+    progress_started: Notify,
+    progress_reply: Notify,
 }
 
 impl TestCaster {
@@ -24,6 +28,10 @@ impl TestCaster {
             reply: Notify::new(),
             songs: Mutex::new(Vec::new()),
             snapshot: std::sync::Mutex::new(None),
+            progress_response: Mutex::new(None),
+            block_progress: AtomicBool::new(false),
+            progress_started: Notify::new(),
+            progress_reply: Notify::new(),
         }
     }
 }
@@ -41,7 +49,15 @@ impl Caster for TestCaster {
         Ok(())
     }
     async fn get_progress(&self) -> Result<Progress, CastError> {
-        Ok(self.progress.get_progress().await)
+        let response = self.progress_response.lock().await.clone();
+        self.progress_started.notify_one();
+        if self.block_progress.swap(false, Ordering::SeqCst) {
+            self.progress_reply.notified().await;
+        }
+        match response {
+            Some(response) => response.map_err(CastError::Device),
+            None => Ok(self.progress.get_progress().await),
+        }
     }
     fn playback_snapshot(&self) -> Option<crate::cast::PlaybackSnapshot> {
         *self.snapshot.lock().unwrap()
@@ -253,7 +269,6 @@ async fn late_success_cannot_release_a_newer_switch() {
 
 #[tokio::test]
 async fn reported_pause_drives_display_and_next_toggle_while_other_casters_keep_the_fallback() {
-    use std::sync::atomic::AtomicBool;
     let caster = Arc::new(TestCaster::new(false, false));
     caster.progress.start(180).await;
     *caster.snapshot.lock().unwrap() = Some(crate::cast::PlaybackSnapshot {
@@ -263,8 +278,28 @@ async fn reported_pause_drives_display_and_next_toggle_while_other_casters_keep_
         },
         is_playing: false,
     });
-    let ctx = EngineContext {
-        caster: caster.clone(),
+    let ctx = context(caster.clone());
+    {
+        let mut gate = ctx.playlist_manager.progress_gate.lock().await;
+        gate.update_song(Some("A".into()), Some("A".into()));
+        let revision = gate.revision();
+        gate.play_succeeded(revision, false, std::time::Instant::now());
+    }
+    assert_eq!(sample_progress(&ctx).await, (37, 212));
+    assert!(!ctx.is_playing(), "回传暂停应覆盖引擎保存的播放状态");
+    assert!(
+        super::super::controls::toggle_pause(&ctx).await.unwrap(),
+        "电视暂停后点击按钮应发送恢复"
+    );
+    assert!(ctx.is_playing());
+    *caster.snapshot.lock().unwrap() = None;
+    assert!(ctx.is_playing());
+    assert_eq!(sample_progress(&ctx).await, (0, 180));
+}
+
+fn context(caster: Arc<TestCaster>) -> EngineContext {
+    EngineContext {
+        caster,
         playlist_manager: crate::playlist::PlaylistManager::new(
             "http://127.0.0.1:1",
             "test".into(),
@@ -274,24 +309,81 @@ async fn reported_pause_drives_display_and_next_toggle_while_other_casters_keep_
         server_port: 0,
         is_playing: AtomicBool::new(true),
         playback_lock: Arc::new(Mutex::new(())),
+        progress_control: Mutex::new(0),
         rt: tokio::runtime::Handle::current(),
         tasks: std::sync::Mutex::new(vec![]),
         stopped: AtomicBool::new(false),
-    };
-    {
-        let mut gate = ctx.playlist_manager.progress_gate.lock().await;
-        gate.update_song(Some("A".into()), Some("A".into()));
-        let revision = gate.revision();
-        gate.play_succeeded(revision, false, std::time::Instant::now());
     }
-    assert_eq!(read_progress(&ctx, false).await, (37, 212));
-    assert!(!ctx.is_playing(), "回传暂停应覆盖引擎保存的播放状态");
-    assert!(
-        super::super::controls::toggle_pause(&ctx).await.unwrap(),
-        "电视暂停后点击按钮应发送恢复"
-    );
-    assert!(ctx.is_playing());
-    *caster.snapshot.lock().unwrap() = None;
-    assert!(ctx.is_playing());
-    assert_eq!(read_progress(&ctx, false).await, (0, 180));
+}
+
+async fn playing_session(current: u32) -> (Arc<TestCaster>, EngineContext) {
+    let caster = Arc::new(TestCaster::new(false, false));
+    *caster.progress_response.lock().await = Some(Ok(Progress {
+        current_secs: current,
+        total_secs: 180,
+    }));
+    let ctx = context(caster.clone());
+    let mut gate = ctx.playlist_manager.progress_gate.lock().await;
+    gate.update_song(Some("A".into()), Some("A".into()));
+    let token = gate.revision();
+    gate.play_succeeded(token, false, std::time::Instant::now());
+    drop(gate);
+    (caster, ctx)
+}
+
+#[tokio::test]
+async fn query_failure_keeps_display_progress_until_the_song_changes() {
+    let (caster, ctx) = playing_session(30).await;
+    sample_progress(&ctx).await;
+    *caster.progress_response.lock().await = Some(Err("查询失败".into()));
+    sample_progress(&ctx).await;
+    assert_eq!(ctx.playback_state().await.current_secs, Some(30));
+    ctx.playlist_manager
+        .progress_gate
+        .lock()
+        .await
+        .update_song(Some("B".into()), Some("B".into()));
+    assert_eq!(ctx.playback_state().await.current_secs, None);
+}
+
+#[tokio::test]
+async fn late_query_does_not_undo_a_seek() {
+    let (caster, ctx) = playing_session(30).await;
+    // 已有有效进度，用于显示定位后的目标位置。
+    sample_progress(&ctx).await;
+    caster.progress_started.notified().await;
+    *caster.progress_response.lock().await = Some(Ok(Progress {
+        current_secs: 178,
+        total_secs: 180,
+    }));
+    caster.block_progress.store(true, Ordering::SeqCst);
+    tokio::join!(sample_progress(&ctx), async {
+        caster.progress_started.notified().await;
+        crate::engine::controls::seek(&ctx, 20).await.unwrap();
+        caster.progress_reply.notify_one();
+    });
+    assert_eq!(ctx.playback_state().await.current_secs, Some(20));
+}
+
+#[tokio::test]
+async fn late_query_does_not_restore_the_previous_songs_progress() {
+    let (caster, ctx) = playing_session(30).await;
+    caster.block_progress.store(true, Ordering::SeqCst);
+    tokio::join!(sample_progress(&ctx), async {
+        caster.progress_started.notified().await;
+        let mut gate = ctx.playlist_manager.progress_gate.lock().await;
+        gate.update_song(Some("B".into()), Some("B".into()));
+        let token = gate.revision();
+        gate.play_succeeded(token, false, std::time::Instant::now());
+        drop(gate);
+        *caster.progress_response.lock().await = Some(Ok(Progress {
+            current_secs: 0,
+            total_secs: 180,
+        }));
+        sample_progress(&ctx).await;
+        caster.progress_reply.notify_one();
+    });
+    let state = ctx.playback_state().await;
+    assert_eq!(state.song_id.as_deref(), Some("B"));
+    assert_eq!(state.current_secs, Some(0));
 }

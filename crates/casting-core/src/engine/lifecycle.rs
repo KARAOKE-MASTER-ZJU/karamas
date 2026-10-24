@@ -1,4 +1,5 @@
 use super::{
+    monitor::start_monitor,
     playback::{play_and_confirm, prepare_duration},
     state::{ENGINE_STATE, EngineContext},
 };
@@ -119,6 +120,7 @@ pub async fn connect_room(
         server_port: port,
         is_playing: AtomicBool::new(true),
         playback_lock: Arc::new(Mutex::new(())),
+        progress_control: Mutex::new(0),
         // danmaku_on: AtomicBool::new(false),
         // quality_qn: AtomicU32::new(cast::Quality::default().as_qn()),
         rt,
@@ -145,6 +147,7 @@ pub async fn connect_room(
         })
     });
     ctx.tasks.lock().map_err(|_| "Lock error")?.push(sync_task.abort_handle());
+    start_monitor(&ctx)?;
 
     let mut guard = ENGINE_STATE.write().map_err(|_| "Lock error")?;
     *guard = Some(ctx);

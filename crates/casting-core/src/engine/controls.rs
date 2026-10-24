@@ -4,24 +4,22 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 /// 等待点歌台确认下一首请求，设备播放由后续歌单同步处理。
 pub async fn trigger_next_song() -> Result<(), CoreError> {
-    let ctx = {
-        let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
-        guard.as_ref().cloned().ok_or("Engine not initialized")?
-    };
-    let mut pm = ctx.playlist_manager.clone();
-    ctx.spawn_task(async move { pm.next_song().await })?
-        .await??;
-    Ok(())
+    switch_song(true).await
 }
 
 /// 等待点歌台确认上一首请求，设备播放由后续歌单同步处理。
 pub async fn trigger_prev_song() -> Result<(), CoreError> {
+    switch_song(false).await
+}
+
+async fn switch_song(next: bool) -> Result<(), CoreError> {
     let ctx = {
         let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
         guard.as_ref().cloned().ok_or("Engine not initialized")?
     };
+    let _control = ctx.begin_progress_control().await?;
     let mut pm = ctx.playlist_manager.clone();
-    ctx.spawn_task(async move { pm.prev_song().await })?
+    ctx.spawn_task(async move { pm.switch_song(next).await })?
         .await??;
     Ok(())
 }
@@ -32,7 +30,18 @@ pub async fn jump_to_secs(target_secs: u32) -> Result<(), CoreError> {
         let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
         guard.as_ref().cloned().ok_or("Engine not initialized")?
     };
+    seek(&ctx, target_secs).await
+}
+
+pub(super) async fn seek(ctx: &EngineContext, target_secs: u32) -> Result<(), CoreError> {
+    let _control = ctx.begin_progress_control().await?;
+    let revision = ctx.playlist_manager.progress_gate.lock().await.revision();
     ctx.caster.seek(target_secs).await?;
+    ctx.playlist_manager
+        .progress_gate
+        .lock()
+        .await
+        .seek_succeeded(revision, target_secs);
     Ok(())
 }
 
@@ -52,6 +61,7 @@ async fn set_playing_core(playing: bool) -> Result<bool, CoreError> {
         guard.as_ref().cloned().ok_or("Engine not initialized")?
     };
     let _playback = ctx.playback_lock.lock().await;
+    let _control = ctx.begin_progress_control().await?;
     apply_playback_state(ctx.caster.as_ref(), &ctx.is_playing, playing).await
 }
 
@@ -83,6 +93,7 @@ pub(super) async fn toggle_pause(ctx: &EngineContext) -> Result<bool, CoreError>
     // 与新曲播放串行处理，避免播放确认覆盖刚完成的暂停状态。
     let _playback = ctx.playback_lock.lock().await;
     let target_state = !ctx.is_playing();
+    let _control = ctx.begin_progress_control().await?;
 
     apply_playback_state(ctx.caster.as_ref(), &ctx.is_playing, target_state).await
 }

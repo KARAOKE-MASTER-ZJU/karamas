@@ -1,6 +1,7 @@
 //! 单会话生命周期、播放协调和面向宿主的控制接口。
 mod controls;
 mod lifecycle;
+mod monitor;
 mod parts;
 mod playback;
 mod state;
@@ -14,6 +15,7 @@ pub use controls::{
 pub use lifecycle::{
     connect_dlna_device, connect_room, reset_engine, start_bilibili_engine_core, start_engine_core,
 };
+pub use monitor::EnginePlaybackState;
 pub use parts::{
     CurrentBilibiliParts, get_current_bilibili_parts_core, select_current_bilibili_part_core,
 };

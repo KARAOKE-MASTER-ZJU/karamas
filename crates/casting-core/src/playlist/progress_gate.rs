@@ -16,6 +16,7 @@ enum Phase {
 pub(crate) struct ProgressGate {
     song: Option<(Option<String>, String)>,
     last_current: Option<i32>,
+    progress: Option<(i32, i32)>,
     baseline: Option<i32>,
     phase: Phase,
     revision: u64,
@@ -27,6 +28,24 @@ impl ProgressGate {
     pub(crate) fn revision(&self) -> u64 {
         self.revision
     }
+
+    /// 查询失败时保留上次有效进度，直到歌曲或播放实例改变。
+    pub(crate) fn cached_progress(&self) -> (i32, i32) {
+        self.progress.unwrap_or((-1, -1))
+    }
+
+    /// 定位成功后更新显示进度，不改变播放确认和自动切歌状态。
+    pub(crate) fn seek_succeeded(&mut self, revision: u64, seconds: u32) {
+        if revision != self.revision {
+            return;
+        }
+        if let Some((_, total)) = self.progress {
+            let current = seconds.min(i32::MAX as u32) as i32;
+            self.progress = Some((current, total));
+            self.last_current = Some(current);
+        }
+    }
+
     /// 读取当前歌曲的 ID 和地址。
     pub(crate) fn song(&self) -> Option<(Option<String>, String)> {
         self.song.clone()
@@ -42,6 +61,7 @@ impl ProgressGate {
             }
             self.phase = Phase::AwaitingCommand;
             self.song = song;
+            self.progress = None;
             self.revision += 1;
         }
     }
@@ -62,6 +82,7 @@ impl ProgressGate {
             self.baseline = self.last_current;
         }
         self.phase = Phase::AwaitingCommand;
+        self.progress = None;
         self.revision += 1;
         self.auto_next.cancel_pending_request();
         Some((url, self.revision))
@@ -83,6 +104,7 @@ impl ProgressGate {
             Phase::Ready
         };
         self.last_current = Some(0);
+        self.progress = None;
         self.auto_next.reset_for_playback();
         self.revision += 1;
         true
@@ -90,7 +112,11 @@ impl ProgressGate {
 
     /// 过滤过期或切歌期间不可信的播放进度。
     pub(crate) fn filter(&mut self, revision: u64, current: i32, total: i32) -> (i32, i32) {
-        self.filter_at(revision, current, total, Instant::now())
+        let progress = self.filter_at(revision, current, total, Instant::now());
+        if progress.0 >= 0 {
+            self.progress = Some(progress);
+        }
+        progress
     }
 
     /// 按指定时间判断进度保护是否结束，并过滤播放进度。

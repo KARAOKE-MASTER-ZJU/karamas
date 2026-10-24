@@ -35,13 +35,13 @@ sequenceDiagram
 
 ## 进度与切歌
 
-调用方定期调用 `poll_playback_progress()`。DLNA 查询设备进度，B站云投屏读取本地计时；进度过滤和曲末判断在查询后进行。
+会话在宿主提供的 Tokio 运行时上每秒查询一次进度，并驱动自动切歌，断开时取消任务。DLNA 查询设备进度，B站云投屏读取回传校正后的本地进度；查询串行执行，错过的周期不补发。
 
 下图表示处理顺序。切歌请求完成后，由下一次歌单同步触发播放，对应上图的流程。
 
 ```mermaid
 flowchart LR
-    poll["进度轮询<br/>读取 Caster 进度"]
+    poll["核心会话任务<br/>读取 Caster 进度"]
     gate["ProgressGate / AutoNextSong<br/>过滤旧进度、判断曲末"]
     manual["调用方手动切歌"]
     command["playlist/commands<br/>提交切歌请求"]
@@ -55,7 +55,9 @@ flowchart LR
     room --> sync
 ```
 
-`get_current_progress()` 只查询和过滤进度，不触发自动切歌。自动切歌在一次播放期间只触发一次，播放成功确认后才重新启用。
+`get_current_progress()`、兼容入口 `poll_playback_progress()` 和 `EngineContext::playback_state()` 只读缓存，不查询设备或触发切歌。查询失败时保留上次有效进度；切歌或重新投屏时清除旧进度。自动切歌只使用本轮取得并通过过滤的进度，在一次播放期间只触发一次，播放成功确认后才重新启用。
+
+宿主无须另启设备进度查询或自动切歌任务。新增控制命令时，需要让操作前发出的查询失效，并保留歌曲播放确认的版本。
 
 ## DLNA 媒体传输
 

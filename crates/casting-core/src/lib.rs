@@ -16,8 +16,8 @@ pub use cast::dlna::{
 };
 pub use config::{API_TIMEOUT, PROXY_CONNECT_TIMEOUT, SOAP_TIMEOUT};
 pub use engine::{
-    CurrentBilibiliParts, ENGINE_STATE, EngineContext, connect_dlna_device, connect_room,
-    cycle_quality_core, get_current_bilibili_parts_core, get_current_progress,
+    CurrentBilibiliParts, ENGINE_STATE, EngineContext, EnginePlaybackState, connect_dlna_device,
+    connect_room, cycle_quality_core, get_current_bilibili_parts_core, get_current_progress,
     get_current_song_id_core, get_current_song_title_core, get_danmaku_core, get_quality_core,
     get_total_duration, get_volume_core, jump_to_secs, pause_core, play_core,
     poll_playback_progress, recast_current_song, reset_engine, select_current_bilibili_part_core,

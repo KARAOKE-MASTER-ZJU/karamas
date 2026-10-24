@@ -26,14 +26,10 @@ pub extern "C" fn Java_zju_bangdream_ktv_casting_RustEngine_queryProgress(
     env: JNIEnv,
     _class: JClass,
 ) -> jintArray {
-    let (current, total) = if let Ok(guard) = ENGINE_STATE.read() {
-        if let Some(ctx) = guard.as_ref() {
-            ctx.rt.block_on(crate::get_current_progress())
-        } else {
-            (-1, -1)
-        }
-    } else {
-        (-1, -1)
+    let ctx = ENGINE_STATE.read().ok().and_then(|guard| guard.as_ref().cloned());
+    let (current, total) = match ctx {
+        Some(ctx) => ctx.rt.block_on(ctx.current_progress()),
+        None => (-1, -1),
     };
 
     let result_array = env.new_int_array(2).expect("无法创建 Java 数组");
@@ -46,7 +42,7 @@ pub extern "C" fn Java_zju_bangdream_ktv_casting_RustEngine_queryProgress(
     result_array.into_raw()
 }
 
-// 自动轮询使用独立入口，避免将手动 nextSong 也限制为 once。
+// 保留原 Android 宿主入口；自动切歌由核心会话任务驱动。
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
 pub extern "C" fn Java_zju_bangdream_ktv_casting_RustEngine_pollPlaybackProgress(
@@ -55,7 +51,7 @@ pub extern "C" fn Java_zju_bangdream_ktv_casting_RustEngine_pollPlaybackProgress
 ) -> jintArray {
     let ctx = ENGINE_STATE.read().ok().and_then(|guard| guard.as_ref().cloned());
     let (current, total) = match ctx {
-        Some(ctx) => ctx.rt.block_on(crate::poll_playback_progress()),
+        Some(ctx) => ctx.rt.block_on(ctx.current_progress()),
         None => (-1, -1),
     };
     let result = env.new_int_array(2).expect("无法创建 Java 数组");

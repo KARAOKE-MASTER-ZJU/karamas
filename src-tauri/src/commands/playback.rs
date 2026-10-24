@@ -5,7 +5,7 @@ use crate::{
 };
 use std::sync::Arc;
 
-/// 轮询播放状态并驱动核心库的自动切歌；未连接时返回 null。
+/// 读取核心库最近的播放状态；未连接时返回 null。
 #[tauri::command]
 pub async fn poll_playback() -> CommandResult<Option<PlaybackState>> {
     let ctx = match current_engine() {
@@ -13,19 +13,18 @@ pub async fn poll_playback() -> CommandResult<Option<PlaybackState>> {
         Err(error) if error.code == "NOT_CONNECTED" => return Ok(None),
         Err(error) => return Err(error),
     };
-    let (current, total) = casting_core::poll_playback_progress().await;
-    // 将核心库表示无效进度的负数转换为 null，保留有效的零进度。
+    let playback = ctx.playback_state().await;
     let result = PlaybackState {
-        song_id: ctx.playlist_manager.get_song_id().await,
-        title: ctx.playlist_manager.get_song_title().await,
-        current_secs: u32::try_from(current).ok(),
-        total_secs: u32::try_from(total).ok(),
-        is_playing: ctx.is_playing(),
-        queued_count: ctx.playlist_manager.get_queued_count().await,
-        sung_count: ctx.playlist_manager.get_sung_count().await,
-        quality_qn: ctx.caster.get_quality().ok().map(|q| q.as_qn()),
-        danmaku: ctx.caster.get_danmaku().ok(),
-        capabilities: ctx.caster.capabilities().into(),
+        song_id: playback.song_id,
+        title: playback.title,
+        current_secs: playback.current_secs,
+        total_secs: playback.total_secs,
+        is_playing: playback.is_playing,
+        queued_count: playback.queued_count,
+        sung_count: playback.sung_count,
+        quality_qn: playback.quality_qn,
+        danmaku: playback.danmaku,
+        capabilities: playback.capabilities.into(),
     };
     // 重连期间不把旧会话的结果返回给界面。
     if !current_engine().is_ok_and(|current| Arc::ptr_eq(&current, &ctx)) {
