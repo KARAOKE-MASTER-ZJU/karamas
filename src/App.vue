@@ -38,39 +38,41 @@ const showHelp = ref(false);
     <AppNavigation />
 
     <main id="main-content" class="workspace">
-      <!-- 页眉部分，显示页面标题和操作按钮 -->
-      <header class="page-header">
-        <!-- 页面标题部分，包含返回按钮和标题文本 -->
-        <div class="page-title">
-          <RouterLink
-            v-if="route.meta.back"
-            :to="route.meta.back.to"
-            class="icon-button back-button"
-            :aria-label="route.meta.back.label"
-          >
-            <ArrowLeft />
-          </RouterLink>
-          <h1>{{ route.meta.title }}</h1>
-        </div>
+      <div class="page-content">
+        <!-- 页眉部分，显示页面标题和操作按钮 -->
+        <header class="page-header">
+          <!-- 页面标题部分，包含返回按钮和标题文本 -->
+          <div class="page-title">
+            <RouterLink
+              v-if="route.meta.back"
+              :to="route.meta.back.to"
+              class="icon-button back-button"
+              :aria-label="route.meta.back.label"
+            >
+              <ArrowLeft />
+            </RouterLink>
+            <h1>{{ route.meta.title }}</h1>
+          </div>
 
-        <!-- 页眉操作部分: 帮助按钮 -->
-        <div class="header-actions">
-          <button
-            class="icon-button"
-            aria-label="使用帮助"
-            @click="showHelp = true"
-          >
-            <CircleQuestionMark />
-          </button>
-        </div>
-      </header>
+          <!-- 页眉操作部分: 帮助按钮 -->
+          <div class="header-actions">
+            <button
+              class="icon-button"
+              aria-label="使用帮助"
+              @click="showHelp = true"
+            >
+              <CircleQuestionMark />
+            </button>
+          </div>
+        </header>
 
-      <!-- 路由视图部分，使用 KeepAlive 缓存组件状态 -->
-      <RouterView v-slot="{ Component }">
-        <KeepAlive>
-          <component :is="Component" />
-        </KeepAlive>
-      </RouterView>
+        <!-- 路由视图部分，使用 KeepAlive 缓存组件状态 -->
+        <RouterView v-slot="{ Component }">
+          <KeepAlive>
+            <component :is="Component" />
+          </KeepAlive>
+        </RouterView>
+      </div>
     </main>
 
     <!-- 应用通知组件，显示通知消息和级别 -->
@@ -87,13 +89,23 @@ const showHelp = ref(false);
 </template>
 
 <style scoped>
-/* 应用主界面样式，包括最小高度、内边距和布局 */
 .app-shell {
-  min-height: 100dvh;
+  height: 100dvh;
+  overflow: hidden;
   padding-left: var(--navigation-rail-width);
 }
-/* 工作区样式，设置最大宽度、内边距和居中对齐 */
 .workspace {
+  height: 100%;
+  overflow-y: auto;
+}
+.workspace::-webkit-scrollbar {
+  width: 4px;
+}
+.workspace::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 50%, transparent);
+  border-radius: 2px;
+}
+.page-content {
   max-width: 824px;
   padding: 0 48px 32px;
   margin: 0 auto;
@@ -120,9 +132,9 @@ const showHelp = ref(false);
 
 @media (max-width: 640px) {
   .app-shell {
-    padding-bottom: calc(var(--navigation-bar-height) + 4px);
+    padding-bottom: var(--navigation-bar-height);
   }
-  .workspace {
+  .page-content {
     padding: 0 20px 24px;
   }
   .page-header {
