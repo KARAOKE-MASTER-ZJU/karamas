@@ -2,7 +2,7 @@
 
 基于 Tauri 2、TypeScript 和 Rust 的跨平台投屏应用。
 
-已提供设备连接、播放控制、设置和日志界面，支持保存房间配置、切换主题和导出界面日志。实际房间操作、设备连接与播放控制尚未开放。
+支持创建和加入点歌房间、搜索与连接 DLNA 设备，以及哔哩哔哩小电视云投屏。可以控制播放、切歌、进度和音量，选择清晰度与分 P，并查看和导出日志。
 
 ## 本地运行
 
@@ -26,5 +26,21 @@ pnpm dev
 ```sh
 pnpm tauri build
 ```
+
+## Android
+
+安装 Android Studio、JDK、Android SDK 和 NDK 后，在连接的手机或已启动的模拟器上运行：
+
+```sh
+pnpm android dev
+```
+
+构建 arm64 调试 APK：
+
+```sh
+pnpm android build --debug --target aarch64 --apk
+```
+
+Android 版目前适配应用保持前台时的设备发现与投屏。搜索和连接局域网设备时，请允许本地网络访问，并让手机与电视连接同一网络。后台持续投屏尚未接入。
 
 工程结构、检查命令和移动端接入说明见 [开发文档](DEVELOP.md)。

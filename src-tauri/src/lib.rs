@@ -2,6 +2,7 @@ mod commands;
 mod error;
 mod logging;
 mod models;
+mod platform;
 mod state;
 
 use state::BridgeState;
@@ -10,7 +11,12 @@ use tauri::Manager;
 /// 启动 Tauri 应用，注册命令、接入状态和日志转发。
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(platform::init());
+
+    builder
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             logging::initialize(app.handle().clone())?;

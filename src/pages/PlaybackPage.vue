@@ -13,7 +13,8 @@ import { usePlaybackControls } from "@/composables/usePlaybackControls";
 import { openSongRoom } from "@/services/songRoom";
 
 const casting = useCastingStore();
-const { playback, volume, activeDevice, recasting, room } = storeToRefs(casting);
+const { playback, volume, activeDevice, recasting, room } =
+  storeToRefs(casting);
 const controls = usePlaybackControls();
 </script>
 
@@ -40,14 +41,8 @@ const controls = usePlaybackControls();
           type="button"
           class="session-chip room-chip"
           :disabled="!room"
-          :title="
-            room ? `打开点歌台：${room.serverUrl}` : '未加入房间'
-          "
-          :aria-label="
-            room
-              ? `打开房间 ${room.roomId} 的点歌台`
-              : '未加入房间'
-          "
+          :title="room ? `打开点歌台：${room.serverUrl}` : '未加入房间'"
+          :aria-label="room ? `打开房间 ${room.roomId} 的点歌台` : '未加入房间'"
           @click="room && controls.run(() => openSongRoom(room!))"
         >
           <span>{{ room ? `房间：${room.roomId}` : "未加入房间" }}</span>

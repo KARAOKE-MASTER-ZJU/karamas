@@ -18,7 +18,8 @@ struct RoomResponse {
 
 /// 沿用点歌台的创建、查询接口，成功后由前端保存房间配置。
 #[tauri::command]
-pub async fn enter_room(
+pub async fn enter_room<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
     server_url: String,
     room_id: String,
     mode: RoomEntryMode,
@@ -30,6 +31,7 @@ pub async fn enter_room(
             "服务器地址不能带查询参数或片段，房间号不能为空",
         ));
     }
+    crate::platform::ensure_room_access(&app, &url).await?;
     let endpoint = match mode {
         RoomEntryMode::Create => "createRoom",
         RoomEntryMode::Join => "roomExists",

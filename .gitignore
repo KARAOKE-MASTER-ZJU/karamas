@@ -30,6 +30,13 @@ src-tauri/gen/schemas/
 .externalNativeBuild/
 src-tauri/gen/android/**/build/
 src-tauri/gen/android/local.properties
+src-tauri/gen/android/tauri.settings.gradle
+src-tauri/gen/android/app/tauri.build.gradle.kts
+src-tauri/gen/android/app/tauri.properties
+src-tauri/gen/android/app/src/main/jniLibs/
+src-tauri/gen/android/app/src/main/assets/tauri.conf.json
+src-tauri/gen/android/app/src/main/java/**/generated/
+src-tauri/gen/android/.tauri/
 
 # Apple 平台缓存、依赖和个人配置
 src-tauri/gen/apple/build/

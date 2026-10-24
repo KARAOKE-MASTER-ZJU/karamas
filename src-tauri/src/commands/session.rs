@@ -24,7 +24,8 @@ pub(super) fn http_url(value: &str) -> CommandResult<url::Url> {
 
 /// 按指定协议启动当前投屏会话，复用 Tauri 的运行时。
 #[tauri::command]
-pub async fn start_casting(
+pub async fn start_casting<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
     state: State<'_, BridgeState>,
     server_url: String,
     room_id: String,
@@ -39,7 +40,9 @@ pub async fn start_casting(
     }
     if let CastTarget::Dlna { location } = &target {
         http_url(location)?;
+        crate::platform::ensure_network_access(&app).await?;
     }
+    crate::platform::ensure_room_access(&app, &url).await?;
     // 核心库只有一份全局会话，启动期间不能并发启动或断开。
     let _lifecycle = state.lifecycle.lock().await;
     state.initialize_storage().await?;

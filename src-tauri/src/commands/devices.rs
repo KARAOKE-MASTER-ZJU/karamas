@@ -6,7 +6,10 @@ use casting_core::cast::bilibili::{self, BilibiliDevice, BilibiliSession};
 
 /// 搜索局域网 DLNA 设备，保留空列表和搜索失败的区别。
 #[tauri::command]
-pub async fn discover_dlna_devices() -> CommandResult<Vec<DlnaDeviceInfo>> {
+pub async fn discover_dlna_devices<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+) -> CommandResult<Vec<DlnaDeviceInfo>> {
+    crate::platform::ensure_network_access(&app).await?;
     Ok(casting_core::discover_devices_core()
         .await?
         .into_iter()
@@ -16,8 +19,12 @@ pub async fn discover_dlna_devices() -> CommandResult<Vec<DlnaDeviceInfo>> {
 
 /// 通过设备描述文件地址获取 DLNA 设备。
 #[tauri::command]
-pub async fn discover_dlna_device(url: String) -> CommandResult<DlnaDeviceInfo> {
+pub async fn discover_dlna_device<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    url: String,
+) -> CommandResult<DlnaDeviceInfo> {
     super::session::http_url(&url)?;
+    crate::platform::ensure_network_access(&app).await?;
     Ok(casting_core::discover_device_from_url_core(url)
         .await?
         .into())

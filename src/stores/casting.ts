@@ -23,10 +23,7 @@ export const useCastingStore = defineStore("casting", () => {
     () => activeDevice.value !== null || playback.value !== null,
   );
   const sessionBusy = computed(
-    () =>
-      connecting.value ||
-      enteringRoom.value ||
-      changingDlnaProxy.value,
+    () => connecting.value || enteringRoom.value || changingDlnaProxy.value,
   );
   const busy = computed(() => sessionBusy.value || controlling.value);
   const auth = useBilibiliStore();
