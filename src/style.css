@@ -208,6 +208,7 @@ fieldset {
   align-items: center;
   justify-content: center;
   border: 0;
+  border-color: transparent;
   background: none;
   border-radius: 6px;
   width: 36px;
