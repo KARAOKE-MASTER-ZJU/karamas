@@ -14,7 +14,7 @@ export default withVueTs(
     "**/dist/**",
     "**/coverage/**",
     "**/target/**",
-    "crates/**",
+    "karamas_core/**",
     "src-tauri/**",
   ]),
   js.configs.recommended,

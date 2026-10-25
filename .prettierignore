@@ -7,7 +7,7 @@ coverage/
 .vite/
 
 # Rust 核心、原生工程和资源
-crates/
+karamas_core/
 src-tauri/
 public/
 
