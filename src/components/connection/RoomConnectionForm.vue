@@ -156,20 +156,23 @@ async function enterRoom(entryMode: RoomEntryMode) {
   color: var(--accent);
 }
 .room-form {
+  container-type: inline-size;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
-  gap: 18px 8px;
+  gap: 18px 12px;
 }
 .room-form > .field:first-child {
   grid-column: 1 / -1;
 }
 .room-actions {
-  display: flex;
-  flex-wrap: nowrap;
-  justify-content: flex-end;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
   margin-top: calc(var(--control-line-height) + 8px);
+}
+.room-actions .button {
+  min-width: 104px;
 }
 .room-action-compact {
   display: none;
@@ -183,18 +186,16 @@ async function enterRoom(entryMode: RoomEntryMode) {
   .room-form > .field:first-child {
     grid-column: auto;
   }
-  .room-actions {
-    gap: 8px;
-  }
 }
 @media (max-width: 899px) {
   .room-form .button {
-    padding: 0 8px;
-    font-size: 13px;
+    min-width: 50px;
   }
   .room-form :deep(.field > input) {
     padding: 0 8px;
   }
+}
+@container (max-width: 360px) {
   .room-action-label {
     display: none;
   }
