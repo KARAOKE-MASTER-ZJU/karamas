@@ -283,7 +283,7 @@ async fn connect(
         .streaming(
             request,
             tonic::codegen::http::uri::PathAndQuery::from_static(TUNNEL),
-            tonic::codec::ProstCodec::<BroadcastFrame, BroadcastFrame>::default(),
+            tonic_prost::ProstCodec::<BroadcastFrame, BroadcastFrame>::default(),
         )
         .await
         .map_err(|status| format!("创建广播双向流失败：{}", status.code()))?;
