@@ -116,11 +116,6 @@ export function useLogViewer() {
     void refresh();
   }
 
-  async function readAll() {
-    const snapshot = await castingApi.getLogs(filter.value, query.value);
-    return snapshot.entries;
-  }
-
   watch([filter, query], () => {
     limit.value = PAGE_SIZE;
     void refresh();
@@ -140,6 +135,5 @@ export function useLogViewer() {
     hasMore,
     clear,
     loadMore,
-    readAll,
   };
 }

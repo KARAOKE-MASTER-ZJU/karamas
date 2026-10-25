@@ -1,8 +1,10 @@
 mod buffer;
+mod export;
 mod files;
 mod panic;
 
 pub use buffer::{LogBuffer, LogSnapshot};
+pub use export::{ExportAction, can_share_logs, export_logs};
 use flexi_logger::{
     DeferredNow,
     writers::{FileLogWriter, LogWriter},

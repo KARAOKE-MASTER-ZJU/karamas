@@ -14,6 +14,8 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         logging::write_log,
         logging::get_logs,
         logging::clear_logs,
+        logging::export_logs,
+        logging::can_share_logs,
         room::enter_room,
         devices::discover_dlna_devices,
         devices::discover_dlna_device,

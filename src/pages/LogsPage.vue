@@ -1,8 +1,8 @@
 <!-- 日志页面 -->
 
 <script setup lang="ts">
-import { Copy, Download, Trash2, Logs, ChevronDown } from "@lucide/vue";
-import { computed, ref } from "vue";
+import { Copy, Download, Share2, Trash2, Logs, ChevronDown } from "@lucide/vue";
+import { computed, onMounted, ref } from "vue";
 import { useLogViewer } from "@/composables/useLogViewer";
 import { useOperationNotice } from "@/composables/useOperationNotice";
 import type { LogEntry } from "@/types";
@@ -11,7 +11,7 @@ import {
   formatLogTime,
   formatLogMessage,
 } from "@/utils/logs";
-import { errorMessage } from "@/services/casting";
+import { castingApi, errorMessage, isTauri } from "@/services/casting";
 
 const {
   entries,
@@ -24,10 +24,18 @@ const {
   hasMore,
   clear,
   loadMore,
-  readAll,
 } = useLogViewer();
 const { notify } = useOperationNotice();
 const exporting = ref(false);
+const shareSupported = ref(false);
+onMounted(async () => {
+  if (!isTauri()) return;
+  try {
+    shareSupported.value = await castingApi.canShareLogs();
+  } catch (error) {
+    notify(`读取分享支持状态失败：${errorMessage(error)}`, "error");
+  }
+});
 
 function formatEntries(items: LogEntry[]) {
   return items
@@ -49,20 +57,21 @@ async function copyLogs() {
   }
 }
 
-async function exportLogs() {
+async function exportLogs(action: "save" | "share", event: MouseEvent) {
+  if (exporting.value) return;
   exporting.value = true;
   try {
-    const items = await readAll();
-    const url = URL.createObjectURL(
-      new Blob([formatEntries(items)], { type: "text/plain;charset=utf-8" }),
-    );
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `ktv-casting-${new Date().toISOString().slice(0, 10)}.log`;
-    link.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const completed = await castingApi.exportLogs(action, {
+      x: rect.left + rect.width / 2,
+      y: rect.bottom,
+    });
+    if (completed && action === "save") notify("日志已保存");
   } catch (error) {
-    notify(`导出日志失败：${errorMessage(error)}`, "error");
+    notify(
+      `${action === "save" ? "保存" : "分享"}日志失败：${errorMessage(error)}`,
+      "error",
+    );
   } finally {
     exporting.value = false;
   }
@@ -105,14 +114,22 @@ async function exportLogs() {
           <Copy :size="18" aria-hidden="true" /></button
         ><button
           class="icon-button toolbar-icon"
-          aria-label="导出日志"
-          :disabled="loading || exporting || !entries.length"
-          @click="exportLogs"
+          aria-label="保存日志"
+          :disabled="loading || exporting || !retained"
+          @click="exportLogs('save', $event)"
         >
           <Download :size="18" aria-hidden="true" /></button
         ><button
+          v-if="shareSupported"
           class="icon-button toolbar-icon"
-          :disabled="!retained || clearing"
+          aria-label="分享日志"
+          :disabled="loading || exporting || !retained"
+          @click="exportLogs('share', $event)"
+        >
+          <Share2 :size="18" aria-hidden="true" /></button
+        ><button
+          class="icon-button toolbar-icon"
+          :disabled="!retained || clearing || exporting"
           aria-label="清空日志"
           @click="clear"
         >

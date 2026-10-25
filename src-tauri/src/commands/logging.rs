@@ -1,6 +1,6 @@
 use crate::{
     error::CommandResult,
-    logging::{LOG_EVENT, LogBuffer, LogSnapshot},
+    logging::{ExportAction, LOG_EVENT, LogBuffer, LogSnapshot},
     models::LogLevel,
 };
 use std::sync::Arc;
@@ -34,4 +34,20 @@ pub async fn get_logs(
 pub fn clear_logs<R: Runtime>(app: tauri::AppHandle<R>, buffer: State<'_, Arc<LogBuffer>>) {
     buffer.clear();
     let _ = app.emit(LOG_EVENT, ());
+}
+
+#[tauri::command]
+pub fn can_share_logs() -> bool {
+    crate::logging::can_share_logs()
+}
+
+#[tauri::command]
+pub async fn export_logs<R: Runtime>(
+    app: tauri::AppHandle<R>,
+    window: tauri::WebviewWindow<R>,
+    buffer: State<'_, Arc<LogBuffer>>,
+    action: ExportAction,
+    position: Option<tauri_plugin_sharekit::SharePosition>,
+) -> CommandResult<bool> {
+    crate::logging::export_logs(app, window, buffer.inner().clone(), action, position).await
 }

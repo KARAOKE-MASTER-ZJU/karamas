@@ -18,6 +18,9 @@ pub fn run() {
 
     builder
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_sharekit::init())
         .setup(|app| {
             logging::initialize(app.handle().clone())?;
             // 接入层只保存资源和调用协调状态，播放状态由核心库维护。

@@ -38,6 +38,9 @@ export const castingApi = {
   getLogs: (level: LogLevel, query: string, limit?: number) =>
     call<LogSnapshot>("get_logs", { level, query, limit: limit ?? null }),
   clearLogs: () => call<void>("clear_logs"),
+  canShareLogs: () => call<boolean>("can_share_logs"),
+  exportLogs: (action: "save" | "share", position?: { x: number; y: number }) =>
+    call<boolean>("export_logs", { action, position: position ?? null }),
   enterRoom: (room: ConnectionConfig, mode: RoomEntryMode) =>
     call<void>("enter_room", { ...room, mode }),
   discoverDlnaDevices: () => call<DlnaDevice[]>("discover_dlna_devices"),
