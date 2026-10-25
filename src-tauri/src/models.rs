@@ -63,6 +63,8 @@ impl From<Capabilities> for DeviceCapabilities {
 #[serde(rename_all = "camelCase")]
 pub struct PlaybackState {
     pub song_id: Option<String>,
+    /// 包含分 P 信息，供界面在同一歌曲切换分 P 时刷新清晰度。
+    pub song_url: Option<String>,
     pub title: Option<String>,
     pub current_secs: Option<u32>,
     pub total_secs: Option<u32>,

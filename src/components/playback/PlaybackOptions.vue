@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { computed, useId } from "vue";
-import { ChevronDown } from "@lucide/vue";
+import { computed, toRef, useId } from "vue";
+import { ChevronDown, RefreshCw } from "@lucide/vue";
 import type { CastMode } from "@/types";
+import { useBilibiliQualities } from "@/composables/useBilibiliQualities";
 const props = defineProps<{
   mode: CastMode;
+  songId: string | null;
+  songUrl: string | null;
   dlnaProxyEnabled: boolean;
   qualityQn: number | null;
   danmaku: boolean | null;
@@ -15,25 +18,29 @@ const emit = defineEmits<{
 }>();
 const qualityId = useId();
 const danmakuId = useId();
-const qualities = [
-  { qn: 16, label: "360P" },
-  { qn: 32, label: "480P" },
+const { qualities, loading, error, refresh } = useBilibiliQualities(
+  toRef(props, "mode"),
+  toRef(props, "songId"),
+  toRef(props, "songUrl"),
+);
+const dlnaQualities = [
   { qn: 64, label: "720P" },
-  { qn: 80, label: "1080P" },
-  { qn: 112, label: "1080PH" },
-  { qn: 116, label: "1080P60" },
-  { qn: 120, label: "4K" },
+  { qn: 80, label: "1080P (Beta)" },
 ];
 const options = computed(() =>
   props.mode === "dlna"
-    ? qualities
-        .filter(({ qn }) => qn === 64 || (props.dlnaProxyEnabled && qn === 80))
-        .map((option) => ({
-          ...option,
-          label: option.qn === 80 ? "1080P (Beta)" : option.label,
-        }))
-    : qualities,
+    ? dlnaQualities.filter(({ qn }) => qn === 64 || props.dlnaProxyEnabled)
+    : qualities.value,
 );
+const selectedQuality = computed(() =>
+  options.value.some(({ qn }) => qn === props.qualityQn) ? props.qualityQn : "",
+);
+const placeholder = computed(() => {
+  if (loading.value) return "正在加载…";
+  if (error.value) return "加载失败";
+  if (!options.value.length) return "暂无清晰度";
+  return props.qualityQn === null ? "—" : "请选择清晰度";
+});
 function setQuality(event: Event) {
   emit("quality", Number((event.target as HTMLSelectElement).value));
 }
@@ -46,17 +53,32 @@ function setQuality(event: Event) {
       <div class="select-control quality-select">
         <select
           :id="qualityId"
-          :value="qualityQn ?? ''"
-          :disabled="disabled || qualityQn === null"
+          :value="selectedQuality"
+          :disabled="
+            disabled || qualityQn === null || loading || !options.length
+          "
           @change="setQuality"
         >
-          <option v-if="qualityQn === null" value="" disabled>—</option>
+          <option v-if="selectedQuality === ''" value="" disabled>
+            {{ placeholder }}
+          </option>
           <option v-for="option in options" :key="option.qn" :value="option.qn">
             {{ option.label }}
           </option>
         </select>
         <ChevronDown :size="16" aria-hidden="true" />
       </div>
+    </div>
+    <div v-if="mode === 'bilibili' && error" class="quality-error">
+      <p class="field-error" role="alert">{{ error }}</p>
+      <button
+        type="button"
+        class="button text-button"
+        :disabled="disabled || loading"
+        @click="refresh"
+      >
+        <RefreshCw :size="14" aria-hidden="true" />重试
+      </button>
     </div>
     <div v-if="mode === 'bilibili'" class="option-row">
       <span :id="danmakuId">弹幕</span>
@@ -90,6 +112,16 @@ function setQuality(event: Event) {
 }
 .quality-select {
   width: 168px;
+}
+.quality-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.quality-error p {
+  flex: 1;
+  margin: 0;
 }
 .danmaku-switch {
   width: 38px;

@@ -8,6 +8,7 @@ use std::{
 /// 当前会话的播放状态。读取时不查询设备，也不触发切歌。
 pub struct EnginePlaybackState {
     pub song_id: Option<String>,
+    pub song_url: Option<String>,
     pub title: Option<String>,
     pub current_secs: Option<u32>,
     pub total_secs: Option<u32>,
@@ -37,8 +38,10 @@ impl EngineContext {
         } else {
             gate.cached_progress()
         };
+        let song = gate.song();
         EnginePlaybackState {
-            song_id: gate.song().and_then(|(id, _)| id),
+            song_id: song.as_ref().and_then(|(id, _)| id.clone()),
+            song_url: song.map(|(_, url)| url),
             title: self.playlist_manager.get_song_title().await,
             current_secs: u32::try_from(current).ok(),
             total_secs: u32::try_from(total).ok(),

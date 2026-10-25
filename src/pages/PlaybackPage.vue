@@ -99,6 +99,8 @@ const controls = usePlaybackControls();
       <PlaybackOptions
         v-if="activeDevice"
         :mode="activeDevice.kind"
+        :song-id="playback?.songId ?? null"
+        :song-url="playback?.songUrl ?? null"
         :dlna-proxy-enabled="casting.dlnaProxyEnabled"
         :quality-qn="playback?.qualityQn ?? null"
         :danmaku="playback?.danmaku ?? null"

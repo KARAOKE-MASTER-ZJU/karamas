@@ -20,6 +20,7 @@ export type CastDevice =
   (DlnaDevice & { kind: "dlna" }) | (BilibiliDevice & { kind: "bilibili" });
 export interface PlaybackState {
   songId: string | null;
+  songUrl: string | null;
   title: string | null;
   currentSecs: number | null;
   totalSecs: number | null;
@@ -47,6 +48,10 @@ export interface BilibiliPart {
   cid: number;
   part: string;
   durationSecs: number;
+}
+export interface BilibiliQuality {
+  qn: number;
+  label: string;
 }
 export interface CurrentBilibiliParts {
   songId: string;

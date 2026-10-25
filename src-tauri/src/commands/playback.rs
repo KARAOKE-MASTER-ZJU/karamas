@@ -16,6 +16,7 @@ pub async fn poll_playback() -> CommandResult<Option<PlaybackState>> {
     let playback = ctx.playback_state().await;
     let result = PlaybackState {
         song_id: playback.song_id,
+        song_url: playback.song_url,
         title: playback.title,
         current_secs: playback.current_secs,
         total_secs: playback.total_secs,
@@ -125,6 +126,16 @@ pub async fn set_quality(qn: u32) -> CommandResult<u32> {
     let quality = casting_core::cast::Quality::from_qn(qn)
         .ok_or_else(|| CommandError::new("INVALID_ARGUMENT", "不支持的清晰度"))?;
     Ok(casting_core::set_quality_core(quality).await?.as_qn())
+}
+
+/// 查询指定 B站视频分 P 的清晰度列表。
+#[tauri::command]
+pub async fn get_bilibili_qualities(
+    song_url: String,
+) -> CommandResult<Vec<casting_core::sources::bilibili::BilibiliQuality>> {
+    casting_core::sources::bilibili::get_bilibili_qualities(&song_url)
+        .await
+        .map_err(|message| CommandError::new("UPSTREAM_ERROR", message))
 }
 
 /// 查询当前歌曲可选的 B站分 P。

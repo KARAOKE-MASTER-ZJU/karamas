@@ -112,6 +112,96 @@ pub async fn get_page_info(bv_id: &str, page: u32) -> Result<(u64, u32), String>
     Ok((part.cid, part.duration_secs))
 }
 
+/// 当前视频分 P 支持的清晰度。
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct BilibiliQuality {
+    pub qn: u32,
+    pub label: String,
+}
+
+/// 通过播放接口读取清晰度列表，不下载媒体内容。
+pub async fn get_bilibili_qualities(video: &str) -> Result<Vec<BilibiliQuality>, String> {
+    let (bvid, page) = parse_bilibili_video(video)?;
+    let (cid, _) = get_page_info(&bvid, page).await?;
+    let json = bili_api_client()
+        .get("https://api.bilibili.com/x/player/playurl")
+        .query(&[
+            ("bvid", bvid.as_str()),
+            ("cid", &cid.to_string()),
+            ("qn", "80"),
+            ("fnval", "4048"),
+            ("fourk", "1"),
+        ])
+        .header("Referer", format!("https://www.bilibili.com/video/{bvid}"))
+        .send()
+        .await
+        .map_err(|e| format!("获取清晰度失败：{e}"))?
+        .error_for_status()
+        .map_err(|e| format!("获取清晰度失败：{e}"))?
+        .json::<Value>()
+        .await
+        .map_err(|e| format!("解析清晰度响应失败：{e}"))?;
+    parse_bilibili_qualities(&json)
+}
+
+fn parse_bilibili_qualities(json: &Value) -> Result<Vec<BilibiliQuality>, String> {
+    if json["code"].as_i64() != Some(0) {
+        return Err(format!(
+            "获取清晰度失败：{} ({})",
+            json["message"].as_str().unwrap_or("B站接口返回错误"),
+            json["code"]
+        ));
+    }
+    let data = &json["data"];
+    let accepted = data["accept_quality"]
+        .as_array()
+        .ok_or("B站未返回清晰度列表")?;
+    let mut qualities = Vec::<BilibiliQuality>::new();
+    for (index, value) in accepted.iter().enumerate() {
+        let Some(quality) = value
+            .as_u64()
+            .and_then(|qn| u32::try_from(qn).ok())
+            // 仅展示现有投屏控制支持的档位，避免选中后被 set_quality 拒绝。
+            .and_then(crate::cast::Quality::from_qn)
+        else {
+            continue;
+        };
+        let qn = quality.as_qn();
+        if qualities.iter().any(|option| option.qn == qn) {
+            continue;
+        }
+        let format = data["support_formats"].as_array().and_then(|formats| {
+            formats
+                .iter()
+                .find(|item| item["quality"].as_u64() == Some(qn as u64))
+        });
+        let label = format
+            .and_then(|format| {
+                ["new_description", "description", "display_desc"]
+                    .into_iter()
+                    .find_map(|key| {
+                        format[key]
+                            .as_str()
+                            .filter(|label| !label.trim().is_empty())
+                    })
+            })
+            .or_else(|| {
+                data["accept_description"][index]
+                    .as_str()
+                    .filter(|label| !label.trim().is_empty())
+            })
+            .unwrap_or_else(|| quality.label());
+        qualities.push(BilibiliQuality {
+            qn,
+            label: label.to_owned(),
+        });
+    }
+    if qualities.is_empty() {
+        return Err("该分 P 没有可用的投屏清晰度".into());
+    }
+    Ok(qualities)
+}
+
 /// 解析 B站视频输入，支持 BV号、BV URL、bilibili://video/URL、以及带分 P 的格式。
 pub fn parse_bilibili_video(input: &str) -> Result<(String, u32), String> {
     let (bvid, page) = if input.starts_with("bilibili://")

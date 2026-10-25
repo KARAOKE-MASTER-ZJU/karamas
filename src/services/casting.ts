@@ -9,6 +9,7 @@ import type {
   PlaybackState,
   RecastResult,
   CurrentBilibiliParts,
+  BilibiliQuality,
 } from "@/types/casting";
 
 // 所有原生调用集中在此，页面不直接拼接 IPC 命令和参数。
@@ -68,6 +69,8 @@ export const castingApi = {
   previousSong: () => call<void>("previous_song"),
   recast: () => call<RecastResult>("recast_current_song"),
   setQuality: (qn: number) => call<number>("set_quality", { qn }),
+  getBilibiliQualities: (songUrl: string) =>
+    call<BilibiliQuality[]>("get_bilibili_qualities", { songUrl }),
   setDanmaku: (enabled: boolean) => call<boolean>("set_danmaku", { enabled }),
   getBilibiliParts: () =>
     call<CurrentBilibiliParts>("get_current_bilibili_parts"),
