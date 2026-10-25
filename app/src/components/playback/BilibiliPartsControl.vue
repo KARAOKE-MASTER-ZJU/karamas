@@ -5,9 +5,14 @@ import AppDialog from "@/components/base/AppDialog.vue";
 import { useBilibiliParts } from "@/composables/useBilibiliParts";
 import { formatTime } from "@/utils/time";
 
-const props = defineProps<{ songId: string; disabled: boolean }>();
+const props = defineProps<{
+  songId: string;
+  songUrl: string | null;
+  disabled: boolean;
+}>();
 const { parts, loading, error, showDialog, refresh, select } = useBilibiliParts(
   toRef(props, "songId"),
+  toRef(props, "songUrl"),
 );
 const currentPart = computed(() =>
   parts.value?.parts.find(

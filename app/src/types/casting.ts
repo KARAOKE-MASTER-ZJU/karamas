@@ -57,6 +57,7 @@ export interface BilibiliQuality {
 }
 export interface CurrentBilibiliParts {
   songId: string;
+  songUrl: string;
   bvid: string;
   currentPageIndex: number;
   parts: BilibiliPart[];

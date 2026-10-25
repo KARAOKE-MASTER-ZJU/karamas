@@ -71,6 +71,7 @@ const controls = usePlaybackControls();
         v-if="playback?.songId"
         :key="playback.songId"
         :song-id="playback.songId"
+        :song-url="playback.songUrl"
         :disabled="casting.sessionBusy"
       />
       <PlaybackProgress

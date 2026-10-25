@@ -8,6 +8,7 @@ use serde::Serialize;
 #[serde(rename_all = "camelCase")]
 pub struct CurrentBilibiliParts {
     pub song_id: String,
+    pub song_url: String,
     pub bvid: String,
     pub current_page_index: u32,
     pub parts: Vec<BilibiliPart>,
@@ -34,6 +35,7 @@ pub async fn get_current_bilibili_parts_core() -> Result<CurrentBilibiliParts, P
     }
     Ok(CurrentBilibiliParts {
         song_id: song.song_id,
+        song_url: song.song_url,
         bvid,
         current_page_index,
         parts,

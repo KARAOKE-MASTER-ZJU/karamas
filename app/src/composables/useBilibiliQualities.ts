@@ -1,4 +1,4 @@
-import { onScopeDispose, ref, watch, type Ref } from "vue";
+import { ref, watch, type Ref } from "vue";
 import { castingApi, errorMessage } from "@/services/casting";
 import type { CastMode } from "@/types";
 import type { BilibiliQuality } from "@/types/casting";
@@ -11,23 +11,26 @@ export function useBilibiliQualities(
   const qualities = ref<BilibiliQuality[]>([]);
   const loading = ref(false);
   const error = ref("");
-  let revision = 0;
 
   async function refresh() {
-    const currentRevision = ++revision;
     qualities.value = [];
     error.value = "";
     loading.value = false;
     const url = songUrl.value;
     if (mode.value !== "bilibili" || !songId.value || !url) return;
+    const isCurrent = () => mode.value === "bilibili" && songUrl.value === url;
     loading.value = true;
     try {
       const result = await castingApi.getBilibiliQualities(url);
-      if (currentRevision === revision) qualities.value = result;
+      if (isCurrent()) {
+        qualities.value = result;
+        error.value = "";
+      }
     } catch (cause) {
-      if (currentRevision === revision) error.value = errorMessage(cause);
+      if (isCurrent() && !qualities.value.length)
+        error.value = errorMessage(cause);
     } finally {
-      if (currentRevision === revision) loading.value = false;
+      if (isCurrent()) loading.value = false;
     }
   }
 
@@ -35,9 +38,6 @@ export function useBilibiliQualities(
   watch([mode, songId, songUrl], () => void refresh(), {
     immediate: true,
     flush: "sync",
-  });
-  onScopeDispose(() => {
-    ++revision;
   });
   return { qualities, loading, error, refresh };
 }

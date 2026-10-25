@@ -17,27 +17,18 @@ const emit = defineEmits<{ recast: [] }>();
 const coverUrl = ref<string | null>(null);
 
 watch(
-  () => [props.songId, props.songUrl] as const,
-  async ([songId, songUrl], _, onCleanup) => {
+  () => props.songUrl,
+  async (songUrl) => {
     coverUrl.value = null;
-    if (!songId || !songUrl) return;
-    let active = true;
-    const image = new Image();
-    image.referrerPolicy = "no-referrer";
-    onCleanup(() => {
-      active = false;
-      image.onload = null;
-      image.onerror = null;
-    });
+    if (!songUrl) return;
     try {
       const url = await castingApi.getBilibiliCover(songUrl);
-      if (!active) return;
-      // 图片加载完成后再替换图标；切歌后忽略上一首的响应。
+      if (songUrl !== props.songUrl) return;
+      const image = new Image();
+      image.referrerPolicy = "no-referrer";
+      // 同一歌曲 URL 的封面可以复用，图片加载后再核对当前 URL。
       image.onload = () => {
-        if (active) coverUrl.value = url;
-      };
-      image.onerror = () => {
-        if (active) coverUrl.value = null;
+        if (songUrl === props.songUrl) coverUrl.value = url;
       };
       image.src = url;
     } catch {
@@ -46,6 +37,14 @@ watch(
   },
   { immediate: true, flush: "sync" },
 );
+
+function onCoverError(event: Event) {
+  if (
+    (event.currentTarget as HTMLImageElement).getAttribute("src") ===
+    coverUrl.value
+  )
+    coverUrl.value = null;
+}
 </script>
 
 <template>
@@ -57,7 +56,7 @@ watch(
       class="track-cover"
       alt=""
       referrerpolicy="no-referrer"
-      @error="coverUrl = null"
+      @error="onCoverError"
     />
     <Music2 v-else :size="24" aria-hidden="true" />
     <div class="track-info">
