@@ -16,22 +16,30 @@ export function useBilibiliParts(
 
   // 刷新当前歌曲的分 P 信息
   async function refresh() {
+    const id = songId.value;
     const url = songUrl.value;
+    const isCurrent = () => songId.value === id && songUrl.value === url;
     loading.value = false;
     error.value = "";
-    if (!url) return;
+    if (!url) {
+      error.value = "当前歌曲地址尚未加载，请刷新分 P";
+      return;
+    }
     loading.value = true;
     try {
       const result = await castingApi.getBilibiliParts();
-      if (songUrl.value !== url || result.songUrl !== url) return;
+      if (!isCurrent()) return;
+      if (result.songId !== id || result.songUrl !== url) {
+        throw new Error("歌曲信息已变化，请刷新分 P");
+      }
       parts.value = result;
       error.value = "";
     } catch (cause) {
-      if (songUrl.value === url && !parts.value) {
+      if (isCurrent() && !parts.value) {
         error.value = errorMessage(cause);
       }
     } finally {
-      if (songUrl.value === url) loading.value = false;
+      if (isCurrent()) loading.value = false;
     }
   }
 

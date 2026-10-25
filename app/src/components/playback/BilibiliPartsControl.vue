@@ -56,6 +56,9 @@ const currentPart = computed(() =>
       </template>
       <p v-if="loading" class="parts-message" role="status">正在加载分 P…</p>
       <p v-else-if="error" class="field-error" role="alert">{{ error }}</p>
+      <p v-else-if="!parts?.parts.length" class="parts-message" role="status">
+        暂无可用分 P，请刷新重试
+      </p>
       <ul v-if="!loading && parts" class="parts-list" aria-label="分 P 列表">
         <li v-for="part in parts.parts" :key="part.pageIndex">
           <button

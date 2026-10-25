@@ -35,7 +35,8 @@ pub async fn get_current_bilibili_parts_core() -> Result<CurrentBilibiliParts, P
     }
     Ok(CurrentBilibiliParts {
         song_id: song.song_id,
-        song_url: song.song_url,
+        // 与播放状态使用同一地址格式，供前端校验返回结果所属的分 P。
+        song_url: format!("{bvid}-page{current_page_index}"),
         bvid,
         current_page_index,
         parts,
