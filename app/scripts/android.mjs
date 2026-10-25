@@ -1,7 +1,9 @@
 import process from "node:process";
 import { existsSync, readdirSync } from "node:fs";
 import { homedir, platform } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
+import { createRequire } from "node:module";
+import { fileURLToPath, URL } from "node:url";
 import { spawnSync } from "node:child_process";
 
 // 为 Tauri 和 QuickJS bindgen 共用同一套 Android NDK 头文件。
@@ -57,11 +59,12 @@ if (!env.JAVA_HOME && os === "darwin") {
   if (existsSync(bundledJava)) env.JAVA_HOME = bundledJava;
 }
 // 直接启动已安装的 CLI，让 Gradle 子进程也继承 bindgen 配置。
-const cli = resolve("node_modules/@tauri-apps/cli/tauri.js");
+const cli = createRequire(import.meta.url).resolve("@tauri-apps/cli/tauri.js");
 const result = spawnSync(
   process.execPath,
   [cli, "android", ...process.argv.slice(2)],
   {
+    cwd: fileURLToPath(new URL("..", import.meta.url)),
     env,
     stdio: "inherit",
   },

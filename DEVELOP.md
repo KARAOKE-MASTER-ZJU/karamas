@@ -1,5 +1,27 @@
 # 开发说明
 
+## 工程结构
+
+`app/` 是完整的 Tauri 应用，包含前端源码、原生接入、依赖和构建配置；`karamas_core/` 是独立的 Rust 核心库。
+
+```text
+app/
+├── src/                 # Vue 前端
+├── src-tauri/           # Tauri 命令、平台接入和原生工程
+├── public/              # 前端静态资源
+├── scripts/             # 应用构建脚本
+├── package.json         # 应用依赖和命令
+└── vite.config.ts       # 前端构建配置
+karamas_core/             # 独立投屏核心
+Cargo.toml               # Rust 工作区
+package.json             # 根目录命令入口和格式化工具
+pnpm-workspace.yaml      # pnpm 工作区
+```
+
+根目录的 `pnpm dev`、`pnpm build`、`pnpm check`、`pnpm lint`、`pnpm tauri` 和 `pnpm android` 转发到 `app/`；也可以进入 `app/` 运行这些命令。`pnpm format` 和 `pnpm format:check` 在根目录执行，覆盖仓库文档和应用文件。依赖锁文件保留在根目录。
+
+Rust 共用根目录的 `Cargo.lock` 和 `target/`；前端构建产物位于 `app/dist/`。
+
 ## 开发约定
 
 Tauri 命令层只负责调用转发，投屏逻辑放在 `karamas_core` 中。核心库保持独立，服务端可以单独依赖它，无须构建前端或 Tauri 应用。
@@ -38,21 +60,21 @@ Cargo 包名、Rust 库名和应用中的依赖名统一为 `karamas_core`。`ru
 | `cargo test -p karamas_core --lib` | 运行核心库测试                 |
 | `cargo fmt -p karamas --check`     | 检查 Tauri 应用层 Rust 格式    |
 
-`pnpm lint:fix` 和 `pnpm format` 会修改文件。前端检查和格式化的范围见 `eslint.config.mjs` 和 `.prettierignore`。
+`pnpm lint:fix` 和 `pnpm format` 会修改文件。前端检查和格式化的范围见 `app/eslint.config.mjs` 和 `.prettierignore`。
 
 ## 日志
 
-`src-tauri/src/logging` 统一接收 Rust 和前端日志，默认记录 `info` 及更严重的日志；设置页可调整记录级别。内存保留最近 10,000 条记录，日志页的级别和关键词筛选只影响展示。清空操作只清除内存记录，保存和分享导出全部内存记录。
+`app/src-tauri/src/logging` 统一接收 Rust 和前端日志，默认记录 `info` 及更严重的日志；设置页可调整记录级别。内存保留最近 10,000 条记录，日志页的级别和关键词筛选只影响展示。清空操作只清除内存记录，保存和分享导出全部内存记录。
 
 文件日志写入 Tauri 的 `app_log_dir`，单个文件达到 10 MiB 后轮转，保留 4 个归档文件；Rust panic 另写入 `panics.log`。文件日志与内存留存各自独立，日志页不读取历史文件。
 
-保存使用系统文件对话框。系统分享在 Android、iOS 和 macOS 上开放，分享文件暂存于应用缓存目录的 `log-exports` 中。Windows 和 Linux 使用保存功能。相关实现位于 `src-tauri/src/logging/export.rs`。
+保存使用系统文件对话框。系统分享在 Android、iOS 和 macOS 上开放，分享文件暂存于应用缓存目录的 `log-exports` 中。Windows 和 Linux 使用保存功能。相关实现位于 `app/src-tauri/src/logging/export.rs`。
 
 ## 移动端开发
 
 ### Android 构建
 
-Android 原生工程保存在 `src-tauri/gen/android`，与应用源码一起维护。修改原生代码后不要重新运行 `android init`，以免覆盖接入代码。
+Android 原生工程保存在 `app/src-tauri/gen/android`，与应用源码一起维护。修改原生代码后不要重新运行 `android init`，以免覆盖接入代码。
 
 安装 Android Studio、JDK 21 或更高版本、Android SDK 37 和 NDK。当前 `compileSdk` 和 `targetSdk` 均为 37，`minSdk` 为 24。设置 `ANDROID_HOME` 指向 SDK；使用特定 NDK 时设置 `NDK_HOME`，使用特定 JDK 时设置 `JAVA_HOME`。macOS 上未设置 `JAVA_HOME` 时，启动脚本尝试使用 Android Studio 自带的 JDK。
 
@@ -63,11 +85,11 @@ pnpm android dev
 pnpm android build --debug --target aarch64 --apk
 ```
 
-使用 `pnpm android` 构建，确保 QuickJS bindgen 使用 NDK 的目标头文件。相关配置见 `scripts/android.mjs`。首次构建需要下载 Gradle 和 Maven 依赖。
+使用 `pnpm android` 构建，确保 QuickJS bindgen 使用 NDK 的目标头文件。相关配置见 `app/scripts/android.mjs`。首次构建需要下载 Gradle 和 Maven 依赖。
 
-Android 图标统一维护在 `src-tauri/icons/android`，原生工程直接引用此目录。
+Android 图标统一维护在 `app/src-tauri/icons/android`，原生工程直接引用此目录。
 
-APK 位于 `src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`。可用 `adb install -r` 安装到调试设备。当前 applicationId 为 `zju.idol.karamas`，可与原 Android 项目并存，应用数据各自保存。
+APK 位于 `app/src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`。可用 `adb install -r` 安装到调试设备。当前 applicationId 为 `zju.idol.karamas`，可与原 Android 项目并存，应用数据各自保存。
 
 ### Android 网络与运行限制
 
@@ -83,7 +105,7 @@ Android 13 及以上在开始投屏时申请通知权限。拒绝后仍可投屏
 
 ### Android 返回行为
 
-`src/composables/useAndroidBack.ts` 接管返回键和返回手势。有弹窗时先关闭最上层弹窗，日志页返回设置页。在“连接设备”“播放控制”“设置”主页，第一次返回时提示，2 秒内再次返回则调用 `moveTaskToBack(true)` 退到桌面，投屏服务继续运行。切换页面或应用可见状态变化后，连续返回的计时会重置。
+`app/src/composables/useAndroidBack.ts` 接管返回键和返回手势。有弹窗时先关闭最上层弹窗，日志页返回设置页。在“连接设备”“播放控制”“设置”主页，第一次返回时提示，2 秒内再次返回则调用 `moveTaskToBack(true)` 退到桌面，投屏服务继续运行。切换页面或应用可见状态变化后，连续返回的计时会重置。
 
 ### Android 回归检查
 

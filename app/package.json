@@ -1,0 +1,45 @@
+{
+  "name": "karamas",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "vite",
+    "check": "vue-tsc --build",
+    "build": "vue-tsc --build && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "android": "node scripts/android.mjs",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix --max-warnings 0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@tauri-apps/cli": "^2.12.3",
+    "@tsconfig/node24": "^24.0.5",
+    "@types/node": "^24.0.0",
+    "@types/qrcode": "^1.5.6",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "@vue/eslint-config-typescript": "^14.9.0",
+    "@vue/tsconfig": "^0.9.1",
+    "eslint": "^10.13.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-vue": "^10.11.1",
+    "globals": "^17.13.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.5",
+    "vue-tsc": "^3.3.13"
+  },
+  "dependencies": {
+    "@lucide/vue": "^1.60.0",
+    "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/plugin-opener": "^2.7.2",
+    "pinia": "^4.1.0",
+    "qrcode": "^1.5.4",
+    "vue": "^3.5.44",
+    "vue-router": "^5.4.0"
+  }
+}

@@ -21,27 +21,27 @@ target/
 !.env.example
 
 # Tauri 自动生成的配置 schema
-src-tauri/gen/schemas/
+app/src-tauri/gen/schemas/
 
 # Android 本地配置、缓存和构建产物
 .gradle/
 .kotlin/
 .cxx/
 .externalNativeBuild/
-src-tauri/gen/android/**/build/
-src-tauri/gen/android/local.properties
-src-tauri/gen/android/tauri.settings.gradle
-src-tauri/gen/android/app/tauri.build.gradle.kts
-src-tauri/gen/android/app/tauri.properties
-src-tauri/gen/android/app/src/main/jniLibs/
-src-tauri/gen/android/app/src/main/assets/tauri.conf.json
-src-tauri/gen/android/app/src/main/java/**/generated/
-src-tauri/gen/android/.tauri/
+app/src-tauri/gen/android/**/build/
+app/src-tauri/gen/android/local.properties
+app/src-tauri/gen/android/tauri.settings.gradle
+app/src-tauri/gen/android/app/tauri.build.gradle.kts
+app/src-tauri/gen/android/app/tauri.properties
+app/src-tauri/gen/android/app/src/main/jniLibs/
+app/src-tauri/gen/android/app/src/main/assets/tauri.conf.json
+app/src-tauri/gen/android/app/src/main/java/**/generated/
+app/src-tauri/gen/android/.tauri/
 
 # Apple 平台缓存、依赖和个人配置
-src-tauri/gen/apple/build/
-src-tauri/gen/apple/DerivedData/
-src-tauri/gen/apple/Pods/
+app/src-tauri/gen/apple/build/
+app/src-tauri/gen/apple/DerivedData/
+app/src-tauri/gen/apple/Pods/
 **/xcuserdata/
 
 # 本地签名文件

@@ -8,8 +8,8 @@ coverage/
 
 # Rust 核心、原生工程和资源
 karamas_core/
-src-tauri/
-public/
+app/src-tauri/
+app/public/
 
 # 锁文件和仓库规则
 pnpm-lock.yaml

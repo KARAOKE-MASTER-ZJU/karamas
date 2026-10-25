@@ -8,7 +8,7 @@
 
 安装 Node.js 24 或更高版本、pnpm 11、Rust，并按 [Tauri 环境准备文档](https://v2.tauri.app/start/prerequisites/)安装对应平台的工具链。
 
-安装依赖并启动桌面应用：
+在仓库根目录安装依赖并启动桌面应用：
 
 ```sh
 pnpm install --frozen-lockfile

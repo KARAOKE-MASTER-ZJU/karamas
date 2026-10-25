@@ -2,10 +2,11 @@
 
 ## 工程结构
 
-- `src/` 存放 TypeScript 前端代码。
-- `src-tauri/` 负责 Tauri 初始化、命令桥接和平台接入。
+- `app/src/` 存放 TypeScript 前端代码。
+- `app/src-tauri/` 负责 Tauri 初始化、命令桥接和平台接入。
 - `karamas_core/` 存放独立于应用框架的 Rust 投屏核心。
-- 根目录通过 Cargo workspace 统一管理 Rust crate，共用依赖锁文件和构建目录。
+- `app/` 存放完整的 Tauri 应用及其前端依赖、配置和脚本。
+- 根目录通过 pnpm workspace 管理应用依赖，通过 Cargo workspace 统一管理 Rust crate，共用依赖锁文件和构建目录。
 
 ## 开发约定
 
