@@ -1,6 +1,6 @@
 # KARAM@S
 
-基于 Tauri 2、TypeScript 和 Rust 的跨平台投屏应用。
+基于 Tauri 2、Vue 3、TypeScript 和 Rust 的跨平台投屏应用。
 
 支持创建和加入点歌房间、搜索与连接 DLNA 设备，以及哔哩哔哩小电视云投屏。可以控制播放、切歌、进度和音量，选择清晰度与分 P，并查看和导出日志。
 
@@ -15,7 +15,7 @@ pnpm install --frozen-lockfile
 pnpm tauri dev
 ```
 
-仅启动前端开发服务器：
+仅预览界面时，启动前端开发服务器；投屏和登录需要在 Tauri 应用中使用：
 
 ```sh
 pnpm dev
@@ -41,6 +41,8 @@ pnpm android dev
 pnpm android build --debug --target aarch64 --apk
 ```
 
-Android 版目前适配应用保持前台时的设备发现与投屏。搜索和连接局域网设备时，请允许本地网络访问，并让手机与电视连接同一网络。后台持续投屏尚未接入。
+DLNA 投屏需要手机与电视连接同一网络。
+
+Android 支持后台投屏，退到桌面或锁屏后仍会同步歌单和自动切歌。
 
 工程结构、检查命令和移动端接入说明见 [开发文档](DEVELOP.md)。

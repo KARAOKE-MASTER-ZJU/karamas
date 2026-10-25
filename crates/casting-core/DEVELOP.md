@@ -85,7 +85,7 @@ flowchart LR
 
 关键参数：
 
-- `extra.buvid` 与 gRPC metadata 的 `buvid` 一致，指定回传接收端。桌面端保存在偏好配置的 `bilibiliBuvid` 字段，登录和投屏复用；`ott_buvid` 是目标电视标识。
+- `extra.buvid` 与 gRPC metadata 的 `buvid` 一致，指定回传接收端。发送端标识保存在 Tauri 应用偏好配置的 `bilibiliBuvid` 字段，桌面端和 Android 端的登录与投屏都复用该标识；`ott_buvid` 是目标电视标识。
 - `extra.bizSessionId` 每次播放重新生成，用于关联当前曲目、过滤旧会话回传。
 - HTTP 播放使用顶层 `cid`、`video_type=4`，以及 `extra.oid=aid`、`extra.type=101`。
 
