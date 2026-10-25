@@ -1,5 +1,80 @@
 use super::*;
 
+fn interface(name: &str, address: Ipv4Addr, flags: InterfaceFlags) -> Interface {
+    Interface {
+        name: name.into(),
+        #[cfg(windows)]
+        description: name.into(),
+        address: getifaddrs::Address::V4(getifaddrs::NetworkAddress {
+            address,
+            netmask: None,
+            associated_address: None,
+        }),
+        flags,
+        index: None,
+    }
+}
+
+#[test]
+fn selects_active_multicast_ipv4_addresses_without_loopback_or_point_to_point() {
+    let flags = InterfaceFlags::UP | InterfaceFlags::RUNNING | InterfaceFlags::MULTICAST;
+    let first = interface("wifi", Ipv4Addr::new(192, 168, 1, 2), flags);
+    let second = interface("ethernet", Ipv4Addr::new(10, 0, 0, 2), flags);
+    let mut candidates = vec![first.clone(), first, second];
+    for excluded in [
+        flags & !InterfaceFlags::UP,
+        flags & !InterfaceFlags::RUNNING,
+        flags & !InterfaceFlags::MULTICAST,
+        flags | InterfaceFlags::LOOPBACK,
+        flags | InterfaceFlags::POINTTOPOINT,
+    ] {
+        candidates.push(interface("excluded", Ipv4Addr::new(10, 1, 0, 2), excluded));
+    }
+    for address in [
+        Ipv4Addr::LOCALHOST,
+        Ipv4Addr::UNSPECIFIED,
+        Ipv4Addr::BROADCAST,
+        Ipv4Addr::new(239, 1, 2, 3),
+    ] {
+        candidates.push(interface("excluded", address, flags));
+    }
+    let mut ipv6 = interface("ipv6", Ipv4Addr::LOCALHOST, flags);
+    ipv6.address = getifaddrs::Address::V6(getifaddrs::NetworkAddress {
+        address: std::net::Ipv6Addr::LOCALHOST,
+        netmask: None,
+        associated_address: None,
+    });
+    candidates.push(ipv6);
+    let selected = select_interfaces(candidates);
+    assert_eq!(
+        selected,
+        vec![
+            DiscoveryInterface {
+                name: "wifi".into(),
+                address: Ipv4Addr::new(192, 168, 1, 2)
+            },
+            DiscoveryInterface {
+                name: "ethernet".into(),
+                address: Ipv4Addr::new(10, 0, 0, 2)
+            },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn probe_socket_sets_multicast_egress_and_keeps_unicast_replies_unconnected() {
+    let socket = create_probe_socket(Ipv4Addr::LOCALHOST).await.unwrap();
+    assert_eq!(
+        SockRef::from(&socket).multicast_if_v4().unwrap(),
+        Ipv4Addr::LOCALHOST
+    );
+    assert_eq!(
+        socket.local_addr().unwrap().ip(),
+        IpAddr::V4(Ipv4Addr::LOCALHOST)
+    );
+    assert!(socket.peer_addr().is_err());
+}
+
 fn response(location: &str) -> String {
     format!("HTTP/1.1 200 OK\r\nlocation: {location}\r\nst: ssdp:all\r\nUSN: uuid:fixture\r\n\r\n")
 }
@@ -39,7 +114,7 @@ async fn counts_received_datagrams_duplicates_and_rejected_responses() {
             server.send_to(bytes, source).await.unwrap();
         }
     });
-    let report = probe_target("ssdp:all", Ipv4Addr::LOCALHOST.into(), destination, Duration::from_millis(200), &|_| {}).await.unwrap();
+    let report = probe_target("ssdp:all", Ipv4Addr::LOCALHOST, destination, Duration::from_millis(200), &|_| {}).await.unwrap();
     responder.await.unwrap();
     assert_eq!(report.sent, 1);
     assert_eq!(report.received, 3);
@@ -69,7 +144,8 @@ async fn target_comparison_finds_device_that_only_answers_ssdp_all_and_deduplica
     });
     let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
     let on_location = |location: &str| { sender.send(location.to_owned()).unwrap(); };
-    let discovery = compare_targets(Ipv4Addr::LOCALHOST.into(), destination, Duration::from_millis(1300), &on_location);
+    let interfaces = [DiscoveryInterface { name: "fixture".into(), address: Ipv4Addr::LOCALHOST }];
+    let discovery = search_interfaces(&interfaces, destination, Duration::from_millis(1300), &on_location);
     tokio::pin!(discovery);
     // 通知必须先于探测完成；把通知挪到收集结束后会让这里失败。
     tokio::select! {
@@ -87,8 +163,69 @@ async fn target_comparison_finds_device_that_only_answers_ssdp_all_and_deduplica
 #[tokio::test]
 async fn silent_endpoint_completes_with_zero_received_datagrams() {
     let server = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-    let report = probe_target(TARGETS[0], Ipv4Addr::LOCALHOST.into(), server.local_addr().unwrap(), Duration::from_millis(50), &|_| {}).await.unwrap();
+    let report = probe_target(TARGETS[0], Ipv4Addr::LOCALHOST, server.local_addr().unwrap(), Duration::from_millis(50), &|_| {}).await.unwrap();
     assert_eq!(report.received, 0);
     assert_eq!(report.rejected, 0);
     assert!(report.locations.is_empty());
+}
+
+#[tokio::test]
+async fn parallel_interfaces_notify_once_even_when_another_interface_fails() {
+    let server = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+    let destination = server.local_addr().unwrap();
+    // 两个接口候选借用回环地址，只验证调度和合并，不要求测试机有两张物理网卡。
+    let interfaces = [
+        DiscoveryInterface {
+            name: "unavailable".into(),
+            address: Ipv4Addr::new(192, 0, 2, 1),
+        },
+        DiscoveryInterface {
+            name: "first".into(),
+            address: Ipv4Addr::LOCALHOST,
+        },
+        DiscoveryInterface {
+            name: "second".into(),
+            address: Ipv4Addr::LOCALHOST,
+        },
+    ];
+    let responder = tokio::spawn(async move {
+        let mut sources = BTreeSet::new();
+        let mut buffer = [0; 2048];
+        // 必须在任何一轮探测结束前收到两个接口的请求，串行搜索会超时。
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while sources.len() < TARGETS.len() * 2 {
+                let (_, source) = server.recv_from(&mut buffer).await.unwrap();
+                sources.insert(source);
+            }
+        })
+        .await
+        .expect("各接口应同时开始搜索");
+        let reply = response("http://127.0.0.1/renderer.xml");
+        for source in sources {
+            server.send_to(reply.as_bytes(), source).await.unwrap();
+        }
+    });
+    let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+    let on_location = |location: &str| {
+        sender.send(location.to_owned()).unwrap();
+    };
+    let discovery = search_interfaces(
+        &interfaces,
+        destination,
+        Duration::from_secs(2),
+        &on_location,
+    );
+    tokio::pin!(discovery);
+    tokio::select! {
+        biased;
+        _ = &mut discovery => panic!("应在探测结束前通知设备地址"),
+        location = receiver.recv() => assert_eq!(location.as_deref(), Some("http://127.0.0.1/renderer.xml")),
+    }
+    let locations = discovery.await.unwrap();
+    responder.await.unwrap();
+    assert_eq!(locations, vec!["http://127.0.0.1/renderer.xml"]);
+    assert!(
+        receiver.try_recv().is_err(),
+        "跨接口和跨目标的重复地址只能通知一次"
+    );
 }

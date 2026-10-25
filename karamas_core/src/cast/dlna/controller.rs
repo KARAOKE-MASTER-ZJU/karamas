@@ -432,7 +432,7 @@ pub struct DlnaDevice {
     pub services: Vec<URN>,
 }
 
-// 三路 SSDP 响应共用去重集合，描述请求不等待探测窗口结束。
+// 各网卡的 SSDP 响应共用去重集合，描述请求不等待探测窗口结束。
 fn resolve_discovery_locations(
     locations: impl futures::Stream<Item = String>,
 ) -> impl futures::Stream<Item = Result<Device, rupnp::Error>> {
@@ -521,7 +521,7 @@ impl DlnaController {
         on_device: impl FnMut(&DlnaDevice),
     ) -> Result<Vec<DlnaDevice>, rupnp::Error> {
         let started = Instant::now();
-        log::info!(target: "DLNA_DISCOVERY", "自动搜索开始：并行对照AVTransport:1、MediaRenderer:1、ssdp:all，各5s；收到地址即解析并通知，描述请求单次超时3s、并发8");
+        log::info!(target: "DLNA_DISCOVERY", "自动搜索开始：各可用IPv4网卡并行探测AVTransport:1、MediaRenderer:1、ssdp:all，各5s；收到地址即解析并通知，描述请求沿系统路由、单次超时3s、并发8");
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         let discovery = ssdp_discovery::discover_locations(move |location| {
             let _ = sender.send(location.to_owned());

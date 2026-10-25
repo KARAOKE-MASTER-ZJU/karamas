@@ -13,8 +13,10 @@ actix-web = { version = "4.18.1", default-features = false, features = ["macros"
 chrono = "0.4.45"
 futures = "0.3.34"
 futures-util = "0.3.34"
+getifaddrs = "0.6.2"
 local-ip-address = "0.6.13"
 log = "0.4.34"
+socket2 = "0.6.5"
 
 reqwest = { version = "0.12", default-features = false, features = [
     "json",

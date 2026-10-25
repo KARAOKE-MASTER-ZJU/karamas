@@ -1,7 +1,10 @@
-//! Observable IPv4 M-SEARCH. Separate sockets associate replies with each probe.
+//! 在各个可用 IPv4 网卡上并行发送 M-SEARCH，逐个通知新发现的地址。
 use super::discovery_endpoint;
+use getifaddrs::{Interface, InterfaceFlags};
+use socket2::SockRef;
 use std::collections::BTreeSet;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::Mutex;
 use std::time::Duration;
 use tokio::net::UdpSocket;
 use tokio::time::{Instant, sleep_until};
@@ -15,6 +18,43 @@ const TARGETS: [&str; 3] = [
 /// SSDP 目标地址
 const DESTINATION: &str = "239.255.255.250:1900";
 const DETAIL_LIMIT: usize = 50;
+
+#[derive(Debug, PartialEq, Eq)]
+struct DiscoveryInterface {
+    name: String,
+    address: Ipv4Addr,
+}
+
+fn select_interfaces(interfaces: impl IntoIterator<Item = Interface>) -> Vec<DiscoveryInterface> {
+    let mut seen = BTreeSet::new();
+    interfaces.into_iter().filter_map(|interface| {
+        let Some(IpAddr::V4(address)) = interface.address.ip_addr() else {
+            return None;
+        };
+        if !interface.flags.contains(InterfaceFlags::UP | InterfaceFlags::RUNNING | InterfaceFlags::MULTICAST)
+            || interface.flags.intersects(InterfaceFlags::LOOPBACK | InterfaceFlags::POINTTOPOINT)
+            || address.is_loopback()
+            || address.is_unspecified()
+            || address.is_multicast()
+            || address.is_broadcast()
+        {
+            log::debug!(target: "DLNA_SSDP", "跳过网卡：接口={}，IPv4={}，标志={:?}", interface.name, address, interface.flags);
+            return None;
+        }
+        if !seen.insert((interface.name.clone(), address)) {
+            return None;
+        }
+        Some(DiscoveryInterface { name: interface.name, address })
+    }).collect()
+}
+
+async fn create_probe_socket(local_ip: Ipv4Addr) -> std::io::Result<UdpSocket> {
+    let socket = UdpSocket::bind((local_ip, 0)).await?;
+    // 绑定源地址之外，还需明确指定组播出口，避免组播沿默认路由发出。
+    SockRef::from(&socket).set_multicast_if_v4(&local_ip)?;
+    socket.set_multicast_ttl_v4(2)?;
+    Ok(socket)
+}
 
 #[derive(Default, Debug)]
 struct ProbeReport {
@@ -70,13 +110,12 @@ fn log_field(value: &str) -> String {
 /// 探测指定目标的设备，返回探测报告
 async fn probe_target(
     target: &str,
-    local_ip: IpAddr,
+    local_ip: Ipv4Addr,
     destination: SocketAddr,
     window: Duration,
     on_location: &(impl Fn(&str) + Sync),
 ) -> std::io::Result<ProbeReport> {
-    let socket = UdpSocket::bind(SocketAddr::new(local_ip, 0)).await?;
-    socket.set_multicast_ttl_v4(2)?;
+    let socket = create_probe_socket(local_ip).await?;
     let local = socket.local_addr()?;
     let request = format!("M-SEARCH * HTTP/1.1\r\nHOST: {destination}\r\nMAN: \"ssdp:discover\"\r\nMX: 3\r\nST: {target}\r\n\r\n");
     let started = Instant::now();
@@ -160,48 +199,83 @@ async fn probe_target(
 }
 
 /// SSDP 发现设备，收到新的描述地址就通知调用方。
-pub(super) async fn discover_locations(on_location: impl Fn(&str) + Sync) -> Result<(), rupnp::Error> {
+pub(super) async fn discover_locations(
+    on_location: impl Fn(&str) + Sync,
+) -> Result<(), rupnp::Error> {
     let destination: SocketAddr = DESTINATION.parse().expect("constant IPv4 endpoint");
-    // UDP connect selects a route without sending a packet. Do not connect the
-    // receiving sockets: replies come from unicast device addresses, not the group.
-    let route = async {
-        let probe = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).await?;
-        probe.connect(destination).await?;
-        Ok::<_, std::io::Error>(probe.local_addr()?.ip())
-    }.await.map_err(|error| {
-        log::error!(target: "DLNA_SSDP", "选择IPv4路由失败：目的={}，错误={}", destination, error);
+    let interfaces = getifaddrs::getifaddrs().map_err(|error| {
+        log::error!(target: "DLNA_SSDP", "枚举网卡失败：错误={}", error);
         rupnp::Error::IO(error)
     })?;
-    log::info!(target: "DLNA_SSDP", "系统路由选择本地IPv4={}；三个探测套接字显式绑定此地址，各自等待单播响应", route);
-    compare_targets(route, destination, Duration::from_secs(5), &on_location).await.map(|_| ())
+    let interfaces = select_interfaces(interfaces);
+    search_interfaces(
+        &interfaces,
+        destination,
+        Duration::from_secs(5),
+        &on_location,
+    )
+    .await
+    .map(|_| ())
 }
 
-/// 对比所有目标，返回合并后的描述地址列表
-async fn compare_targets(
-    route: IpAddr,
+/// 各网卡同时搜索所有目标；跨网卡、跨目标的重复地址只通知一次。
+async fn search_interfaces(
+    interfaces: &[DiscoveryInterface],
     destination: SocketAddr,
     window: Duration,
     on_location: &(impl Fn(&str) + Sync),
 ) -> Result<Vec<String>, rupnp::Error> {
-    let results = futures::future::join_all(TARGETS.iter().map(|target| {
-        probe_target(target, route, destination, window, on_location)
-    })).await;
-    let mut locations = BTreeSet::new();
-    let mut failed = 0;
-    let mut first_error = None;
-    for (target, result) in TARGETS.iter().zip(results) {
-        match result {
-            Ok(report) => locations.extend(report.locations),
-            Err(error) => {
-                failed += 1;
-                log::error!(target: "DLNA_SSDP", "目标探测失败：目标={}，错误={}", target, error);
-                first_error.get_or_insert(rupnp::Error::IO(error));
-            }
+    if interfaces.is_empty() {
+        log::warn!(target: "DLNA_SSDP", "没有可用于SSDP搜索的IPv4网卡");
+        return Err(rupnp::Error::IO(std::io::Error::new(
+            std::io::ErrorKind::AddrNotAvailable,
+            "没有已启用且支持组播的 IPv4 网卡",
+        )));
+    }
+    let locations = Mutex::new(BTreeSet::new());
+    let notify_location = |location: &str| {
+        let is_new = locations.lock().unwrap().insert(location.to_owned());
+        if is_new {
+            on_location(location);
+        }
+    };
+    let mut probes = Vec::new();
+    for interface in interfaces {
+        log::info!(target: "DLNA_SSDP", "搜索网卡：接口={}，IPv4={}，显式指定组播出口，目标数={}", interface.name, interface.address, TARGETS.len());
+        for target in TARGETS {
+            let notify_location = &notify_location;
+            probes.push(async move {
+                (
+                    interface,
+                    target,
+                    probe_target(
+                        target,
+                        interface.address,
+                        destination,
+                        window,
+                        notify_location,
+                    )
+                    .await,
+                )
+            });
         }
     }
-    log::info!(target: "DLNA_SSDP", "SSDP探测结束：失败目标={}，合并后描述地址={}", failed, locations.len());
+    let results = futures::future::join_all(probes).await;
+    let mut failed = 0;
+    let mut first_error = None;
+    for (interface, target, result) in results {
+        if let Err(error) = result {
+            failed += 1;
+            log::error!(target: "DLNA_SSDP", "目标探测失败：接口={}，IPv4={}，目标={}，错误={}", interface.name, interface.address, target, error);
+            first_error.get_or_insert(rupnp::Error::IO(error));
+        }
+    }
+    let locations = locations.into_inner().unwrap();
+    log::info!(target: "DLNA_SSDP", "SSDP探测结束：网卡地址数={}，失败探测={}，合并后描述地址={}", interfaces.len(), failed, locations.len());
     if locations.is_empty() {
-        if let Some(error) = first_error { return Err(error); }
+        if let Some(error) = first_error {
+            return Err(error);
+        }
     }
     Ok(locations.into_iter().collect())
 }
