@@ -46,6 +46,9 @@ function retry() {
       </button>
     </template>
     <div class="qr-content" :aria-busy="auth.loggingIn && !auth.qrUrl">
+      <p class="credential-notice">
+        登录凭证仅保存在本机，用于查询同账号的投屏设备并控制播放。
+      </p>
       <canvas
         v-show="auth.qrUrl && !qrError"
         ref="canvas"
@@ -69,6 +72,11 @@ function retry() {
   font-size: 14px;
   line-height: 1.8;
   text-align: center;
+}
+.credential-notice {
+  color: var(--muted);
+  font-size: 13px;
+  text-align: left;
 }
 .qr-content canvas {
   max-width: 100%;
