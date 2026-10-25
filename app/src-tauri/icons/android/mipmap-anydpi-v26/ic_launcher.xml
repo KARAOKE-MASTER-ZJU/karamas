@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-  <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
-  <background android:drawable="@color/ic_launcher_background"/>
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground>
+        <!-- 将完整 SVG 放在中央 72/108 区域，保留桌面裁切所需的留白。 -->
+        <inset
+            android:drawable="@drawable/app_icon"
+            android:inset="16.666667%" />
+    </foreground>
 </adaptive-icon>

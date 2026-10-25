@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 路径与配色来自 app/public/app-icon.svg，修改源图后同步更新。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="30dp"
+    android:height="30dp"
+    android:viewportWidth="30"
+    android:viewportHeight="30">
+    <path
+        android:fillColor="#FFEBFF"
+        android:pathData="M -1.8125 -2.0875 H 33.4375 V 32.6625 H -1.8125 V -2.0875 Z"
+        android:strokeWidth="2" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M4.875,19.375l0,-12c0,-1.10457 0.89543,-2 2,-2l16,0c1.1046,0 2,0.89543 2,2l0,14c0,1.1046 -0.8954,2 -2,2l-10.1875,0"
+        android:strokeColor="#003E8E"
+        android:strokeWidth="2"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round" />
+    <path
+        android:fillColor="#ff3377"
+        android:pathData="M7.94452,19.55414l0.8246,1.6492l1.92406,0.27487l-1.37433,1.37433l0.27487,1.92406l-1.6492,-0.96203l-1.6492,0.96203l0.27487,-1.92406l-1.37433,-1.37433l1.92406,-0.27487l0.8246,-1.6492z"
+        android:strokeColor="#ff3377"
+        android:strokeWidth="1"
+        android:strokeLineJoin="round" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M12.71194,20.07015c0,-2.03732 -1.6867,-3.38494 -4.06526,-3.25994"
+        android:strokeColor="#003E8E"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M16.2076,20.30784c0.0625,-3.93843 -2.80663,-7.02979 -7.83355,-6.84229"
+        android:strokeColor="#003E8E"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M18.875,8.375l3,0l-3,4l3,0"
+        android:strokeColor="#003E8E"
+        android:strokeWidth="1.2"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round" />
+</vector>

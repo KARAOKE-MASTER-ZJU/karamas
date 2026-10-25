@@ -25,7 +25,7 @@ android {
         ndkVersion = ndkProperties.getProperty("Pkg.Revision")
     }
     namespace = "zju.idol.karamas"
-    // 直接引用仓库原有图标，各屏幕密度资源只维护一份。
+    // 直接引用由源 SVG 转换的矢量 XML 图标，各屏幕密度共用一份。
     sourceSets.getByName("main").res.srcDir("../../../icons/android")
     defaultConfig {
         // DLNA 描述文件、控制请求和本地媒体代理使用 HTTP。
