@@ -94,7 +94,7 @@ flowchart LR
 调用方通过 `start_bilibili_engine_core` 的 `sender_buvid` 参数传入持久化的发送端标识。调试日志位于 `BILI_BROADCAST`，级别为 `debug`。以下实机诊断示例从环境变量 `BILIBILI_BUVID` 读取发送端标识，要求账号下只有一台在线设备，会从头投放指定曲目，监听 40 秒后退出，电视继续播放：
 
 ```bash
-BILIBILI_BUVID=发送端标识 cargo run -p ktv-casting --example bilibili_broadcast_probe -- /path/to/bili_session.json BV号-page0
+BILIBILI_BUVID=发送端标识 cargo run -p karamas_core --example bilibili_broadcast_probe -- /path/to/bili_session.json BV号-page0
 ```
 
 ## 会话结束

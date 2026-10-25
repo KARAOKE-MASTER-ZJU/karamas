@@ -2,7 +2,7 @@ use crate::{
     error::{CommandError, CommandResult},
     state::BridgeState,
 };
-use casting_core::cast::bilibili::{self, BilibiliSession};
+use karamas_core::cast::bilibili::{self, BilibiliSession};
 use tauri::{State, ipc::Channel};
 
 /// 通过调用专属通道返回二维码，登录成功只返回会话。

@@ -2650,7 +2650,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "flexi_logger",
- "ktv-casting",
+ "karamas_core",
  "log",
  "reqwest 0.12.28",
  "serde",
@@ -2665,17 +2665,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "keyboard-types"
-version = "0.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fbe853b403ae61a04233030ae8a79d94975281ed9770a1f9e246732b534b28d"
-dependencies = [
- "bitflags 2.10.0",
- "serde",
-]
-
-[[package]]
-name = "ktv-casting"
+name = "karamas_core"
 version = "1.11.0"
 dependencies = [
  "actix-files",
@@ -2709,6 +2699,16 @@ dependencies = [
  "url",
  "urlencoding",
  "uuid",
+]
+
+[[package]]
+name = "keyboard-types"
+version = "0.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fbe853b403ae61a04233030ae8a79d94975281ed9770a1f9e246732b534b28d"
+dependencies = [
+ "bitflags 2.10.0",
+ "serde",
 ]
 
 [[package]]

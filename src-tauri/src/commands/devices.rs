@@ -2,7 +2,7 @@ use crate::{
     error::{CommandError, CommandResult},
     models::DlnaDeviceInfo,
 };
-use casting_core::cast::bilibili::{self, BilibiliDevice, BilibiliSession};
+use karamas_core::cast::bilibili::{self, BilibiliDevice, BilibiliSession};
 
 /// 搜索局域网 DLNA 设备，保留空列表和搜索失败的区别。
 #[tauri::command]
@@ -10,7 +10,7 @@ pub async fn discover_dlna_devices<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
 ) -> CommandResult<Vec<DlnaDeviceInfo>> {
     crate::platform::ensure_network_access(&app).await?;
-    Ok(casting_core::discover_devices_core()
+    Ok(karamas_core::discover_devices_core()
         .await?
         .into_iter()
         .map(Into::into)
@@ -25,7 +25,7 @@ pub async fn discover_dlna_device<R: tauri::Runtime>(
 ) -> CommandResult<DlnaDeviceInfo> {
     super::session::http_url(&url)?;
     crate::platform::ensure_network_access(&app).await?;
-    Ok(casting_core::discover_device_from_url_core(url)
+    Ok(karamas_core::discover_device_from_url_core(url)
         .await?
         .into())
 }

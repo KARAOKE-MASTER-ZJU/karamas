@@ -26,15 +26,15 @@ impl fmt::Display for CommandError {
 impl std::error::Error for CommandError {}
 
 // 通用核心错误仅提供错误说明，在 IPC 边界统一使用 CORE_ERROR。
-impl From<casting_core::CoreError> for CommandError {
-    fn from(error: casting_core::CoreError) -> Self {
+impl From<karamas_core::CoreError> for CommandError {
+    fn from(error: karamas_core::CoreError) -> Self {
         Self::new("CORE_ERROR", error.to_string())
     }
 }
 
 // 分 P 错误已有业务码，直接保留以便调用方区分歌曲变化等情况。
-impl From<casting_core::playlist::PartError> for CommandError {
-    fn from(error: casting_core::playlist::PartError) -> Self {
+impl From<karamas_core::playlist::PartError> for CommandError {
+    fn from(error: karamas_core::playlist::PartError) -> Self {
         Self::new(error.code, error.message)
     }
 }

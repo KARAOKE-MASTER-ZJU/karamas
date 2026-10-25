@@ -1,10 +1,10 @@
 [package]
-name = "ktv-casting"
+name = "karamas_core"
 version = "1.11.0"
 edition = "2024"
 
 [lib]
-name = "ktv_casting_lib"
+name = "karamas_core"
 path = "src/lib.rs"
 
 [dependencies]

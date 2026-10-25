@@ -124,7 +124,7 @@ mod tests {
 
     #[test]
     fn clear_session_treats_missing_file_as_success() {
-        let path = Path::new("/tmp/ktv-casting-nonexistent-session.json");
+        let path = Path::new("/tmp/karamas_core-nonexistent-session.json");
         assert!(remove_session_file(path).is_ok());
     }
 }

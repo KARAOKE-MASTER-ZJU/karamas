@@ -44,11 +44,11 @@ impl BridgeState {
                     let path = data_dir.to_str().ok_or_else(|| {
                         CommandError::new("STORAGE_ERROR", "应用数据路径不是有效的 UTF-8")
                     })?;
-                    casting_core::cast::bilibili::init_session_dir(path);
+                    karamas_core::cast::bilibili::init_session_dir(path);
                     let cache_path = cache_dir.to_str().ok_or_else(|| {
                         CommandError::new("STORAGE_ERROR", "媒体缓存路径不是有效的 UTF-8")
                     })?;
-                    casting_core::media::session::init_cache_dir(cache_path)
+                    karamas_core::media::session::init_cache_dir(cache_path)
                         .map_err(|e| CommandError::new("STORAGE_ERROR", e.to_string()))
                 })
                 .await
@@ -60,8 +60,8 @@ impl BridgeState {
 }
 
 /// 取出当前引擎后释放全局状态锁，再执行异步操作。
-pub fn current_engine() -> CommandResult<Arc<casting_core::EngineContext>> {
-    casting_core::ENGINE_STATE
+pub fn current_engine() -> CommandResult<Arc<karamas_core::EngineContext>> {
+    karamas_core::ENGINE_STATE
         .read()
         .map_err(|_| CommandError::new("STATE_ERROR", "无法读取引擎状态"))?
         .as_ref()

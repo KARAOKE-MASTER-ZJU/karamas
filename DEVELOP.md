@@ -2,7 +2,7 @@
 
 ## 开发约定
 
-Tauri 命令层只负责调用转发，投屏逻辑放在 `crates/casting-core` 中。核心库保持独立，服务端可以单独依赖它，无须构建前端或 Tauri 应用。
+Tauri 命令层只负责调用转发，投屏逻辑放在 `karamas_core` 中。核心库保持独立，服务端可以单独依赖它，无须构建前端或 Tauri 应用。
 
 开发和打包后的可执行文件名均为 `karamas`，应用显示名为 `KARAM@S`。macOS 开发模式的 Dock 使用可执行文件名，打包后的应用使用产品名。
 
@@ -12,7 +12,7 @@ Tauri 命令层只负责调用转发，投屏逻辑放在 `crates/casting-core` 
 
 核心源码来自 `KARAOKE-MASTER-ZJU/ktv-casting` 的提交 `517839d5e47cbfd7780f191ea5381de85ea65952`，直接存放在本仓库中。
 
-Cargo 包名为 `ktv-casting`，库名为 `ktv_casting_lib`，应用通过依赖别名 `casting-core` 引用。`rupnp` 补丁必须配置在 workspace 根目录，Cargo 不读取成员 crate 中的补丁配置。
+Cargo 包名、Rust 库名和应用中的依赖名统一为 `karamas_core`。`rupnp` 补丁必须配置在 workspace 根目录，Cargo 不读取成员 crate 中的补丁配置。
 
 核心代码沿用现有格式，按具体任务修改相关文件，避免整库格式化。
 
@@ -22,21 +22,21 @@ Cargo 包名为 `ktv-casting`，库名为 `ktv_casting_lib`，应用通过依赖
 
 进度查询和自动切歌由核心会话任务驱动，前端定时读取缓存来刷新界面。前端停止刷新不影响核心任务；Android 通过前台服务维持后台会话。
 
-房间同步、进度查询、媒体代理和小电视状态回传的流程见[核心库运行架构](crates/casting-core/DEVELOP.md)。
+房间同步、进度查询、媒体代理和小电视状态回传的流程见[核心库运行架构](karamas_core/DEVELOP.md)。
 
 ## 检查命令
 
 浏览器预览用于检查界面，投屏和登录需通过 `pnpm tauri dev` 启动。
 
-| 命令                              | 用途                           |
-| --------------------------------- | ------------------------------ |
-| `pnpm lint`                       | 检查前端代码，警告也会导致失败 |
-| `pnpm format:check`               | 检查前端、配置和文档格式       |
-| `pnpm check`                      | TypeScript 类型检查            |
-| `pnpm build`                      | 类型检查并构建前端             |
-| `cargo check --workspace`         | 检查 Rust 工作区               |
-| `cargo test -p ktv-casting --lib` | 运行核心库测试                 |
-| `cargo fmt -p karamas --check`    | 检查 Tauri 应用层 Rust 格式    |
+| 命令                               | 用途                           |
+| ---------------------------------- | ------------------------------ |
+| `pnpm lint`                        | 检查前端代码，警告也会导致失败 |
+| `pnpm format:check`                | 检查前端、配置和文档格式       |
+| `pnpm check`                       | TypeScript 类型检查            |
+| `pnpm build`                       | 类型检查并构建前端             |
+| `cargo check --workspace`          | 检查 Rust 工作区               |
+| `cargo test -p karamas_core --lib` | 运行核心库测试                 |
+| `cargo fmt -p karamas --check`     | 检查 Tauri 应用层 Rust 格式    |
 
 `pnpm lint:fix` 和 `pnpm format` 会修改文件。前端检查和格式化的范围见 `eslint.config.mjs` 和 `.prettierignore`。
 

@@ -1,5 +1,5 @@
 //! 实机检查广播回传。显式指定会话文件和曲目，仅在唯一在线设备上播放。
-use ktv_casting_lib::cast::{
+use karamas_core::cast::{
     Caster, SongRef,
     bilibili::{BilibiliCaster, BilibiliSession, list_devices},
 };

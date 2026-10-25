@@ -1,5 +1,5 @@
 [workspace]
-members = ["src-tauri", "crates/casting-core"]
+members = ["src-tauri", "karamas_core"]
 resolver = "3"
 
 [patch.crates-io]

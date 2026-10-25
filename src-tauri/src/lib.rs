@@ -35,7 +35,7 @@ pub fn run() {
         .expect("failed to build KARAM@S")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
-                casting_core::reset_engine();
+                karamas_core::reset_engine();
                 // 退出回调不等待异步锁，能取得句柄时取消扫码任务。
                 if let Some(state) = app.try_state::<BridgeState>()
                     && let Ok(mut login) = state.login.try_lock()

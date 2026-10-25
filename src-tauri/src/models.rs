@@ -1,4 +1,4 @@
-use casting_core::cast::{Capabilities, bilibili::BilibiliSession, dlna::DlnaDevice};
+use karamas_core::cast::{Capabilities, bilibili::BilibiliSession, dlna::DlnaDevice};
 use serde::{Deserialize, Serialize};
 
 /// 仅传输设备标识，不将 UPnP 协议对象暴露给前端。

@@ -54,14 +54,14 @@ pub async fn start_casting<R: tauri::Runtime>(
     crate::platform::start_casting_service(&app, &room_id).await?;
     let result = match target {
         CastTarget::Dlna { location } => {
-            casting_core::start_engine_core(server_url, room_id, location, runtime).await
+            karamas_core::start_engine_core(server_url, room_id, location, runtime).await
         }
         CastTarget::Bilibili {
             session,
             device_buvid,
             sender_buvid,
         } => {
-            casting_core::start_bilibili_engine_core(
+            karamas_core::start_bilibili_engine_core(
                 server_url,
                 room_id,
                 session,
@@ -74,7 +74,7 @@ pub async fn start_casting<R: tauri::Runtime>(
     };
     // 启动失败时清理已创建的部分资源，避免媒体服务遗留。
     if result.is_err() {
-        casting_core::reset_engine();
+        karamas_core::reset_engine();
         if let Err(error) = crate::platform::stop_casting_service(&app).await {
             log::warn!("启动失败后停止 Android 投屏服务失败：{}", error.message);
         }
@@ -89,18 +89,18 @@ pub async fn disconnect_casting<R: tauri::Runtime>(
     state: State<'_, BridgeState>,
 ) -> CommandResult<()> {
     let _lifecycle = state.lifecycle.lock().await;
-    casting_core::reset_engine();
+    karamas_core::reset_engine();
     crate::platform::stop_casting_service(&app).await
 }
 
 /// 设置 DLNA 后续媒体加载使用的直连模式。
 #[tauri::command]
 pub async fn set_dlna_direct(enabled: bool) {
-    casting_core::set_dlna_direct(enabled);
+    karamas_core::set_dlna_direct(enabled);
 }
 
 /// 读取 DLNA 直连设置。
 #[tauri::command]
 pub async fn get_dlna_direct() -> bool {
-    casting_core::get_dlna_direct()
+    karamas_core::get_dlna_direct()
 }
