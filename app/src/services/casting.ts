@@ -71,6 +71,8 @@ export const castingApi = {
   setQuality: (qn: number) => call<number>("set_quality", { qn }),
   getBilibiliQualities: (songUrl: string) =>
     call<BilibiliQuality[]>("get_bilibili_qualities", { songUrl }),
+  getBilibiliCover: (songUrl: string) =>
+    call<string>("get_bilibili_cover", { songUrl }),
   setDanmaku: (enabled: boolean) => call<boolean>("set_danmaku", { enabled }),
   getBilibiliParts: () =>
     call<CurrentBilibiliParts>("get_current_bilibili_parts"),

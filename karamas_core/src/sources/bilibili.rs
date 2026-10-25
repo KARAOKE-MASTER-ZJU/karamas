@@ -39,6 +39,41 @@ pub fn bv_to_aid(bvid: &str) -> u64 {
     (tmp & BV_MASK_CODE) ^ BV_XOR_CODE
 }
 
+/// 读取视频默认封面，将 HTTP 图片地址升级为 HTTPS，供应用显示。
+pub async fn get_bilibili_cover(video: &str) -> Result<String, String> {
+    let (bvid, _) = parse_bilibili_video(video)?;
+    let json: Value = bili_api_client()
+        .get("https://api.bilibili.com/x/web-interface/view")
+        .query(&[("bvid", bvid.as_str())])
+        .header("Referer", "https://www.bilibili.com/")
+        .send()
+        .await
+        .map_err(|e| format!("获取封面失败：{e}"))?
+        .error_for_status()
+        .map_err(|e| format!("获取封面失败：{e}"))?
+        .json()
+        .await
+        .map_err(|e| format!("解析封面响应失败：{e}"))?;
+    if json["code"].as_i64() != Some(0) {
+        return Err(format!(
+            "获取封面失败：{} ({})",
+            json["message"].as_str().unwrap_or("B站接口返回错误"),
+            json["code"]
+        ));
+    }
+    let pic = json["data"]["pic"]
+        .as_str()
+        .filter(|pic| !pic.trim().is_empty())
+        .ok_or("B站未返回封面地址")?;
+    let mut url = url::Url::parse(pic).map_err(|_| "无效的封面地址")?;
+    match url.scheme() {
+        "http" => url.set_scheme("https").map_err(|_| "无效的封面地址")?,
+        "https" => {}
+        _ => return Err("不支持的封面地址协议".into()),
+    }
+    Ok(url.into())
+}
+
 /// Public page metadata. `page_index` is zero-based; `page` is for display.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]

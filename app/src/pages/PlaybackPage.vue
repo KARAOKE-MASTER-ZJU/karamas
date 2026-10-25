@@ -60,6 +60,7 @@ const controls = usePlaybackControls();
         :title="playback?.title ?? null"
         :added-by="playback?.addedBy ?? null"
         :song-id="playback?.songId ?? null"
+        :song-url="playback?.songUrl ?? null"
         :queued-count="playback?.queuedCount ?? null"
         :sung-count="playback?.sungCount ?? null"
         :disabled="!casting.connected || casting.sessionBusy"

@@ -140,6 +140,14 @@ pub async fn get_bilibili_qualities(
         .map_err(|message| CommandError::new("UPSTREAM_ERROR", message))
 }
 
+/// 查询指定 B站视频的默认封面。
+#[tauri::command]
+pub async fn get_bilibili_cover(song_url: String) -> CommandResult<String> {
+    karamas_core::sources::bilibili::get_bilibili_cover(&song_url)
+        .await
+        .map_err(|message| CommandError::new("UPSTREAM_ERROR", message))
+}
+
 /// 查询当前歌曲可选的 B站分 P。
 #[tauri::command]
 pub async fn get_current_bilibili_parts() -> CommandResult<karamas_core::CurrentBilibiliParts> {
