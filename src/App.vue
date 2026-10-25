@@ -100,6 +100,7 @@ const showHelp = ref(false);
 .workspace {
   height: 100%;
   overflow-y: auto;
+  scrollbar-gutter: stable both-edges;
 }
 .workspace::-webkit-scrollbar {
   width: 4px;
