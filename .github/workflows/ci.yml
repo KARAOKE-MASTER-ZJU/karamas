@@ -19,8 +19,8 @@ env:
   RUST_VERSION: "1.98.1"
 
 jobs:
-  checks:
-    name: 前端检查与 Rust 测试
+  frontend:
+    name: 前端检查
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -55,7 +55,22 @@ jobs:
       - name: 构建前端
         run: pnpm build
 
+  desktop:
+    name: Rust 检查（${{ matrix.os }}）
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
       - name: 安装 Linux 系统依赖
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y \
@@ -74,44 +89,19 @@ jobs:
           workspaces: ". -> target"
 
       - name: 检查应用层 Rust 格式
+        if: runner.os == 'Linux'
         run: cargo fmt -p karamas --check
 
       - name: 检查 Rust 工作区
         run: cargo check --workspace --locked
 
       - name: 运行核心库测试
+        if: runner.os == 'Linux'
         run: cargo test -p karamas_core --lib --locked
 
       - name: 运行应用层测试
+        if: runner.os == 'Linux'
         run: cargo test -p karamas --lib --locked
-
-  desktop:
-    name: 桌面编译检查（${{ matrix.os }}）
-    if: github.event_name != 'pull_request'
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-2025, macos-15]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
-    steps:
-      - name: 检出源码
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - name: 安装 Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
-
-      - name: 恢复 Rust 缓存
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ". -> target"
-
-      - name: 检查 Rust 工作区
-        run: cargo check --workspace --locked
 
   android:
     name: Android arm64 编译检查
