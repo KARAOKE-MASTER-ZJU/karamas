@@ -92,6 +92,24 @@ pub enum RecastResult {
     Busy,
 }
 
+/// 系统分享面板的位置，保持命令参数独立于平台插件。
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharePosition {
+    pub x: f64,
+    pub y: f64,
+    pub preferred_edge: Option<ShareEdge>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ShareEdge {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
 /// 日志级别按详细程度到严重程度排序。
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]

@@ -1,7 +1,7 @@
 use crate::{
     error::CommandResult,
     logging::{ExportAction, LOG_EVENT, LogBuffer, LogSnapshot},
-    models::LogLevel,
+    models::{LogLevel, SharePosition},
 };
 use std::sync::Arc;
 use tauri::{Emitter, Runtime, State};
@@ -47,7 +47,7 @@ pub async fn export_logs<R: Runtime>(
     window: tauri::WebviewWindow<R>,
     buffer: State<'_, Arc<LogBuffer>>,
     action: ExportAction,
-    position: Option<tauri_plugin_sharekit::SharePosition>,
+    position: Option<SharePosition>,
 ) -> CommandResult<bool> {
     crate::logging::export_logs(app, window, buffer.inner().clone(), action, position).await
 }

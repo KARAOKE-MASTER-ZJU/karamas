@@ -16,11 +16,13 @@ pub fn run() {
     #[cfg(target_os = "android")]
     let builder = builder.plugin(platform::init());
 
+    #[cfg(any(target_os = "android", target_os = "ios", target_os = "macos"))]
+    let builder = builder.plugin(tauri_plugin_sharekit::init());
+
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_sharekit::init())
         .setup(|app| {
             logging::initialize(app.handle().clone())?;
             // 接入层只保存资源和调用协调状态，播放状态由核心库维护。
