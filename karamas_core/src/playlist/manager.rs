@@ -15,6 +15,7 @@ pub struct PlaylistManager {
     pub(super) song_added_by: Arc<Mutex<Option<String>>>,
     pub(super) queued_count: Arc<Mutex<usize>>,
     pub(super) sung_count: Arc<Mutex<usize>>,
+    pub(super) sync_error: Arc<Mutex<Option<String>>>,
     pub(crate) progress_gate: Arc<Mutex<ProgressGate>>,
 }
 
@@ -37,6 +38,7 @@ impl PlaylistManager {
             song_added_by: Arc::new(Mutex::new(None)),
             queued_count: Arc::new(Mutex::new(0)),
             sung_count: Arc::new(Mutex::new(0)),
+            sync_error: Arc::new(Mutex::new(None)),
             progress_gate: Arc::new(Mutex::new(ProgressGate::default())),
         }
     }
@@ -142,6 +144,11 @@ impl PlaylistManager {
         *self.sung_count.lock().await = sung_count;
 
         Ok(gate.song())
+    }
+
+    /// 读取重试耗尽后的歌单错误；同步成功后清除。
+    pub async fn get_sync_error(&self) -> Option<String> {
+        self.sync_error.lock().await.clone()
     }
 
     /// 读取最近同步的当前歌曲地址。

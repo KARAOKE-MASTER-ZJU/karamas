@@ -19,6 +19,7 @@ pub async fn poll_playback() -> CommandResult<Option<PlaybackState>> {
         song_url: playback.song_url,
         title: playback.title,
         added_by: playback.added_by,
+        playlist_sync_error: playback.playlist_sync_error,
         current_secs: playback.current_secs,
         total_secs: playback.total_secs,
         is_playing: playback.is_playing,

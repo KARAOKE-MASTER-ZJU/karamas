@@ -23,6 +23,7 @@ export interface PlaybackState {
   songUrl: string | null;
   title: string | null;
   addedBy: string | null;
+  playlistSyncError: string | null;
   currentSecs: number | null;
   totalSecs: number | null;
   isPlaying: boolean;

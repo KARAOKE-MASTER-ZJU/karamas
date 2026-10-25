@@ -1,4 +1,4 @@
-import { onMounted, onScopeDispose } from "vue";
+import { onMounted, onScopeDispose, watch } from "vue";
 import { castingApi, errorMessage, isTauri } from "@/services/casting";
 import { useCastingStore } from "@/stores/casting";
 import { useBilibiliStore } from "@/stores/bilibili";
@@ -11,6 +11,12 @@ export function useCastingRuntime() {
   const auth = useBilibiliStore();
   const logs = useLogsStore();
   const { notify } = useOperationNotice();
+  watch(
+    () => casting.playback?.playlistSyncError,
+    (message) => {
+      if (message) notify(message, "error");
+    },
+  );
   let disposed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let lastPollError = "";

@@ -383,6 +383,9 @@ async fn failed_sync_preserves_handled_song_and_next_sync_recovers() {
     let (manager, mut requests, server) = server(vec![
         Some((200, playlist("H0", "A", "BV-A"))),
         Some((503, json!({}))),
+        Some((503, json!({}))),
+        Some((503, json!({}))),
+        Some((503, json!({}))),
         Some((200, playlist("H1", "B", "BV-B"))),
     ])
     .await;
@@ -410,7 +413,7 @@ async fn failed_sync_preserves_handled_song_and_next_sync_recovers() {
         .await
         .unwrap();
     assert_eq!(received.try_recv().unwrap(), "BV-B");
-    for _ in 0..3 {
+    for _ in 0..6 {
         request(&mut requests).await;
     }
     server.abort();

@@ -5,6 +5,9 @@ use std::{env, future::Future, pin::Pin, time::Duration};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use url::Url;
 
+const PLAYLIST_RETRIES: usize = 3;
+const PLAYLIST_RETRY_INTERVAL: Duration = Duration::from_secs(1);
+
 impl PlaylistManager {
     // 根据环境变量切换同步驱动（WS / POLLING）
     // 环境变量：KTV_SYNC_MODE = "WS" 或 "POLLING"（不区分大小写），默认为 WS
@@ -35,7 +38,27 @@ impl PlaylistManager {
     where
         F: Fn(String) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send,
     {
-        let song = self.fetch_playlist().await?;
+        let mut retries = 0;
+        let song = loop {
+            match self.fetch_playlist().await {
+                Ok(song) => {
+                    *self.sync_error.lock().await = None;
+                    break song;
+                }
+                Err(error) if retries < PLAYLIST_RETRIES => {
+                    retries += 1;
+                    warn!("拉取歌单失败，1 秒后重试（{retries}/{PLAYLIST_RETRIES}）：{error}");
+                    tokio::time::sleep(PLAYLIST_RETRY_INTERVAL).await;
+                }
+                Err(error) => {
+                    let message = format!(
+                        "拉取歌单失败，重试 {PLAYLIST_RETRIES} 次后仍未成功，请检查网络或稍后重连。详情：{error}"
+                    );
+                    *self.sync_error.lock().await = Some(message.clone());
+                    return Err(message);
+                }
+            }
+        };
         if song != *song_playing_cached {
             if let Some((_, url)) = &song {
                 f_on_update(url.clone()).await;
