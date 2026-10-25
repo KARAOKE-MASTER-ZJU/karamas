@@ -62,6 +62,8 @@ Cargo 包名、Rust 库名和应用中的依赖名统一为 `karamas_core`。`ru
 
 `pnpm lint:fix` 和 `pnpm format` 会修改文件。前端检查和格式化的范围见 `app/eslint.config.mjs` 和 `.prettierignore`。
 
+CI 配置见 [GitHub Actions 工作流](.github/workflows/ci.yml)。
+
 ## 日志
 
 `app/src-tauri/src/logging` 统一接收 Rust 和前端日志，默认记录 `info` 及更严重的日志；设置页可调整记录级别。内存保留最近 10,000 条记录，日志页的级别和关键词筛选只影响展示。清空操作只清除内存记录，保存和分享导出全部内存记录。
