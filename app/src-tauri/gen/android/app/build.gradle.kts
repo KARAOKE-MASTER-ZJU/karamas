@@ -16,6 +16,14 @@ val tauriProperties = Properties().apply {
 
 android {
     compileSdk = 37
+    // 与 Android 启动脚本共用 NDK，确保 Gradle 能找到原生符号剥离工具。
+    System.getenv("NDK_HOME")?.let { ndkHome ->
+        ndkPath = ndkHome
+        val ndkProperties = Properties().apply {
+            file("$ndkHome/source.properties").inputStream().use { load(it) }
+        }
+        ndkVersion = ndkProperties.getProperty("Pkg.Revision")
+    }
     namespace = "zju.idol.karamas"
     // 直接引用仓库原有图标，各屏幕密度资源只维护一份。
     sourceSets.getByName("main").res.srcDir("../../../icons/android")
@@ -34,12 +42,6 @@ android {
             isDebuggable = true
             isJniDebuggable = true
             isMinifyEnabled = false
-            packaging {
-                jniLibs.keepDebugSymbols.add("*/arm64-v8a/*.so")
-                jniLibs.keepDebugSymbols.add("*/armeabi-v7a/*.so")
-                jniLibs.keepDebugSymbols.add("*/x86/*.so")
-                jniLibs.keepDebugSymbols.add("*/x86_64/*.so")
-            }
         }
         getByName("release") {
             optimization {
@@ -59,6 +61,13 @@ android {
     }
     buildFeatures {
         buildConfig = true
+    }
+}
+
+// 只为 debug 变体保留原生符号，避免全局 packaging 配置影响 release。
+androidComponents {
+    onVariants(selector().withBuildType("debug")) { variant ->
+        variant.packaging.jniLibs.keepDebugSymbols.add("**/*.so")
     }
 }
 
