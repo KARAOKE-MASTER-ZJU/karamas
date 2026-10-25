@@ -87,6 +87,26 @@ pnpm android build --debug --target aarch64 --apk
 
 使用 `pnpm android` 构建，确保 QuickJS bindgen 使用 NDK 的目标头文件。相关配置见 `app/scripts/android.mjs`。首次构建需要下载 Gradle 和 Maven 依赖。
 
+### Release 体积优化
+
+根目录的 `[profile.release]` 使用 `opt-level = "s"`、ThinLTO 和单个 codegen unit，并剥离符号表。panic 保持默认的 unwind 行为，继续保留 panic 日志和堆栈回溯。
+
+构建 arm64 release APK：
+
+```sh
+pnpm android build --target aarch64 --apk
+```
+
+Release APK 默认不压缩 `.so`。构建压缩版 APK：
+
+```sh
+ORG_GRADLE_PROJECT_karamasCompressNativeLibs=true pnpm android build --target aarch64 --apk
+```
+
+两种构建均输出到 `app/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk`，会覆盖上次产物。项目尚未配置 release 签名，APK 需签名后安装。
+
+### Android 图标与调试产物
+
 Android 图标统一维护在 `app/src-tauri/icons/android`，原生工程直接引用此目录。
 
 APK 位于 `app/src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`。可用 `adb install -r` 安装到调试设备。当前 applicationId 为 `zju.idol.karamas`，可与原 Android 项目并存，应用数据各自保存。

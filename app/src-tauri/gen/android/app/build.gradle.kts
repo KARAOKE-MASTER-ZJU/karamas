@@ -62,6 +62,15 @@ android {
     buildFeatures {
         buildConfig = true
     }
+    packaging {
+        jniLibs {
+            // 按需压缩原生库，默认保留直接从 APK 加载的方式。
+            useLegacyPackaging = providers.gradleProperty("karamasCompressNativeLibs")
+                .map { it.toBooleanStrict() }
+                .orElse(false)
+                .get()
+        }
+    }
 }
 
 // 只为 debug 变体保留原生符号，避免全局 packaging 配置影响 release。

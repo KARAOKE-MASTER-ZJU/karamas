@@ -2,5 +2,11 @@
 members = ["app/src-tauri", "karamas_core"]
 resolver = "3"
 
+[profile.release]
+opt-level = "s"
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
 [patch.crates-io]
 rupnp = { git = "https://github.com/aspromise/rupnp.git", branch = "fix/control-endpoint-leading-slash" }
