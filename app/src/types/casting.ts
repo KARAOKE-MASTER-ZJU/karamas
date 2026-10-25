@@ -22,6 +22,7 @@ export interface PlaybackState {
   songId: string | null;
   songUrl: string | null;
   title: string | null;
+  addedBy: string | null;
   currentSecs: number | null;
   totalSecs: number | null;
   isPlaying: boolean;

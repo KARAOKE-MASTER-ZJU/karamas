@@ -188,9 +188,11 @@ async fn confirm_play(manager: &PlaylistManager, hardware: bool) {
 
 #[tokio::test]
 async fn playlist_fetch_masks_external_change_but_not_queue_only_hash_change() {
+    let mut updated_song = playlist("H1", "A", "BV-A");
+    updated_song["list"]["singing"]["addedBy"] = json!("小明");
     let (manager, mut requests, server) = server(vec![
         Some((200, playlist("H0", "A", "BV-A"))),
-        Some((200, playlist("H1", "A", "BV-A"))),
+        Some((200, updated_song)),
         Some((200, playlist("H2", "B", "BV-B"))),
     ])
     .await;
@@ -201,9 +203,11 @@ async fn playlist_fetch_masks_external_change_but_not_queue_only_hash_change() {
     manager.fetch_playlist().await.unwrap();
     request(&mut requests).await;
     assert_eq!(progress(&manager, 241, 300).await, (241, 300));
+    assert_eq!(manager.get_song_added_by().await.as_deref(), Some("小明"));
     manager.fetch_playlist().await.unwrap();
     request(&mut requests).await;
     assert_eq!(manager.current_hash().await, "H2");
+    assert_eq!(manager.get_song_added_by().await, None);
     assert_eq!(progress(&manager, 241, 180).await, (-1, -1));
     assert_eq!(progress(&manager, 299, 180).await, (-1, -1));
     confirm_play(&manager, true).await;

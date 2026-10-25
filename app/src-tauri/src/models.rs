@@ -66,6 +66,7 @@ pub struct PlaybackState {
     /// 包含分 P 信息，供界面在同一歌曲切换分 P 时刷新清晰度。
     pub song_url: Option<String>,
     pub title: Option<String>,
+    pub added_by: Option<String>,
     pub current_secs: Option<u32>,
     pub total_secs: Option<u32>,
     /// 当前播放状态，B站投屏由设备回传同步。

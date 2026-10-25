@@ -12,6 +12,7 @@ pub struct PlaylistManager {
     pub(super) hash: Arc<Mutex<Option<String>>>,
     pub(super) song_playing: Arc<Mutex<Option<String>>>,
     pub(super) song_title: Arc<Mutex<Option<String>>>,
+    pub(super) song_added_by: Arc<Mutex<Option<String>>>,
     pub(super) queued_count: Arc<Mutex<usize>>,
     pub(super) sung_count: Arc<Mutex<usize>>,
     pub(crate) progress_gate: Arc<Mutex<ProgressGate>>,
@@ -33,6 +34,7 @@ impl PlaylistManager {
             hash: Arc::new(Mutex::new(None)),
             song_playing: Arc::new(Mutex::new(None)),
             song_title: Arc::new(Mutex::new(None)),
+            song_added_by: Arc::new(Mutex::new(None)),
             queued_count: Arc::new(Mutex::new(0)),
             sung_count: Arc::new(Mutex::new(0)),
             progress_gate: Arc::new(Mutex::new(ProgressGate::default())),
@@ -108,6 +110,11 @@ impl PlaylistManager {
         let singing_title: Option<String> = resp_json["list"]["singing"]["title"]
             .as_str()
             .map(|s| s.to_string());
+        let singing_added_by = resp_json["list"]["singing"]["addedBy"]
+            .as_str()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(str::to_owned);
 
         // 当前正在演唱的歌曲：list.singing.url
         let singing_url: Option<String> = resp_json["list"]["singing"]["url"]
@@ -129,6 +136,7 @@ impl PlaylistManager {
         // 更新状态
         *self.song_playing.lock().await = singing_url.clone();
         *self.song_title.lock().await = singing_title; // 更新标题
+        *self.song_added_by.lock().await = singing_added_by;
         *self.hash.lock().await = Some(new_hash);
         *self.queued_count.lock().await = queued_count;
         *self.sung_count.lock().await = sung_count;
@@ -149,6 +157,11 @@ impl PlaylistManager {
     /// 读取最近同步的当前歌曲标题。
     pub async fn get_song_title(&self) -> Option<String> {
         self.song_title.lock().await.clone()
+    }
+
+    /// 读取最近同步的当前歌曲点歌人。
+    pub async fn get_song_added_by(&self) -> Option<String> {
+        self.song_added_by.lock().await.clone()
     }
 
     /// 读取最近同步的待播歌曲数量。

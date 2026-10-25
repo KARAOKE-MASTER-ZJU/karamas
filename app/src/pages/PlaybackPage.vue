@@ -58,6 +58,7 @@ const controls = usePlaybackControls();
       <h2 id="playing-title">正在播放</h2>
       <NowPlaying
         :title="playback?.title ?? null"
+        :added-by="playback?.addedBy ?? null"
         :song-id="playback?.songId ?? null"
         :queued-count="playback?.queuedCount ?? null"
         :sung-count="playback?.sungCount ?? null"
