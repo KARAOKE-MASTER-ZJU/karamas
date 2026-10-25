@@ -44,7 +44,19 @@ export const castingApi = {
     call<boolean>("export_logs", { action, position: position ?? null }),
   enterRoom: (room: ConnectionConfig, mode: RoomEntryMode) =>
     call<void>("enter_room", { ...room, mode }),
-  discoverDlnaDevices: () => call<DlnaDevice[]>("discover_dlna_devices"),
+  discoverDlnaDevices: async (onDevice: (device: DlnaDevice) => void) => {
+    if (!isTauri()) throw new Error("请在 Tauri 应用中使用此功能。");
+    const channel = new Channel<DlnaDevice>();
+    channel.onmessage = onDevice;
+    try {
+      return await call<DlnaDevice[]>("discover_dlna_devices", {
+        onDevice: channel,
+      });
+    } finally {
+      // 完整列表返回后，忽略通道中可能迟到的消息。
+      channel.onmessage = () => {};
+    }
+  },
   discoverDlnaDevice: (url: string) =>
     call<DlnaDevice>("discover_dlna_device", { url }),
   listBilibiliDevices: (session: BilibiliSession) =>

@@ -432,9 +432,34 @@ pub struct DlnaDevice {
     pub services: Vec<URN>,
 }
 
+// 三路 SSDP 响应共用去重集合，描述请求不等待探测窗口结束。
+fn resolve_discovery_locations(
+    locations: impl futures::Stream<Item = String>,
+) -> impl futures::Stream<Item = Result<Device, rupnp::Error>> {
+    let mut seen = HashSet::new();
+    locations
+        .filter(move |location| futures::future::ready(seen.insert(location.clone())))
+        .map(|location| async move {
+            let endpoint = discovery_endpoint(&location);
+            let started = Instant::now();
+            log::info!(target: "DLNA_DISCOVERY", "获取发现的设备描述：地址={}", endpoint);
+            let result = async {
+                let uri = location.parse::<Uri>()?;
+                timeout(DEVICE_DISCOVERY_TIMEOUT, Device::from_url(uri)).await
+                    .map_err(|_| rupnp::Error::ParseError("获取设备描述超时"))?
+            }.await;
+            match &result {
+                Ok(_) => log::info!(target: "DLNA_DISCOVERY", "设备描述解析成功：地址={}，耗时={}ms", endpoint, started.elapsed().as_millis()),
+                Err(error) => log::error!(target: "DLNA_DISCOVERY", "设备描述获取失败：地址={}，耗时={}ms，错误={}", endpoint, started.elapsed().as_millis(), error),
+            }
+            result
+        }).buffer_unordered(8)
+}
+
 async fn collect_discovery_results(
     stream: impl futures::Stream<Item = Result<Device, rupnp::Error>>,
     started: Instant,
+    mut on_device: impl FnMut(&DlnaDevice),
 ) -> Vec<DlnaDevice> {
     futures::pin_mut!(stream);
     let mut devices = Vec::new();
@@ -458,7 +483,9 @@ async fn collect_discovery_results(
                 let friendly_name = device.friendly_name().to_string();
                 let services: Vec<URN> = device.services().iter().map(|s| s.service_type().clone()).collect();
                 log::info!(target: "DLNA_DISCOVERY", "发现设备：名称={}，描述地址={}，类型={}，服务={:?}", friendly_name, discovery_endpoint(&location), device_type, services);
-                devices.push(DlnaDevice { device, friendly_name, location, services });
+                let device = DlnaDevice { device, friendly_name, location, services };
+                on_device(&device);
+                devices.push(device);
             }
             Err(error) => {
                 errors += 1;
@@ -485,25 +512,27 @@ impl DlnaController {
 
     // 发现网络中的DLNA渲染器设备
     pub async fn discover_devices(&self) -> Result<Vec<DlnaDevice>, rupnp::Error> {
+        self.discover_devices_with_updates(|_| {}).await
+    }
+
+    /// 每确认一个渲染器就通知调用方，搜索结束后返回完整列表。
+    pub async fn discover_devices_with_updates(
+        &self,
+        on_device: impl FnMut(&DlnaDevice),
+    ) -> Result<Vec<DlnaDevice>, rupnp::Error> {
         let started = Instant::now();
-        log::info!(target: "DLNA_DISCOVERY", "自动搜索开始：并行对照AVTransport:1、MediaRenderer:1、ssdp:all，各5s；描述请求单次超时3s、并发8");
-        let locations = ssdp_discovery::discover_locations().await?;
-        let devices_stream = futures::stream::iter(locations).map(|location| async move {
-            let endpoint = discovery_endpoint(&location);
-            let started = Instant::now();
-            log::info!(target: "DLNA_DISCOVERY", "获取发现的设备描述：地址={}", endpoint);
-            let result = async {
-                let uri = location.parse::<Uri>()?;
-                timeout(DEVICE_DISCOVERY_TIMEOUT, Device::from_url(uri)).await
-                    .map_err(|_| rupnp::Error::ParseError("获取设备描述超时"))?
-            }.await;
-            match &result {
-                Ok(_) => log::info!(target: "DLNA_DISCOVERY", "设备描述解析成功：地址={}，耗时={}ms", endpoint, started.elapsed().as_millis()),
-                Err(error) => log::error!(target: "DLNA_DISCOVERY", "设备描述获取失败：地址={}，耗时={}ms，错误={}", endpoint, started.elapsed().as_millis(), error),
-            }
-            result
-        }).buffer_unordered(8);
-        Ok(collect_discovery_results(devices_stream, started).await)
+        log::info!(target: "DLNA_DISCOVERY", "自动搜索开始：并行对照AVTransport:1、MediaRenderer:1、ssdp:all，各5s；收到地址即解析并通知，描述请求单次超时3s、并发8");
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        let discovery = ssdp_discovery::discover_locations(move |location| {
+            let _ = sender.send(location.to_owned());
+        });
+        let locations = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver);
+        let collection =
+            collect_discovery_results(resolve_discovery_locations(locations), started, on_device);
+        // 同时驱动探测和描述解析；探测结束会关闭通道，随后等剩余描述请求完成。
+        let (result, devices) = tokio::join!(discovery, collection);
+        result?;
+        Ok(devices)
     }
 
     pub async fn get_devices_from_urls(

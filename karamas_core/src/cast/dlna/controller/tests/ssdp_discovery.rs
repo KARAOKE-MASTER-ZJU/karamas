@@ -39,7 +39,7 @@ async fn counts_received_datagrams_duplicates_and_rejected_responses() {
             server.send_to(bytes, source).await.unwrap();
         }
     });
-    let report = probe_target("ssdp:all", Ipv4Addr::LOCALHOST.into(), destination, Duration::from_millis(200)).await.unwrap();
+    let report = probe_target("ssdp:all", Ipv4Addr::LOCALHOST.into(), destination, Duration::from_millis(200), &|_| {}).await.unwrap();
     responder.await.unwrap();
     assert_eq!(report.sent, 1);
     assert_eq!(report.received, 3);
@@ -67,7 +67,18 @@ async fn target_comparison_finds_device_that_only_answers_ssdp_all_and_deduplica
         }
         targets
     });
-    let locations = compare_targets(Ipv4Addr::LOCALHOST.into(), destination, Duration::from_millis(1300)).await.unwrap();
+    let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+    let on_location = |location: &str| { sender.send(location.to_owned()).unwrap(); };
+    let discovery = compare_targets(Ipv4Addr::LOCALHOST.into(), destination, Duration::from_millis(1300), &on_location);
+    tokio::pin!(discovery);
+    // 通知必须先于探测完成；把通知挪到收集结束后会让这里失败。
+    tokio::select! {
+        biased;
+        _ = &mut discovery => panic!("探测结束前没有通知设备地址"),
+        location = receiver.recv() => assert_eq!(location.as_deref(), Some("http://127.0.0.1/description.xml")),
+    }
+    let locations = discovery.await.unwrap();
+    assert!(receiver.try_recv().is_err(), "重复响应不能重复通知");
     assert_eq!(locations, vec!["http://127.0.0.1/description.xml"]);
     let targets = responder.await.unwrap();
     for target in TARGETS { assert_eq!(targets.iter().filter(|value| *value == target).count(), 2); }
@@ -76,7 +87,7 @@ async fn target_comparison_finds_device_that_only_answers_ssdp_all_and_deduplica
 #[tokio::test]
 async fn silent_endpoint_completes_with_zero_received_datagrams() {
     let server = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-    let report = probe_target(TARGETS[0], Ipv4Addr::LOCALHOST.into(), server.local_addr().unwrap(), Duration::from_millis(50)).await.unwrap();
+    let report = probe_target(TARGETS[0], Ipv4Addr::LOCALHOST.into(), server.local_addr().unwrap(), Duration::from_millis(50), &|_| {}).await.unwrap();
     assert_eq!(report.received, 0);
     assert_eq!(report.rejected, 0);
     assert!(report.locations.is_empty());

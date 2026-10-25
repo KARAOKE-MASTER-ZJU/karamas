@@ -73,6 +73,7 @@ async fn probe_target(
     local_ip: IpAddr,
     destination: SocketAddr,
     window: Duration,
+    on_location: &(impl Fn(&str) + Sync),
 ) -> std::io::Result<ProbeReport> {
     let socket = UdpSocket::bind(SocketAddr::new(local_ip, 0)).await?;
     socket.set_multicast_ttl_v4(2)?;
@@ -134,7 +135,11 @@ async fn probe_target(
                         if detailed {
                             log::debug!(target: "DLNA_SSDP", "UDP收到响应：请求目标={}，来源={}，字节={}，ST={}，USN={}，LOCATION={}", target, source, size, log_field(reply.st), log_field(reply.usn), discovery_endpoint(reply.location));
                         }
-                        if !report.locations.insert(reply.location.to_owned()) { report.duplicates += 1; }
+                        if report.locations.insert(reply.location.to_owned()) {
+                            on_location(reply.location);
+                        } else {
+                            report.duplicates += 1;
+                        }
                     }
                     Err(reason) => {
                         report.rejected += 1;
@@ -154,8 +159,8 @@ async fn probe_target(
     Ok(report)
 }
 
-/// SSDP 发现设备，返回设备描述地址列表
-pub(super) async fn discover_locations() -> Result<Vec<String>, rupnp::Error> {
+/// SSDP 发现设备，收到新的描述地址就通知调用方。
+pub(super) async fn discover_locations(on_location: impl Fn(&str) + Sync) -> Result<(), rupnp::Error> {
     let destination: SocketAddr = DESTINATION.parse().expect("constant IPv4 endpoint");
     // UDP connect selects a route without sending a packet. Do not connect the
     // receiving sockets: replies come from unicast device addresses, not the group.
@@ -168,13 +173,18 @@ pub(super) async fn discover_locations() -> Result<Vec<String>, rupnp::Error> {
         rupnp::Error::IO(error)
     })?;
     log::info!(target: "DLNA_SSDP", "系统路由选择本地IPv4={}；三个探测套接字显式绑定此地址，各自等待单播响应", route);
-    compare_targets(route, destination, Duration::from_secs(5)).await
+    compare_targets(route, destination, Duration::from_secs(5), &on_location).await.map(|_| ())
 }
 
 /// 对比所有目标，返回合并后的描述地址列表
-async fn compare_targets(route: IpAddr, destination: SocketAddr, window: Duration) -> Result<Vec<String>, rupnp::Error> {
+async fn compare_targets(
+    route: IpAddr,
+    destination: SocketAddr,
+    window: Duration,
+    on_location: &(impl Fn(&str) + Sync),
+) -> Result<Vec<String>, rupnp::Error> {
     let results = futures::future::join_all(TARGETS.iter().map(|target| {
-        probe_target(target, route, destination, window)
+        probe_target(target, route, destination, window, on_location)
     })).await;
     let mut locations = BTreeSet::new();
     let mut failed = 0;

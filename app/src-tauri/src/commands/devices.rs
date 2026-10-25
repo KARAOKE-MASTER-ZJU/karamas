@@ -3,18 +3,27 @@ use crate::{
     models::DlnaDeviceInfo,
 };
 use karamas_core::cast::bilibili::{self, BilibiliDevice, BilibiliSession};
+use tauri::ipc::Channel;
 
 /// 搜索局域网 DLNA 设备，保留空列表和搜索失败的区别。
 #[tauri::command]
 pub async fn discover_dlna_devices<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
+    on_device: Channel<DlnaDeviceInfo>,
 ) -> CommandResult<Vec<DlnaDeviceInfo>> {
     crate::platform::ensure_network_access(&app).await?;
-    Ok(karamas_core::discover_devices_core()
+    Ok(
+        karamas_core::discover_devices_with_updates_core(move |device| {
+            let _ = on_device.send(DlnaDeviceInfo {
+                name: device.friendly_name.clone(),
+                location: device.location.clone(),
+            });
+        })
         .await?
         .into_iter()
         .map(Into::into)
-        .collect())
+        .collect(),
+    )
 }
 
 /// 通过设备描述文件地址获取 DLNA 设备。

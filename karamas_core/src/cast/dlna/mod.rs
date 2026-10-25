@@ -13,6 +13,15 @@ pub async fn discover_devices_core() -> Result<Vec<DlnaDevice>, CoreError> {
     Ok(DlnaController::new().discover_devices().await?)
 }
 
+/// 搜索过程中逐个通知可用设备，完成后返回完整列表。
+pub async fn discover_devices_with_updates_core(
+    on_device: impl FnMut(&DlnaDevice),
+) -> Result<Vec<DlnaDevice>, CoreError> {
+    Ok(DlnaController::new()
+        .discover_devices_with_updates(on_device)
+        .await?)
+}
+
 pub async fn discover_device_from_url_core(url: String) -> Result<DlnaDevice, CoreError> {
     Ok(DlnaController::new().get_device_from_url(&url).await?)
 }

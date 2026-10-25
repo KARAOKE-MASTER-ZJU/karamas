@@ -1,4 +1,4 @@
-import { computed, reactive, ref, watch } from "vue";
+import { computed, onScopeDispose, reactive, ref, watch } from "vue";
 import type { Ref } from "vue";
 import { useBilibiliStore } from "@/stores/bilibili";
 import { useOperationNotice } from "@/composables/useOperationNotice";
@@ -16,6 +16,10 @@ export function useDeviceDiscovery(selectedDevice: Ref<CastDevice | null>) {
   const deviceUrl = ref("");
   const deviceError = ref("");
   const resolvingDevice = ref(false);
+  let disposed = false;
+  onScopeDispose(() => {
+    disposed = true;
+  });
   const devices = computed(() => {
     const found =
       mode.value === "dlna" ? dlnaDevices.value : bilibiliDevices.value;
@@ -27,7 +31,7 @@ export function useDeviceDiscovery(selectedDevice: Ref<CastDevice | null>) {
   });
 
   async function searchDevices(kind: CastMode = mode.value) {
-    if (searching[kind]) return;
+    if (disposed || searching[kind]) return;
     const session = auth.session;
     if (kind === "bilibili" && !session) {
       void auth.login();
@@ -35,20 +39,32 @@ export function useDeviceDiscovery(selectedDevice: Ref<CastDevice | null>) {
     }
     searching[kind] = true;
     try {
-      if (kind === "dlna")
-        dlnaDevices.value = (await castingApi.discoverDlnaDevices()).map(
-          (device) => ({ ...device, kind: "dlna" }),
-        );
-      else if (session) {
+      if (kind === "dlna") {
+        const found = await castingApi.discoverDlnaDevices((device) => {
+          if (disposed) return;
+          const index = dlnaDevices.value.findIndex(
+            (item) => item.kind === "dlna" && item.location === device.location,
+          );
+          const entry = { ...device, kind: "dlna" as const };
+          if (index < 0) dlnaDevices.value.push(entry);
+          else dlnaDevices.value[index] = entry;
+        });
+        // 搜索期间保留已有设备，结束后用完整列表移除本轮未发现的项。
+        if (!disposed)
+          dlnaDevices.value = found.map((device) => ({
+            ...device,
+            kind: "dlna",
+          }));
+      } else if (session) {
         const result = await castingApi.listBilibiliDevices(session);
-        if (session === auth.session)
+        if (!disposed && session === auth.session)
           bilibiliDevices.value = result.map((device) => ({
             ...device,
             kind: "bilibili",
           }));
       }
     } catch (error) {
-      notify(errorMessage(error), "error");
+      if (!disposed) notify(errorMessage(error), "error");
     } finally {
       searching[kind] = false;
       if (

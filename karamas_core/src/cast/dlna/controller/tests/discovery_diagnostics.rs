@@ -66,7 +66,7 @@ async fn device(kind: &str) -> Device {
 #[tokio::test]
 async fn empty_discovery_is_visible_at_info_level_without_claiming_offline() {
     begin_capture();
-    let devices = collect_discovery_results(futures::stream::empty(), Instant::now()).await;
+    let devices = collect_discovery_results(futures::stream::empty(), Instant::now(), |_| {}).await;
     assert!(devices.is_empty());
     let logs = captured();
     assert!(logs.contains("结果项=0，可用设备=0，重复=0，过滤=0，错误=0"), "{logs}");
@@ -82,7 +82,7 @@ async fn discovery_reports_duplicates_filters_and_errors_while_preserving_valid_
         Ok(renderer.clone()), Ok(renderer), Ok(server),
         Err(rupnp::Error::ParseError("fixture malformed description")),
     ];
-    let devices = collect_discovery_results(futures::stream::iter(results), Instant::now()).await;
+    let devices = collect_discovery_results(futures::stream::iter(results), Instant::now(), |_| {}).await;
     assert_eq!(devices.len(), 1);
     assert_eq!(devices[0].friendly_name, "Test renderer");
     let logs = captured();
@@ -90,6 +90,41 @@ async fn discovery_reports_duplicates_filters_and_errors_while_preserving_valid_
     assert!(logs.contains("非MediaRenderer"), "{logs}");
     assert!(logs.contains("fixture malformed description"), "{logs}");
     assert!(!logs.contains("token=secret"), "{logs}");
+}
+
+#[tokio::test]
+async fn discovery_notifies_before_locations_close_and_skips_duplicate_description_requests() {
+    begin_capture();
+    let xml = r#"<root><device>
+<deviceType>urn:schemas-upnp-org:device:MediaRenderer:1</deviceType>
+<friendlyName>Streaming renderer</friendlyName>
+</device></root>"#;
+    let (url, server) = serve_description(xml.to_owned(), 200).await;
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+    sender.send(url.clone()).unwrap();
+    sender.send(url.clone()).unwrap();
+    let (updates, mut received) = tokio::sync::mpsc::unbounded_channel();
+    let collection = collect_discovery_results(
+        resolve_discovery_locations(tokio_stream::wrappers::UnboundedReceiverStream::new(
+            receiver,
+        )),
+        Instant::now(),
+        |device| {
+            updates.send(device.location.clone()).unwrap();
+        },
+    );
+    tokio::pin!(collection);
+    tokio::select! {
+        result = &mut collection => panic!("地址流关闭前不应结束：{result:?}"),
+        update = received.recv() => assert_eq!(update.as_deref(), Some(url.as_str())),
+        _ = tokio::time::sleep(Duration::from_secs(5)) => panic!("地址流仍然打开时必须解析并通知设备"),
+    }
+    server.await.unwrap();
+    drop(sender);
+    let devices = collection.await;
+    assert_eq!(devices.len(), 1);
+    assert!(received.try_recv().is_err());
+    assert_eq!(captured().matches("获取发现的设备描述：").count(), 1);
 }
 
 #[tokio::test]
