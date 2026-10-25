@@ -16,7 +16,6 @@ src/
 ├── media/          # 媒体会话、缓存和上游请求
 │   ├── mp4/        # MP4 索引与封装
 │   └── server/     # HTTP 媒体代理
-├── android/        # Android JNI 接入和日志转发
 ├── cli/            # 命令行交互
 ├── config.rs       # 共用超时配置
 └── error.rs        # 公共错误类型

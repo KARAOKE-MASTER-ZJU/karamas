@@ -15,11 +15,6 @@ pub async fn get_current_progress() -> (i32, i32) {
     ctx.current_progress().await
 }
 
-/// 保留宿主接口；自动切歌由会话任务驱动，此处只读取缓存。
-pub async fn poll_playback_progress() -> (i32, i32) {
-    get_current_progress().await
-}
-
 pub(super) async fn sample_progress(ctx: &EngineContext) -> (i32, i32) {
     let Ok(control) = ctx.progress_control.try_lock() else {
         return (-1, -1);

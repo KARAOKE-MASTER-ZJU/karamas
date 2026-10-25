@@ -30,9 +30,8 @@ pub struct Capabilities {
     pub hardware_progress: bool,
 }
 
-/// B站清晰度。数值是 B站 `/x/tv/stream/cmd` 接口本身定义的协议常量（qn），
-/// 不是 ktv-casting 自己设计的格式，所以底层（JNI/网络请求）仍然传裸 u32，
-/// 这个枚举只在 Rust 内部用来做类型安全（拒绝非法档位）。
+/// B站清晰度。数值沿用 `/x/tv/stream/cmd` 接口定义的协议常量（qn），
+/// 网络请求传递对应的 u32，Rust 内部用枚举校验合法档位。
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Quality {

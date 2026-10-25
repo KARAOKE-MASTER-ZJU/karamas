@@ -19,7 +19,5 @@ pub use monitor::EnginePlaybackState;
 pub use parts::{
     CurrentBilibiliParts, get_current_bilibili_parts_core, select_current_bilibili_part_core,
 };
-pub use playback::{
-    get_current_progress, get_total_duration, poll_playback_progress, recast_current_song,
-};
+pub use playback::{get_current_progress, get_total_duration, recast_current_song};
 pub use state::{ENGINE_STATE, EngineContext};

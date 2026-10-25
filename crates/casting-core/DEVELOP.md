@@ -55,7 +55,7 @@ flowchart LR
     room --> sync
 ```
 
-`get_current_progress()`、兼容入口 `poll_playback_progress()` 和 `EngineContext::playback_state()` 只读缓存，不查询设备或触发切歌。查询失败时保留上次有效进度；切歌或重新投屏时清除旧进度。自动切歌只使用本轮取得并通过过滤的进度，在一次播放期间只触发一次，播放成功确认后才重新启用。
+`get_current_progress()` 和 `EngineContext::playback_state()` 只读缓存，不查询设备或触发切歌。查询失败时保留上次有效进度；切歌或重新投屏时清除旧进度。自动切歌只使用本轮取得并通过过滤的进度，在一次播放期间只触发一次，播放成功确认后才重新启用。
 
 宿主无须另启设备进度查询或自动切歌任务。新增控制命令时，需要让操作前发出的查询失效，并保留歌曲播放确认的版本。
 
@@ -91,7 +91,7 @@ flowchart LR
 
 回传中 `cmd=4` 为进度（秒），`5/6/7` 为暂停、恢复和停止，`13` 为时长（毫秒）。进度在回传间隔内按本地时钟推进，收到回传后校正。自动切歌仍由现有歌单逻辑处理。
 
-调用方将持久化的发送端标识传给核心库；CLI 使用环境变量 `BILIBILI_BUVID`，JNI 使用 `sender_buvid` 参数。调试日志位于 `BILI_BROADCAST`，级别为 `debug`。以下探针要求账号下只有一台在线设备，会从头投放指定曲目，监听 40 秒后退出，电视继续播放：
+调用方通过 `start_bilibili_engine_core` 的 `sender_buvid` 参数传入持久化的发送端标识；CLI 从环境变量 `BILIBILI_BUVID` 读取。调试日志位于 `BILI_BROADCAST`，级别为 `debug`。以下探针要求账号下只有一台在线设备，会从头投放指定曲目，监听 40 秒后退出，电视继续播放：
 
 ```bash
 BILIBILI_BUVID=发送端标识 cargo run -p ktv-casting --example bilibili_broadcast_probe -- /path/to/bili_session.json BV号-page0

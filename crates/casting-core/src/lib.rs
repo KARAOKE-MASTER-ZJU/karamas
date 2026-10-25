@@ -7,9 +7,6 @@ pub mod media;
 pub mod playlist;
 pub mod sources;
 
-#[cfg(target_os = "android")]
-pub mod android;
-
 pub use cast::dlna::{
     discover_device_from_url_core, discover_devices_core,
     settings::{get_dlna_direct, get_dlna_quality, set_dlna_direct, set_dlna_quality},
@@ -19,11 +16,10 @@ pub use engine::{
     CurrentBilibiliParts, ENGINE_STATE, EngineContext, EnginePlaybackState, connect_dlna_device,
     connect_room, cycle_quality_core, get_current_bilibili_parts_core, get_current_progress,
     get_current_song_id_core, get_current_song_title_core, get_danmaku_core, get_quality_core,
-    get_total_duration, get_volume_core, jump_to_secs, pause_core, play_core,
-    poll_playback_progress, recast_current_song, reset_engine, select_current_bilibili_part_core,
-    set_danmaku_core, set_quality_core, set_volume_core, start_bilibili_engine_core,
-    start_engine_core, toggle_danmaku_core, toggle_pause_core, trigger_next_song,
-    trigger_prev_song, volume_down_core, volume_up_core,
+    get_total_duration, get_volume_core, jump_to_secs, pause_core, play_core, recast_current_song,
+    reset_engine, select_current_bilibili_part_core, set_danmaku_core, set_quality_core,
+    set_volume_core, start_bilibili_engine_core, start_engine_core, toggle_danmaku_core,
+    toggle_pause_core, trigger_next_song, trigger_prev_song, volume_down_core, volume_up_core,
 };
 pub use error::CoreError;
 pub use media::server::SharedState;

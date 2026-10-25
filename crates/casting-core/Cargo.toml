@@ -6,7 +6,6 @@ edition = "2024"
 [lib]
 name = "ktv_casting_lib"
 path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"] # 加上 rlib 方便 main.rs 引用
 
 [[bin]]
 name = "ktv-cli"
@@ -68,8 +67,6 @@ env_logger = "0.11.8"
 qr2term = "0.2"
 
 [target.'cfg(target_os = "android")'.dependencies]
-jni = "0.21"
-android_logger = "0.15.1"
 # rquickjs 0.9 does not bundle Android bindings. Generate them against the NDK
 # for each ABI; this unifies the feature on innertube-rs's existing dependency.
 rquickjs = { version = "0.9.0", default-features = false, features = ["bindgen"] }
