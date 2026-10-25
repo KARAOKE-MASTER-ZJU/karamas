@@ -1,7 +1,7 @@
 <!-- 设置页面 -->
 
 <script setup lang="ts">
-import { ChevronRight, ChevronDown, Info } from "@lucide/vue";
+import { ChevronRight, ChevronDown, Info, ScanQrCode } from "@lucide/vue";
 import { RouterLink } from "vue-router";
 import { storeToRefs } from "pinia";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -208,7 +208,8 @@ async function logout() {
           :disabled="auth.loggingIn"
           @click="auth.login"
         >
-          扫码登录
+          <ScanQrCode :size="18" aria-hidden="true" />
+          <span>扫码登录</span>
         </button>
       </div>
     </section>
