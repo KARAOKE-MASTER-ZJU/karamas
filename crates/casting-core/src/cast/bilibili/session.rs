@@ -22,7 +22,7 @@ pub(super) fn now_ts() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
 }
 
-/// Initialize session directory (call from Android/CLI startup)
+/// 初始化会话存储目录，由宿主在启动时调用。
 pub fn init_session_dir(dir: &str) {
     let _ = SESSION_DIR.set(dir.to_string());
     log::info!("[Bilibili] Session 目录已初始化: {}", dir);

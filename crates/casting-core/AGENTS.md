@@ -5,7 +5,6 @@
 ```text
 src/
 ├── lib.rs          # 库入口和公共接口
-├── main.rs         # 命令行入口
 ├── engine/         # 引擎生命周期和播放协调
 ├── playlist/       # 房间歌单、同步和切歌
 │   └── tests/      # 歌单模块测试
@@ -16,7 +15,6 @@ src/
 ├── media/          # 媒体会话、缓存和上游请求
 │   ├── mp4/        # MP4 索引与封装
 │   └── server/     # HTTP 媒体代理
-├── cli/            # 命令行交互
 ├── config.rs       # 共用超时配置
 └── error.rs        # 公共错误类型
 ```

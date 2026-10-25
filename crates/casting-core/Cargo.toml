@@ -7,11 +7,6 @@ edition = "2024"
 name = "ktv_casting_lib"
 path = "src/lib.rs"
 
-[[bin]]
-name = "ktv-cli"
-path = "src/main.rs"
-
-
 [dependencies]
 actix-files = "0.6.9"
 actix-web = "4.12.1"
@@ -59,13 +54,6 @@ tonic = { version = "0.12", default-features = false, features = ["channel", "co
 tokio-stream = "0.1"
 uuid = { version = "1", features = ["v4"] }
 
-# CLI 专用依赖（仅非 Android target 可见）
-[target.'cfg(not(target_os = "android"))'.dependencies]
-crossterm = "0.29.0"
-indicatif = "0.18.3"
-env_logger = "0.11.8"
-qr2term = "0.2"
-
 [target.'cfg(target_os = "android")'.dependencies]
 # rquickjs 0.9 does not bundle Android bindings. Generate them against the NDK
 # for each ABI; this unifies the feature on innertube-rs's existing dependency.
@@ -75,4 +63,5 @@ rquickjs = { version = "0.9.0", default-features = false, features = ["bindgen"]
 default = []
 
 [dev-dependencies]
+env_logger = "0.11.8"
 tokio = { version = "1.49.0", features = ["test-util"] }
