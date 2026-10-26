@@ -4,8 +4,8 @@ resolver = "3"
 
 [profile.release]
 opt-level = "s"
-lto = "thin"
-codegen-units = 1
+lto = "off"
+codegen-units = 16
 strip = "symbols"
 
 [patch.crates-io]
