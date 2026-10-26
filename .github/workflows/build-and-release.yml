@@ -229,7 +229,7 @@ jobs:
           tauriScript: pnpm tauri
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --ci -- --locked
           tagName: ${{ env.RELEASE_TAG }}
-          releaseName: KARAM@S ${{ env.RELEASE_TAG }}
+          releaseName: ${{ env.RELEASE_TAG }}
           releaseCommitish: ${{ steps.checkout.outputs.commit }}
           releaseDraft: true
           prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
@@ -418,7 +418,7 @@ jobs:
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           target_commitish: ${{ steps.checkout.outputs.commit }}
-          name: KARAM@S ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
           draft: true
           prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
           generate_release_notes: false
