@@ -12,6 +12,7 @@
     "preview": "pnpm --dir app preview",
     "tauri": "pnpm --dir app tauri",
     "android": "pnpm --dir app android",
+    "version:set": "node app/scripts/set-version.mjs",
     "lint": "pnpm --dir app lint",
     "lint:fix": "pnpm --dir app lint:fix",
     "format": "prettier --write .",

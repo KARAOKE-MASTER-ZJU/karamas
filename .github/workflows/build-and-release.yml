@@ -1,0 +1,423 @@
+name: Build and Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 已存在的版本 tag，例如 v0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  RUST_VERSION: "1.98.1"
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  desktop:
+    name: 桌面发布包（${{ matrix.name }}）
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x86
+            os: windows-2025
+            target: i686-pc-windows-msvc
+            bundles: nsis
+          - name: windows-x64
+            os: windows-2025
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+          - name: windows-arm64
+            os: windows-2025
+            target: aarch64-pc-windows-msvc
+            bundles: nsis
+          - name: macos-x64
+            os: macos-15
+            target: x86_64-apple-darwin
+            bundles: dmg
+          - name: macos-arm64
+            os: macos-15
+            target: aarch64-apple-darwin
+            bundles: dmg
+          # 发布包使用较旧的 glibc 基线，两个架构均在原生 runner 上构建。
+          - name: linux-x64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: appimage,deb
+          - name: linux-arm64
+            os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+            bundles: appimage,deb
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - name: 检出版本 tag
+        id: checkout
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          persist-credentials: false
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: 安装 pnpm 并恢复缓存
+        uses: pnpm/action-setup@v6
+        with:
+          cache: true
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 检查前端代码和格式
+        run: |
+          pnpm lint
+          pnpm format:check
+          pnpm check
+
+      - name: 安装 Linux 打包依赖
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential libwebkit2gtk-4.1-dev libxdo-dev \
+            libssl-dev libayatana-appindicator3-dev librsvg2-dev \
+            patchelf libfuse2 file xdg-utils
+
+      - name: 配置 Windows bindgen
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $llvm = 'C:\Program Files\LLVM\bin'
+          if (!(Test-Path "$llvm\libclang.dll")) {
+            throw '未找到 runner 预装的 libclang.dll'
+          }
+          "LIBCLANG_PATH=$llvm" >> $env:GITHUB_ENV
+
+      - name: 安装 Rust 和编译目标
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: ${{ matrix.target }}
+
+      - name: 恢复 Rust 缓存
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: release-${{ matrix.target }}
+
+      - name: 校验发布版本
+        id: version
+        run: |
+          node <<'JS'
+          const fs = require('node:fs');
+          const { execFileSync } = require('node:child_process');
+          const version = JSON.parse(fs.readFileSync('app/package.json', 'utf8')).version;
+          const metadata = JSON.parse(execFileSync('cargo', ['metadata', '--no-deps', '--format-version', '1', '--locked'], { encoding: 'utf8' }));
+          const app = metadata.packages.find(pkg => pkg.name === 'karamas');
+          const core = metadata.packages.find(pkg => pkg.name === 'karamas_core');
+          if (process.env.RELEASE_TAG !== `v${version}` || app.version !== version || core.version !== version) {
+            throw new Error('tag、app/package.json、应用和核心库 Cargo.toml 的版本必须一致');
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
+          JS
+
+      # 单元测试使用构建机架构，目标架构由后面的 Tauri 构建验证。
+      - name: 运行构建机上的 Rust 单元测试
+        run: cargo test --workspace --lib --locked
+
+      # 配置证书时执行 Developer ID 签名和公证；未配置时使用 ad-hoc 签名。
+      - name: 配置 macOS 签名
+        if: runner.os == 'macOS'
+        uses: actions/github-script@v9
+        env:
+          MAC_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          MAC_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          MAC_APPLE_ID: ${{ secrets.APPLE_ID }}
+          MAC_APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          MAC_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          script: |
+            const variables = {
+              APPLE_CERTIFICATE: process.env.MAC_CERTIFICATE,
+              APPLE_CERTIFICATE_PASSWORD: process.env.MAC_CERTIFICATE_PASSWORD,
+              APPLE_SIGNING_IDENTITY: process.env.MAC_SIGNING_IDENTITY,
+              APPLE_ID: process.env.MAC_APPLE_ID,
+              APPLE_PASSWORD: process.env.MAC_APPLE_PASSWORD,
+              APPLE_TEAM_ID: process.env.MAC_TEAM_ID,
+            };
+            if (Object.values(variables).every(value => !value)) {
+              core.exportVariable('APPLE_SIGNING_IDENTITY', '-');
+              core.notice('未配置 Apple 证书，产物使用 ad-hoc 签名。');
+            } else {
+              const missing = Object.keys(variables).filter(key => !variables[key]);
+              if (missing.length) throw new Error(`macOS 签名配置不完整：${missing.join(', ')}`);
+              for (const [key, value] of Object.entries(variables)) core.exportVariable(key, value);
+            }
+
+      - name: 构建并上传桌面发布包
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: app
+          tauriScript: pnpm tauri
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --ci -- --locked
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: KARAM@S ${{ env.RELEASE_TAG }}
+          releaseCommitish: ${{ steps.checkout.outputs.commit }}
+          releaseDraft: true
+          prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
+          generateReleaseNotes: false
+          releaseAssetNamePattern: karamas_[version]_[platform]_[arch][setup][ext]
+          uploadWorkflowArtifacts: true
+          workflowArtifactNamePattern: release-${{ matrix.name }}-[bundle]
+          retryAttempts: 3
+
+  android:
+    name: Android 发布包（${{ matrix.abi }}）
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            target: aarch64
+            rust-target: aarch64-linux-android
+          - abi: armeabi-v7a
+            target: armv7
+            rust-target: armv7-linux-androideabi
+          - abi: x86
+            target: i686
+            rust-target: i686-linux-android
+          - abi: x86_64
+            target: x86_64
+            rust-target: x86_64-linux-android
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      NDK_VERSION: "30.0.16248370"
+      BUILD_TOOLS_VERSION: "36.0.0"
+    steps:
+      - name: 检查 Android 签名配置
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::缺少 GitHub Secret：$name"
+              exit 1
+            fi
+          done
+
+      - name: 检出版本 tag
+        id: checkout
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          persist-credentials: false
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: 安装 pnpm 并恢复缓存
+        uses: pnpm/action-setup@v6
+        with:
+          cache: true
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 检查前端代码和格式
+        run: |
+          pnpm lint
+          pnpm format:check
+          pnpm check
+
+      - name: 安装 JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+          cache-dependency-path: |
+            app/src-tauri/gen/android/**/*.gradle*
+            app/src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: 安装 Android SDK 和 NDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platforms;android-37 build-tools;${{ env.BUILD_TOOLS_VERSION }} ndk;${{ env.NDK_VERSION }}
+          log-accepted-android-sdk-licenses: false
+
+      - name: 安装 bindgen 依赖并固定 NDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libclang-dev
+          echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: 安装 Rust 和编译目标
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: ${{ matrix.rust-target }}
+
+      - name: 恢复 Rust 缓存
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: release-${{ matrix.rust-target }}-${{ env.NDK_VERSION }}
+
+      - name: 校验发布版本
+        id: version
+        run: |
+          node <<'JS'
+          const fs = require('node:fs');
+          const { execFileSync } = require('node:child_process');
+          const version = JSON.parse(fs.readFileSync('app/package.json', 'utf8')).version;
+          const metadata = JSON.parse(execFileSync('cargo', ['metadata', '--no-deps', '--format-version', '1', '--locked'], { encoding: 'utf8' }));
+          const app = metadata.packages.find(pkg => pkg.name === 'karamas');
+          const core = metadata.packages.find(pkg => pkg.name === 'karamas_core');
+          if (process.env.RELEASE_TAG !== `v${version}` || app.version !== version || core.version !== version) {
+            throw new Error('tag、app/package.json、应用和核心库 Cargo.toml 的版本必须一致');
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
+          JS
+
+      - name: 运行构建机上的核心库测试
+        run: cargo test -p karamas_core --lib --locked
+
+      - name: 构建 release APK
+        env:
+          ANDROID_TARGET: ${{ matrix.target }}
+          ORG_GRADLE_PROJECT_karamasCompressNativeLibs: "true"
+        run: pnpm android build --target "$ANDROID_TARGET" --apk --ci -- --locked
+
+      - name: 校验 APK 架构
+        env:
+          EXPECTED_ABI: ${{ matrix.abi }}
+        run: |
+          python3 <<'PY'
+          import os
+          import zipfile
+
+          apk = "app/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk"
+          with zipfile.ZipFile(apk) as archive:
+              libraries = [name for name in archive.namelist() if name.startswith("lib/") and name.endswith(".so")]
+              abis = {name.split("/")[1] for name in libraries}
+              expected = os.environ["EXPECTED_ABI"]
+              if abis != {expected} or f"lib/{expected}/libkaramas_lib.so" not in libraries:
+                  raise SystemExit(f"APK 原生库架构不符合预期：{abis}")
+          PY
+
+      - name: 签名并验证 APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          ANDROID_ABI: ${{ matrix.abi }}
+        run: |
+          keystore="$RUNNER_TEMP/karamas-release.jks"
+          trap 'rm -f "$keystore"' EXIT
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          chmod 600 "$keystore"
+          tools="$ANDROID_HOME/build-tools/$BUILD_TOOLS_VERSION"
+          apk="app/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk"
+          mkdir -p release
+          signed="release/karamas_${RELEASE_VERSION}_android-${ANDROID_ABI}.apk"
+          "$tools/zipalign" -P 16 -f 4 "$apk" "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" sign \
+            --ks "$keystore" --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD \
+            --out "$signed" "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" verify --verbose "$signed"
+          "$tools/zipalign" -c -P 16 4 "$signed"
+
+      - name: 上传 Android 产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-android-${{ matrix.abi }}
+          path: release/*.apk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: 上传 APK 到 Release 草稿
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ steps.checkout.outputs.commit }}
+          name: KARAM@S ${{ env.RELEASE_TAG }}
+          draft: true
+          prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
+          generate_release_notes: false
+          files: release/*.apk
+          fail_on_unmatched_files: true
+
+  publish:
+    name: 发布 Release
+    needs: [desktop, android]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: 检出版本 tag
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          persist-credentials: false
+
+      - name: 读取当前版本的更新日志
+        run: |
+          python3 <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          version = os.environ["RELEASE_TAG"].removeprefix("v")
+          changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+          sections = re.split(r"^## ", changelog, flags=re.MULTILINE)
+          entries = [section.partition("\n") for section in sections[1:]]
+          bodies = [body.strip() for title, _, body in entries
+                    if re.fullmatch(r"\[" + re.escape(version) + r"\](?: - .+)?", title.strip())]
+          if len(bodies) != 1 or not bodies[0]:
+              raise SystemExit(f"CHANGELOG.md 必须包含唯一且非空的 [{version}] 版本记录")
+          Path(os.environ["RUNNER_TEMP"], "release-notes.md").write_text(bodies[0] + "\n", encoding="utf-8")
+          PY
+
+      - name: 发布已上传全部产物的草稿
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release edit "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md" --draft=false

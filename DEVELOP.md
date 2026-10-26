@@ -64,6 +64,44 @@ Cargo 包名、Rust 库名和应用中的依赖名统一为 `karamas_core`。`ru
 
 CI 配置见 [GitHub Actions 工作流](.github/workflows/ci.yml)。
 
+## 应用版本
+
+运行 `pnpm version:set 0.2.0` 统一更新应用和核心库版本，支持 `0.2.0-beta.1` 等预发布版本。命令同步修改 `app/package.json`、`app/src-tauri/Cargo.toml`、`karamas_core/Cargo.toml` 和 `Cargo.lock`。
+
+发布 tag 使用 `v<版本号>`，`CHANGELOG.md` 中保留对应的 `[版本号]` 记录。
+
+## 发布 Secrets
+
+[发布工作流](.github/workflows/build-and-release.yml)需要以下 Secrets。
+
+### Android（必填）
+
+四个 ABI 共用以下配置。
+
+| Secret                      | 填写内容                         |
+| --------------------------- | -------------------------------- |
+| `ANDROID_KEYSTORE_BASE64`   | 发布 keystore 文件的 Base64 内容 |
+| `ANDROID_KEYSTORE_PASSWORD` | keystore 的密码                  |
+| `ANDROID_KEY_ALIAS`         | keystore 中用于签名的密钥别名    |
+| `ANDROID_KEY_PASSWORD`      | 该密钥的密码                     |
+
+### macOS（可选，启用时需填齐）
+
+启用 Developer ID 签名和公证时需填齐以下六项；全部留空则使用 ad-hoc 签名，不做公证。
+
+| Secret                       | 填写内容                                                           |
+| ---------------------------- | ------------------------------------------------------------------ |
+| `APPLE_CERTIFICATE`          | 包含私钥的 Developer ID Application 证书 `.p12` 文件的 Base64 内容 |
+| `APPLE_CERTIFICATE_PASSWORD` | 导出 `.p12` 文件时设置的密码                                       |
+| `APPLE_SIGNING_IDENTITY`     | 完整签名身份，例如 `Developer ID Application: Your Name (TEAMID)`  |
+| `APPLE_ID`                   | 用于公证的 Apple 账号邮箱                                          |
+| `APPLE_PASSWORD`             | Apple 账号的 App 专用密码（app-specific password）                 |
+| `APPLE_TEAM_ID`              | Apple Developer 团队 ID                                            |
+
+### GitHub 和其他平台
+
+`GITHUB_TOKEN` 由 GitHub Actions 自动提供。Windows 和 Linux 当前无需额外 Secrets。
+
 ## 日志
 
 `app/src-tauri/src/logging` 统一接收 Rust 和前端日志，默认记录 `info` 及更严重的日志；设置页可调整记录级别。内存保留最近 10,000 条记录，日志页的级别和关键词筛选只影响展示。清空操作只清除内存记录，保存和分享导出全部内存记录。
@@ -99,13 +137,13 @@ pnpm android build --debug --target aarch64 --apk
 pnpm android build --target aarch64 --apk
 ```
 
-Release APK 默认不压缩 `.so`。构建压缩版 APK：
+GitHub 发布的 APK 启用 `.so` 压缩，本地构建默认不压缩。本地构建压缩版 APK：
 
 ```sh
 ORG_GRADLE_PROJECT_karamasCompressNativeLibs=true pnpm android build --target aarch64 --apk
 ```
 
-两种构建均输出到 `app/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk`，会覆盖上次产物。项目尚未配置 release 签名，APK 需签名后安装。
+两种构建均输出到 `app/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk`，会覆盖上次产物。本地构建产物需签名后安装；GitHub 发布工作流使用上述 Android Secrets 完成签名。
 
 ### Android 图标与调试产物
 

@@ -2687,7 +2687,7 @@ dependencies = [
 
 [[package]]
 name = "karamas_core"
-version = "1.11.0"
+version = "0.1.0"
 dependencies = [
  "actix-web",
  "anyhow",
