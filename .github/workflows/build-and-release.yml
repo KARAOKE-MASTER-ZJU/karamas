@@ -28,6 +28,53 @@ env:
   RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
+  test:
+    name: Rust 单元测试（${{ matrix.os }}）
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - name: 检出版本 tag
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          persist-credentials: false
+
+      - name: 安装 Linux 系统依赖
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential libwebkit2gtk-4.1-dev libxdo-dev \
+            libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: 配置 Windows bindgen
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $llvm = 'C:\Program Files\LLVM\bin'
+          if (!(Test-Path "$llvm\libclang.dll")) {
+            throw '未找到 runner 预装的 libclang.dll'
+          }
+          "LIBCLANG_PATH=$llvm" >> $env:GITHUB_ENV
+
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: 恢复 Rust 缓存
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+          key: release-tests
+
+      - name: 运行 Rust 单元测试
+        run: cargo test --workspace --lib --locked
+
   desktop:
     name: 桌面发布包（${{ matrix.name }}）
     permissions:
@@ -141,10 +188,6 @@ jobs:
           }
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
           JS
-
-      # 单元测试使用构建机架构，目标架构由后面的 Tauri 构建验证。
-      - name: 运行构建机上的 Rust 单元测试
-        run: cargo test --workspace --lib --locked
 
       # 配置证书时执行 Developer ID 签名和公证；未配置时使用 ad-hoc 签名。
       - name: 配置 macOS 签名
@@ -313,9 +356,6 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
           JS
 
-      - name: 运行构建机上的核心库测试
-        run: cargo test -p karamas_core --lib --locked
-
       - name: 构建 release APK
         env:
           ANDROID_TARGET: ${{ matrix.target }}
@@ -387,7 +427,7 @@ jobs:
 
   publish:
     name: 发布 Release
-    needs: [desktop, android]
+    needs: [test, desktop, android]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
