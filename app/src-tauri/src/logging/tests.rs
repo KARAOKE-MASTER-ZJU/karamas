@@ -94,7 +94,7 @@ fn panic_record_is_appended_before_process_exit() {
     let text = std::fs::read_to_string(path).unwrap();
     assert!(text.starts_with("existing record\n"));
     assert!(text.contains("panic-persistence-marker"));
-    assert!(text.contains("logging/tests.rs:"));
+    assert!(text.contains(concat!(file!(), ":")));
     assert!(text.contains("pid="));
     assert!(text.contains("thread='"));
     assert!(text.contains("std::panicking"));
