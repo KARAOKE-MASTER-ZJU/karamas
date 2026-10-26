@@ -276,7 +276,7 @@ jobs:
       - name: 安装 Android SDK 和 NDK
         uses: android-actions/setup-android@v4
         with:
-          packages: platforms;android-37 build-tools;${{ env.BUILD_TOOLS_VERSION }} ndk;${{ env.NDK_VERSION }}
+          packages: platforms;android-37.0 build-tools;${{ env.BUILD_TOOLS_VERSION }} ndk;${{ env.NDK_VERSION }}
           log-accepted-android-sdk-licenses: false
 
       - name: 安装 bindgen 依赖并固定 NDK
