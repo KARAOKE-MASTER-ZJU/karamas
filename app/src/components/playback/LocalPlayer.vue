@@ -1,13 +1,27 @@
 <script setup lang="ts">
 import { Play, RotateCcw } from "@lucide/vue";
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { useCastingStore } from "@/stores/casting";
 import { useLocalPlayer } from "@/composables/useLocalPlayer";
+import { useLocalPlayerShortcuts } from "@/composables/useLocalPlayerShortcuts";
 
+const props = defineProps<{ active: boolean }>();
 const casting = useCastingStore();
 const video = ref<HTMLVideoElement | null>(null);
 const { hasMedia, loading, error, needsGesture, startWithGesture, retry } =
   useLocalPlayer(video);
+useLocalPlayerShortcuts(
+  video,
+  computed(
+    () =>
+      props.active &&
+      casting.activeDevice?.kind === "local" &&
+      !casting.sessionBusy &&
+      hasMedia.value &&
+      !loading.value &&
+      !error.value,
+  ),
+);
 </script>
 
 <template>

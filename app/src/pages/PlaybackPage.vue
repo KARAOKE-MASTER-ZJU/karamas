@@ -75,7 +75,7 @@ useVideoLayout(
     >
       <h2 id="playing-title">正在播放</h2>
       <div ref="videoContainer" class="video-container">
-        <LocalPlayer />
+        <LocalPlayer :active="active" />
       </div>
       <NowPlaying
         :local="activeDevice?.kind === 'local'"
