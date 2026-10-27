@@ -13,6 +13,7 @@ export function useAndroidBack() {
   const router = useRouter();
   const notifications = useNotificationsStore();
   let lastBackAt = 0;
+  let exitingFullscreen = false;
   let listener: PluginListener | undefined;
   let disposed = false;
 
@@ -22,6 +23,18 @@ export function useAndroidBack() {
   }
 
   async function back() {
+    // 退出全屏的返回操作不参与“双击返回桌面”的判断。
+    if (exitingFullscreen) return;
+    if (document.fullscreenElement) {
+      reset();
+      exitingFullscreen = true;
+      try {
+        await document.exitFullscreen();
+      } finally {
+        exitingFullscreen = false;
+      }
+      return;
+    }
     const dialogs =
       document.querySelectorAll<HTMLDialogElement>("dialog[open]");
     const dialog = dialogs[dialogs.length - 1];
@@ -45,6 +58,7 @@ export function useAndroidBack() {
   onMounted(async () => {
     if (!isTauri() || !/Android/i.test(navigator.userAgent)) return;
     document.addEventListener("visibilitychange", reset);
+    document.addEventListener("fullscreenchange", reset);
     try {
       const registered = await onBackButtonPress(() => {
         void back().catch((error: unknown) =>
@@ -60,6 +74,7 @@ export function useAndroidBack() {
   onScopeDispose(() => {
     disposed = true;
     document.removeEventListener("visibilitychange", reset);
+    document.removeEventListener("fullscreenchange", reset);
     void listener?.unregister();
   });
 }
