@@ -191,6 +191,7 @@ fieldset {
 .secondary {
   border-color: var(--input-line);
   background: var(--surface);
+  color: var(--text);
 }
 .secondary:hover {
   background: var(--subtle);
