@@ -6,14 +6,8 @@ import { useLocalPlayer } from "@/composables/useLocalPlayer";
 
 const casting = useCastingStore();
 const video = ref<HTMLVideoElement | null>(null);
-const {
-  hasMedia,
-  loading,
-  error,
-  needsGesture,
-  startWithGesture,
-  retry,
-} = useLocalPlayer(video);
+const { hasMedia, loading, error, needsGesture, startWithGesture, retry } =
+  useLocalPlayer(video);
 </script>
 
 <template>

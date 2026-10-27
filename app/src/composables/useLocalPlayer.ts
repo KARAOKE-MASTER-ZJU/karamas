@@ -1,4 +1,11 @@
-import { onMounted, onScopeDispose, reactive, toRefs, watch, type Ref } from "vue";
+import {
+  onMounted,
+  onScopeDispose,
+  reactive,
+  toRefs,
+  watch,
+  type Ref,
+} from "vue";
 import { useCastingStore } from "@/stores/casting";
 import { castingApi, errorMessage } from "@/services/casting";
 import { createLocalPlayer } from "@/services/localPlayer";

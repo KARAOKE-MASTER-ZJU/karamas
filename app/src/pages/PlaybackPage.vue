@@ -1,13 +1,7 @@
 <script setup lang="ts">
 import { Cast, Monitor, ExternalLink } from "@lucide/vue";
 import { RouterLink } from "vue-router";
-import {
-  onActivated,
-  onDeactivated,
-  onMounted,
-  onBeforeUnmount,
-  ref,
-} from "vue";
+import { onMounted, onBeforeUnmount, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 import LocalPlayer from "@/components/playback/LocalPlayer.vue";
 import NowPlaying from "@/components/playback/NowPlaying.vue";
@@ -20,6 +14,7 @@ import { useCastingStore } from "@/stores/casting";
 import { usePlaybackControls } from "@/composables/usePlaybackControls";
 import { openSongRoom } from "@/services/songRoom";
 
+const props = defineProps<{ active: boolean }>();
 const casting = useCastingStore();
 const { playback, volume, activeDevice, recasting, room } =
   storeToRefs(casting);
@@ -63,9 +58,14 @@ function stopObservingVideoLayout() {
   layoutObserver?.disconnect();
   cancelAnimationFrame(layoutFrame);
 }
-onMounted(observeVideoLayout);
-onActivated(observeVideoLayout);
-onDeactivated(stopObservingVideoLayout);
+onMounted(() => {
+  if (props.active) observeVideoLayout();
+});
+watch(
+  () => props.active,
+  (active) => (active ? observeVideoLayout() : stopObservingVideoLayout()),
+  { flush: "post" },
+);
 onBeforeUnmount(stopObservingVideoLayout);
 </script>
 

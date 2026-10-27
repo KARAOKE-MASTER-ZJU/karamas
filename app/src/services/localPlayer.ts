@@ -110,7 +110,9 @@ export function createLocalPlayer(
     const payload: LocalReport = {
       sessionId: command.sessionId,
       commandId: command.commandId,
-      currentSecs: Number.isFinite(element.currentTime) ? element.currentTime : 0,
+      currentSecs: Number.isFinite(element.currentTime)
+        ? element.currentTime
+        : 0,
       totalSecs: Number.isFinite(element.duration) ? element.duration : 0,
       paused: element.paused,
       buffering: buffering || element.seeking || element.readyState < 3,
@@ -177,7 +179,8 @@ export function createLocalPlayer(
           break;
         }
         case "play":
-          if (!state.hasMedia) throw new Error("视频尚未就绪，请点击重新播放。");
+          if (!state.hasMedia)
+            throw new Error("视频尚未就绪，请点击重新播放。");
           await element.play();
           break;
         case "pause":
@@ -268,7 +271,8 @@ export function createLocalPlayer(
     disposed = true;
     abort.abort();
     clearInterval(timer);
-    for (const event of MEDIA_EVENTS) video.removeEventListener(event, mediaEvent);
+    for (const event of MEDIA_EVENTS)
+      video.removeEventListener(event, mediaEvent);
     return clearMedia();
   }
 

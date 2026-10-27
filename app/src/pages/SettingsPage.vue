@@ -174,7 +174,7 @@ async function logout() {
         </div>
         <button
           type="button"
-          class="proxy-switch"
+          class="setting-switch"
           role="switch"
           aria-labelledby="dlna-proxy-label"
           :aria-checked="casting.dlnaProxyEnabled"
@@ -280,7 +280,7 @@ async function logout() {
 .info-popover p + p {
   margin-top: 8px;
 }
-.proxy-switch {
+.setting-switch {
   flex-shrink: 0;
   width: 38px;
   height: 22px;
@@ -289,17 +289,17 @@ async function logout() {
   padding: 3px;
   background: var(--input-line);
 }
-.proxy-switch[aria-checked="true"] {
+.setting-switch[aria-checked="true"] {
   background: var(--accent);
 }
-.proxy-switch span {
+.setting-switch span {
   display: block;
   width: 16px;
   height: 16px;
   border-radius: 50%;
   background: #fff;
 }
-.proxy-switch[aria-checked="true"] span {
+.setting-switch[aria-checked="true"] span {
   transform: translateX(16px);
 }
 .about-row {

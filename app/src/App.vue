@@ -2,6 +2,7 @@
 import { ArrowLeft, CircleQuestionMark } from "@lucide/vue";
 import { onMounted, ref } from "vue";
 import { RouterLink, RouterView, useRoute } from "vue-router";
+import PlaybackPage from "@/pages/PlaybackPage.vue";
 import AppNavigation from "@/components/AppNavigation.vue";
 import AppToast from "@/components/AppToast.vue";
 import HelpDialog from "@/components/HelpDialog.vue";
@@ -77,10 +78,18 @@ const showHelp = ref(false);
           </div>
         </header>
 
-        <!-- 路由视图部分，使用 KeepAlive 缓存组件状态 -->
+        <!-- 播放页只切换可见性，视频元素保持在文档中；其他页面沿用缓存。 -->
+        <PlaybackPage
+          v-show="route.name === 'playback'"
+          :active="route.name === 'playback'"
+        />
         <RouterView v-slot="{ Component }">
           <KeepAlive>
-            <component :is="Component" />
+            <component
+              :is="Component"
+              v-if="route.name !== 'playback'"
+              :key="route.name"
+            />
           </KeepAlive>
         </RouterView>
       </div>
