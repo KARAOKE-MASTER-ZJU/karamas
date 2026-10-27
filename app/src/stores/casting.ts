@@ -1,6 +1,7 @@
 import { acceptHMRUpdate, defineStore } from "pinia";
 import { computed, ref, shallowRef } from "vue";
 import { castingApi, errorMessage, isTauri } from "@/services/casting";
+import { useBilibiliMediaQualities } from "@/composables/useBilibiliMediaQualities";
 import { useBilibiliStore } from "@/stores/bilibili";
 import { usePreferencesStore } from "@/stores/preferences";
 import type { ConnectionConfig, RoomEntryMode } from "@/types";
@@ -54,6 +55,19 @@ export const useCastingStore = defineStore("casting", () => {
   const selectedDevice = ref<CastDevice | null>(null);
   const activeDevice = ref<CastDevice | null>(null);
   const playback = ref<PlaybackState | null>(null);
+  const {
+    qualities: mediaQualities,
+    loading: mediaQualitiesLoading,
+    error: mediaQualitiesError,
+    refresh: refreshMediaQualities,
+  } = useBilibiliMediaQualities(
+    computed(() => {
+      const kind = activeDevice.value?.kind;
+      return kind === "local" || kind === "dlna"
+        ? (playback.value?.songUrl ?? null)
+        : null;
+    }),
+  );
   const volume = ref<number | null>(null);
   const connecting = ref(false);
   const enteringRoom = ref(false);
@@ -344,6 +358,10 @@ export const useCastingStore = defineStore("casting", () => {
     selectedDevice,
     activeDevice,
     playback,
+    mediaQualities,
+    mediaQualitiesLoading,
+    mediaQualitiesError,
+    refreshMediaQualities,
     volume,
     connecting,
     enteringRoom,

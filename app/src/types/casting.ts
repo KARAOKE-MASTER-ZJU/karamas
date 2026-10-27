@@ -57,6 +57,12 @@ export interface BilibiliQuality {
   qn: number;
   label: string;
 }
+// 媒体资源能力，供 DLNA 和本机播放查询；与设备的编码支持情况分开。
+export interface BilibiliMediaQuality extends BilibiliQuality {
+  // null 表示该档位的 MP4 查询失败，尚未确认。
+  directMp4: boolean | null;
+  dash: boolean;
+}
 export interface CurrentBilibiliParts {
   songId: string;
   songUrl: string;

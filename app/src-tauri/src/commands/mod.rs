@@ -39,6 +39,7 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         playback::set_danmaku,
         playback::set_quality,
         playback::get_bilibili_qualities,
+        playback::get_bilibili_media_qualities,
         playback::get_bilibili_cover,
         playback::get_current_bilibili_parts,
         playback::select_current_bilibili_part,

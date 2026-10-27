@@ -2,6 +2,9 @@ use reqwest::Client;
 use serde_json::Value;
 use std::sync::OnceLock;
 
+mod media_qualities;
+pub use media_qualities::{get_bilibili_media_qualities, BilibiliMediaQuality};
+
 /// 全局共享 B站 API 客户端：连接池复用 + 超时。
 /// 请求超时由 `crate::config::API_TIMEOUT` 设置。
 fn bili_api_client() -> &'static Client {

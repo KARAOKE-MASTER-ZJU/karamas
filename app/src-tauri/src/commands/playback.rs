@@ -140,6 +140,16 @@ pub async fn get_bilibili_qualities(
         .map_err(|message| CommandError::new("UPSTREAM_ERROR", message))
 }
 
+/// 查询 DLNA 和本机播放可用的 MP4、DASH 清晰度。
+#[tauri::command]
+pub async fn get_bilibili_media_qualities(
+    song_url: String,
+) -> CommandResult<Vec<karamas_core::sources::bilibili::BilibiliMediaQuality>> {
+    karamas_core::sources::bilibili::get_bilibili_media_qualities(&song_url)
+        .await
+        .map_err(|message| CommandError::new("UPSTREAM_ERROR", message))
+}
+
 /// 查询指定 B站视频的默认封面。
 #[tauri::command]
 pub async fn get_bilibili_cover(song_url: String) -> CommandResult<String> {
