@@ -63,12 +63,12 @@ async fn set_playing_core(playing: bool) -> Result<bool, CoreError> {
     let _playback = ctx.playback_lock.lock().await;
     let _control = ctx.begin_progress_control().await?;
     let result = apply_playback_state(ctx.caster.as_ref(), &ctx.is_playing, playing).await?;
-    if playing && ctx.caster.local_playback_ended().is_some() {
+    if playing && ctx.caster.kind() == cast::CasterKind::Local {
         ctx.playlist_manager
             .progress_gate
             .lock()
             .await
-            .confirm_local_resume();
+            .confirm_resume();
     }
     Ok(result)
 }
@@ -104,12 +104,12 @@ pub(super) async fn toggle_pause(ctx: &EngineContext) -> Result<bool, CoreError>
     let _control = ctx.begin_progress_control().await?;
 
     let result = apply_playback_state(ctx.caster.as_ref(), &ctx.is_playing, target_state).await?;
-    if target_state && ctx.caster.local_playback_ended().is_some() {
+    if target_state && ctx.caster.kind() == cast::CasterKind::Local {
         ctx.playlist_manager
             .progress_gate
             .lock()
             .await
-            .confirm_local_resume();
+            .confirm_resume();
     }
     Ok(result)
 }

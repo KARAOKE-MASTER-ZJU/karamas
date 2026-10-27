@@ -191,6 +191,10 @@ impl Drop for DlnaCaster {
 /// 实现 DlnaCaster 结构体的 Caster 特征
 #[async_trait]
 impl Caster for DlnaCaster {
+    fn kind(&self) -> crate::cast::CasterKind {
+        crate::cast::CasterKind::Dlna
+    }
+
     /// 播放曲目
     async fn play_song(&self, song: &SongRef) -> Result<(), CastError> {
         if let Ok(mut current) = self.current_song.lock() {

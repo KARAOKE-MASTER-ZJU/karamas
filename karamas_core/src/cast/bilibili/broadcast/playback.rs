@@ -52,6 +52,7 @@ impl PlaybackTimeline {
                 total_secs: self.total.unwrap_or(0),
             },
             is_playing: self.playing.unwrap_or(true),
+            ended: None,
         })
     }
 

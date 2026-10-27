@@ -15,6 +15,21 @@ pub async fn get_current_progress() -> (i32, i32) {
     ctx.current_progress().await
 }
 
+/// 当前歌曲有 URL 时开始播放；无 URL 时保持已有播放。
+pub(super) async fn update_playback(ctx: &EngineContext, video_url: String) {
+    let _playback = ctx.playback_lock.lock().await;
+    let gate = &ctx.playlist_manager.progress_gate;
+    let Some(token) = gate.lock().await.play_token(&video_url) else {
+        return;
+    };
+    info!("通知设备准备拉取路径: {}", video_url);
+    // 先准备完整时长，再通知设备播放，避免临时时长影响自动切歌。
+    prepare_duration(&video_url, &ctx.duration_cache).await;
+    if play_and_confirm(&*ctx.caster, &video_url, token, gate).await {
+        ctx.is_playing.store(true, Ordering::SeqCst);
+    }
+}
+
 pub(super) async fn sample_progress(ctx: &EngineContext) -> (i32, i32) {
     let Ok(control) = ctx.progress_control.try_lock() else {
         return (-1, -1);
@@ -28,10 +43,6 @@ pub(super) async fn sample_progress(ctx: &EngineContext) -> (i32, i32) {
         return (-1, -1);
     }
     if gate.song().is_none() {
-        drop(gate);
-        if ctx.caster.local_playback_ended().is_some() {
-            let _ = ctx.caster.stop().await;
-        }
         return (-1, -1);
     }
     let revision = gate.revision();
@@ -84,12 +95,14 @@ pub(super) async fn sample_progress(ctx: &EngineContext) -> (i32, i32) {
     // Validate the sample and consume once under the same lock as song updates
     // and play confirmations. An old poll cannot trigger after a new playback.
     // 保留提前切歌的时间余量；本地暂停、缓冲和失联时不按进度推进。
-    let should_advance = match ctx.caster.local_playback_ended() {
-        Some(true) if current >= 0 && total > 0 => gate.auto_next.observe_finished(),
-        Some(true) => false,
-        Some(false) if ctx.is_playing() => gate.auto_next.observe(current, total),
-        Some(false) => false,
-        None => gate.auto_next.observe(current, total),
+    let should_advance = if snapshot.is_some_and(|state| state.ended == Some(true)) {
+        current >= 0 && total > 0 && gate.auto_next.observe_finished()
+    } else if ctx.caster.kind() == cast::CasterKind::Local
+        && !snapshot.is_some_and(|state| state.is_playing)
+    {
+        false
+    } else {
+        gate.auto_next.observe(current, total)
     };
     if should_advance {
         info!("歌曲即将结束，启动一次自动切歌任务");
@@ -159,8 +172,8 @@ pub(super) async fn play_and_confirm(
             )
         }
         Err(error) => {
-            if caster.local_playback_ended().is_some() {
-                gate.lock().await.local_play_failed(token);
+            if caster.kind() == cast::CasterKind::Local {
+                gate.lock().await.play_failed(token);
             }
             warn!("投屏失败：曲目={}，错误={}", song, error);
             false

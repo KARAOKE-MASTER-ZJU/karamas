@@ -48,14 +48,14 @@ impl ProgressGate {
     }
 
     /// 播放首次失败后，恢复播放的确认可以解除等待状态。
-    pub(crate) fn confirm_local_resume(&mut self) {
+    pub(crate) fn confirm_resume(&mut self) {
         if matches!(self.phase, Phase::FailedCommand) {
             self.play_succeeded(self.revision, false, Instant::now());
         }
     }
 
-    /// 只有已失败的本地播放可由原生控件恢复，等待新歌时仍屏蔽旧播放器事件。
-    pub(crate) fn local_play_failed(&mut self, token: u64) {
+    /// 标记当前播放失败，等待新歌时仍屏蔽旧播放器事件。
+    pub(crate) fn play_failed(&mut self, token: u64) {
         if self.revision == token && self.song.is_some() {
             self.phase = Phase::FailedCommand;
         }

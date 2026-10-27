@@ -240,6 +240,10 @@ fn parse_song_ref(s: &str) -> (String, u32) {
 /// 投屏 Bilibili 视频
 #[async_trait]
 impl Caster for BilibiliCaster {
+    fn kind(&self) -> crate::cast::CasterKind {
+        crate::cast::CasterKind::Bilibili
+    }
+
     
     /// 播放指定歌曲
     async fn play_song(&self, song: &SongRef) -> Result<(), CastError> {

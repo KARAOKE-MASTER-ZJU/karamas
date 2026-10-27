@@ -340,7 +340,7 @@ async fn heartbeat_sync_plays_missed_song_and_later_updates_do_not_replay_it() {
     ])
     .await;
     let (played, mut received) = mpsc::unbounded_channel();
-    let mut callback = |url| -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    let mut callback = |url: String| -> Pin<Box<dyn Future<Output = ()> + Send>> {
         let manager = manager.clone();
         let played = played.clone();
         Box::pin(async move {
@@ -390,7 +390,7 @@ async fn failed_sync_preserves_handled_song_and_next_sync_recovers() {
     ])
     .await;
     let (played, mut received) = mpsc::unbounded_channel();
-    let mut callback = |url| -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    let mut callback = |url: String| -> Pin<Box<dyn Future<Output = ()> + Send>> {
         played.send(url).unwrap();
         Box::pin(async {})
     };
@@ -433,7 +433,7 @@ async fn part_edit_preserves_title_and_sync_replays_same_id_only_once() {
     ])
     .await;
     let (played, mut received) = mpsc::unbounded_channel();
-    let mut callback = |url| -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    let mut callback = |url: String| -> Pin<Box<dyn Future<Output = ()> + Send>> {
         let manager = manager.clone();
         let played = played.clone();
         Box::pin(async move {
@@ -523,7 +523,7 @@ async fn test_playlist_manager() -> Result<(), Box<dyn std::error::Error>> {
 
     // --- 后台任务开始 ---
     manager.start_periodic_update(&tokio::runtime::Handle::current(), |url: String| {
-        println!("Song singing changed to {}!", url);
+        println!("当前歌曲变更：{url}");
         Box::pin(async {})
     });
 

@@ -38,6 +38,14 @@ impl TestCaster {
 
 #[async_trait::async_trait]
 impl Caster for TestCaster {
+    fn kind(&self) -> cast::CasterKind {
+        if self.hardware {
+            cast::CasterKind::Dlna
+        } else {
+            cast::CasterKind::Bilibili
+        }
+    }
+
     async fn play_song(&self, song: &SongRef) -> Result<(), CastError> {
         self.songs.lock().await.push(song.0.clone());
         self.started.notify_one();
@@ -277,6 +285,7 @@ async fn reported_pause_drives_display_and_next_toggle_while_other_casters_keep_
             total_secs: 212,
         },
         is_playing: false,
+        ended: None,
     });
     let ctx = context(caster.clone());
     {
@@ -470,6 +479,17 @@ async fn native_scrubbing_pause_and_buffering_do_not_advance_playlist() {
             gate.auto_next.observe_finished(),
             "原生操作期间不能提前切歌"
         );
+        gate.auto_next.reset_for_playback();
+    }
+    // 恢复播放后仍保留提前两秒切歌的行为。
+    let mut resumed = local_report(&command);
+    resumed.current_secs = 178.0;
+    resumed.paused = false;
+    ctx.report_local_playback(resumed).await.unwrap();
+    assert_eq!(sample_progress(&ctx).await, (178, 180));
+    {
+        let mut gate = ctx.playlist_manager.progress_gate.lock().await;
+        assert!(!gate.auto_next.observe_finished(), "恢复播放后应提前切歌");
         gate.auto_next.reset_for_playback();
     }
     // 旧曲还在播放时新歌已进入队列同步，原生播放事件不能解除新歌的等待状态。

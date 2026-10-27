@@ -22,6 +22,8 @@ pub struct Progress {
 pub struct PlaybackSnapshot {
     pub progress: Progress,
     pub is_playing: bool,
+    /// None 表示当前没有可用的结束状态。
+    pub ended: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -106,13 +108,18 @@ impl fmt::Display for CastError {
 
 impl std::error::Error for CastError {}
 
+/// 播放目标类型，与当前播放状态无关。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CasterKind {
+    Dlna,
+    Bilibili,
+    Local,
+}
+
 /// Caster 抽象接口
 #[async_trait]
 pub trait Caster: Send + Sync {
-    /// 本地播放器补充结束事件，正常播放仍沿用提前切歌的进度判断。
-    fn local_playback_ended(&self) -> Option<bool> {
-        None
-    }
+    fn kind(&self) -> CasterKind;
 
     fn report_local_playback(&self, _report: local::LocalReport) -> Result<bool, CastError> {
         Err(CastError::Unsupported)

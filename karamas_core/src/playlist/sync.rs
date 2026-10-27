@@ -29,7 +29,7 @@ impl PlaylistManager {
         }
     }
 
-    /// 同步一次歌单，并在当前歌曲变化时调用播放回调。
+    /// 同步一次歌单；当前歌曲变化且有 URL 时回调，无 URL 时保持播放。
     pub(super) async fn sync_playlist<F>(
         &self,
         song_playing_cached: &mut Option<(Option<String>, String)>,

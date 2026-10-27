@@ -46,7 +46,7 @@ impl EngineContext {
         self.is_playing.store(playing, Ordering::SeqCst);
         let mut gate = self.playlist_manager.progress_gate.lock().await;
         if playing {
-            gate.confirm_local_resume();
+            gate.confirm_resume();
         }
         if settled {
             let revision = gate.revision();

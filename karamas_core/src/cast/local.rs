@@ -205,6 +205,10 @@ impl LocalCaster {
 
 #[async_trait]
 impl Caster for LocalCaster {
+    fn kind(&self) -> crate::cast::CasterKind {
+        crate::cast::CasterKind::Local
+    }
+
     fn stop_status_subscription(&self) {
         let command = {
             let mut state = self.state.lock().unwrap();
@@ -253,14 +257,6 @@ impl Caster for LocalCaster {
         Ok(true)
     }
 
-    fn local_playback_ended(&self) -> Option<bool> {
-        let state = self.state.lock().unwrap();
-        Some(
-            Self::fresh_report(&state)
-                .is_some_and(|r| r.ended && !r.seeking && !r.buffering && state.pending.is_none()),
-        )
-    }
-
     fn playback_snapshot(&self) -> Option<PlaybackSnapshot> {
         let state = self.state.lock().unwrap();
         Some(match Self::fresh_report(&state) {
@@ -270,10 +266,14 @@ impl Caster for LocalCaster {
                     total_secs: report.total_secs as u32,
                 },
                 is_playing: !report.paused && !report.ended && !report.buffering && !report.seeking,
+                ended: Some(
+                    report.ended && !report.seeking && !report.buffering && state.pending.is_none(),
+                ),
             },
             None => PlaybackSnapshot {
                 progress: Progress::default(),
                 is_playing: false,
+                ended: None,
             },
         })
     }

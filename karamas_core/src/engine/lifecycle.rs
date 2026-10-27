@@ -1,6 +1,6 @@
 use super::{
     monitor::start_monitor,
-    playback::{play_and_confirm, prepare_duration},
+    playback::update_playback,
     state::{ENGINE_STATE, EngineContext},
 };
 use crate::cast::dlna::settings::set_dlna_quality;
@@ -15,10 +15,7 @@ use crate::{
 };
 use actix_web::web;
 use log::info;
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::{Arc, atomic::AtomicBool};
 use tokio::sync::Mutex;
 
 pub fn reset_engine() {
@@ -134,16 +131,7 @@ pub async fn connect_room(
         let session = session.clone();
         Box::pin(async move {
             let Some(ctx) = session.upgrade() else { return };
-            let _playback = ctx.playback_lock.lock().await;
-            let gate = &ctx.playlist_manager.progress_gate;
-            let Some(token) = gate.lock().await.play_token(&video_url) else { return };
-            info!("通知设备准备拉取路径: {}", video_url);
-            // 先准备完整时长，再通知设备播放，避免临时时长影响自动切歌。
-            prepare_duration(&video_url, &ctx.duration_cache).await;
-
-            if play_and_confirm(&*ctx.caster, &video_url, token, gate).await {
-                ctx.is_playing.store(true, Ordering::SeqCst);
-            }
+            update_playback(&ctx, video_url).await;
         })
     });
     ctx.tasks.lock().map_err(|_| "Lock error")?.push(sync_task.abort_handle());
