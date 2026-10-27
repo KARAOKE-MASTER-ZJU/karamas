@@ -23,7 +23,9 @@ export function useVideoLayout(
             Math.floor(viewportElement.clientHeight - videoTop - 16),
           );
           const value = `${available}px`;
-          if (target.style.getPropertyValue("--local-video-max-height") !== value)
+          if (
+            target.style.getPropertyValue("--local-video-max-height") !== value
+          )
             target.style.setProperty("--local-video-max-height", value);
         });
       };
