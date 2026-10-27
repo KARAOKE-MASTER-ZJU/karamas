@@ -27,11 +27,7 @@ export const useCastingStore = defineStore("casting", () => {
     volume.value = localReport.muted ? 0 : localReport.volume;
     if (playback.value) {
       playback.value.isPlaying =
-        !localReport.paused &&
-        !localReport.ended &&
-        !localReport.buffering &&
-        !localReport.seeking &&
-        !localReport.error;
+        !localReport.paused && !localReport.ended && !localReport.error;
       playback.value.currentSecs =
         localReport.totalSecs > 0 ? Math.floor(localReport.currentSecs) : null;
       playback.value.totalSecs =

@@ -94,8 +94,10 @@ pub(super) async fn sample_progress(ctx: &EngineContext) -> (i32, i32) {
     let (current, total) = gate.filter(revision, current, total);
     // Validate the sample and consume once under the same lock as song updates
     // and play confirmations. An old poll cannot trigger after a new playback.
-    // 保留提前切歌的时间余量；本地暂停、缓冲和失联时不按进度推进。
-    let should_advance = if snapshot.is_some_and(|state| state.ended == Some(true)) {
+    // 交互结束后再判断末尾，保留正常播放时提前切歌的时间余量。
+    let should_advance = if !ctx.caster.can_auto_advance() {
+        false
+    } else if snapshot.is_some_and(|state| state.ended == Some(true)) {
         current >= 0 && total > 0 && gate.auto_next.observe_finished()
     } else if ctx.caster.kind() == cast::CasterKind::Local
         && !snapshot.is_some_and(|state| state.is_playing)

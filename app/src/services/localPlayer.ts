@@ -12,10 +12,8 @@ const MEDIA_EVENTS = [
   "timeupdate",
   "durationchange",
   "volumechange",
-  "waiting",
   "seeking",
   "seeked",
-  "canplay",
   "ended",
   "error",
 ] as const;
@@ -79,7 +77,7 @@ export function createLocalPlayer(
   }
   let current: LocalCommand | null = null;
   let processing = false;
-  let buffering = false;
+  let activePointer: number | null = null;
   let abort = new AbortController();
   let disposed = false;
   let reporting = false;
@@ -87,6 +85,7 @@ export function createLocalPlayer(
 
   let clearingMedia: Promise<void> | undefined;
   function clearMedia(): Promise<void> {
+    activePointer = null;
     video.pause();
     // Stop 和会话清空可能连续到达，共用一次画中画退出操作。
     clearingMedia ??= (async () => {
@@ -96,7 +95,6 @@ export function createLocalPlayer(
       video.removeAttribute("src");
       video.load();
       state.hasMedia = false;
-      buffering = false;
     })().finally(() => {
       clearingMedia = undefined;
     });
@@ -115,8 +113,7 @@ export function createLocalPlayer(
         : 0,
       totalSecs: Number.isFinite(element.duration) ? element.duration : 0,
       paused: element.paused,
-      buffering: buffering || element.seeking || element.readyState < 3,
-      seeking: element.seeking,
+      seeking: element.seeking || activePointer !== null,
       muted: element.muted,
       ended: element.ended,
       volume: Math.round(element.volume * 100),
@@ -243,9 +240,6 @@ export function createLocalPlayer(
     }
   }
   function mediaEvent(event: Event) {
-    if (event.type === "waiting" || event.type === "seeking") buffering = true;
-    if (["playing", "seeked", "canplay", "ended", "pause"].includes(event.type))
-      buffering = false;
     if (event.type === "playing" && state.needsGesture) {
       state.needsGesture = false;
       state.error = "";
@@ -264,6 +258,27 @@ export function createLocalPlayer(
     notifyState();
   }
 
+  function pointerDown(event: PointerEvent) {
+    if (event.button !== 0 || !state.hasMedia) return;
+    activePointer = event.pointerId;
+    void sendStatus();
+  }
+  function releasePointer() {
+    if (activePointer === null) return;
+    activePointer = null;
+    void sendStatus();
+  }
+  function pointerUp(event: Event) {
+    if ((event as PointerEvent).pointerId === activePointer) releasePointer();
+  }
+
+  // 原生滑块拖动中会反复触发 seeked；按住播放器期间仍保持定位状态。
+  const document = video.ownerDocument;
+  const interactionTarget = document.defaultView ?? document;
+  video.addEventListener("pointerdown", pointerDown, true);
+  interactionTarget.addEventListener("pointerup", pointerUp, true);
+  interactionTarget.addEventListener("pointercancel", pointerUp, true);
+  document.defaultView?.addEventListener("blur", releasePointer);
   for (const event of MEDIA_EVENTS) video.addEventListener(event, mediaEvent);
   const timer = setInterval(() => void sendStatus(), 1000);
   function dispose() {
@@ -271,6 +286,10 @@ export function createLocalPlayer(
     disposed = true;
     abort.abort();
     clearInterval(timer);
+    video.removeEventListener("pointerdown", pointerDown, true);
+    interactionTarget.removeEventListener("pointerup", pointerUp, true);
+    interactionTarget.removeEventListener("pointercancel", pointerUp, true);
+    document.defaultView?.removeEventListener("blur", releasePointer);
     for (const event of MEDIA_EVENTS)
       video.removeEventListener(event, mediaEvent);
     return clearMedia();

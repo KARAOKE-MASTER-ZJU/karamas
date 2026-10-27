@@ -38,14 +38,14 @@ impl EngineContext {
         }
         let position = report.current_secs as u32;
         let settled = !report.seeking && report.error.is_none();
-        let playing = settled && !report.paused && !report.buffering && !report.ended;
+        let playing = !report.paused && !report.ended && report.error.is_none();
         if !self.caster.report_local_playback(report)? {
             return Ok(false);
         }
         *control += 1;
         self.is_playing.store(playing, Ordering::SeqCst);
         let mut gate = self.playlist_manager.progress_gate.lock().await;
-        if playing {
+        if playing && settled {
             gate.confirm_resume();
         }
         if settled {

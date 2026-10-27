@@ -52,7 +52,7 @@ pub struct LocalReport {
     pub current_secs: f64,
     pub total_secs: f64,
     pub paused: bool,
-    pub buffering: bool,
+    /// 媒体正在定位，或用户尚未松开播放器中的拖动操作。
     pub seeking: bool,
     pub muted: bool,
     pub ended: bool,
@@ -265,10 +265,8 @@ impl Caster for LocalCaster {
                     current_secs: report.current_secs as u32,
                     total_secs: report.total_secs as u32,
                 },
-                is_playing: !report.paused && !report.ended && !report.buffering && !report.seeking,
-                ended: Some(
-                    report.ended && !report.seeking && !report.buffering && state.pending.is_none(),
-                ),
+                is_playing: !report.paused && !report.ended,
+                ended: Some(report.ended),
             },
             None => PlaybackSnapshot {
                 progress: Progress::default(),
@@ -276,6 +274,11 @@ impl Caster for LocalCaster {
                 ended: None,
             },
         })
+    }
+
+    fn can_auto_advance(&self) -> bool {
+        let state = self.state.lock().unwrap();
+        Self::fresh_report(&state).is_some_and(|report| !report.seeking)
     }
 
     async fn play_song(&self, song: &SongRef) -> Result<(), CastError> {
@@ -373,7 +376,6 @@ mod tests {
             current_secs: 20.0,
             total_secs: 90.0,
             paused: false,
-            buffering: false,
             seeking: false,
             muted: false,
             ended: false,

@@ -404,7 +404,6 @@ fn local_report(command: &crate::cast::local::LocalCommand) -> crate::cast::loca
         current_secs: 180.0,
         total_secs: 180.0,
         paused: true,
-        buffering: false,
         seeking: false,
         muted: false,
         ended: false,
@@ -439,9 +438,9 @@ async fn local_acknowledgement_does_not_wait_for_progress_control() {
         .expect("操作确认不能等待控制锁");
 }
 
-// 原生拖动、暂停和缓冲即使到达结尾，也不能消费当前歌曲的自动切歌机会。
+// 拖动未结束或暂停且未播完时，不能消费当前歌曲的自动切歌机会。
 #[tokio::test]
-async fn native_scrubbing_pause_and_buffering_do_not_advance_playlist() {
+async fn native_scrubbing_and_pause_do_not_advance_playlist() {
     let (send, mut receive) = tokio::sync::mpsc::unbounded_channel();
     let caster = Arc::new(crate::cast::local::LocalCaster::new(
         12345,
@@ -463,16 +462,17 @@ async fn native_scrubbing_pause_and_buffering_do_not_advance_playlist() {
         let token = gate.revision();
         gate.play_succeeded(token, false, std::time::Instant::now());
     }
-    for (paused, buffering, seeking) in [
+    for (paused, seeking, ended) in [
         (true, false, false),
         (false, true, false),
-        (false, false, true),
+        (true, true, true),
     ] {
         let mut report = local_report(&command);
         report.paused = paused;
-        report.buffering = buffering;
         report.seeking = seeking;
+        report.ended = ended;
         ctx.report_local_playback(report).await.unwrap();
+        assert_eq!(ctx.is_playing(), !paused, "定位不改变播放状态");
         sample_progress(&ctx).await;
         let mut gate = ctx.playlist_manager.progress_gate.lock().await;
         assert!(
@@ -490,6 +490,16 @@ async fn native_scrubbing_pause_and_buffering_do_not_advance_playlist() {
     {
         let mut gate = ctx.playlist_manager.progress_gate.lock().await;
         assert!(!gate.auto_next.observe_finished(), "恢复播放后应提前切歌");
+        gate.auto_next.reset_for_playback();
+    }
+    // 松开末尾的滑块后解除 seeking，即使处于暂停状态也允许结束切歌。
+    let mut finished = local_report(&command);
+    finished.ended = true;
+    ctx.report_local_playback(finished).await.unwrap();
+    assert_eq!(sample_progress(&ctx).await, (180, 180));
+    {
+        let mut gate = ctx.playlist_manager.progress_gate.lock().await;
+        assert!(!gate.auto_next.observe_finished(), "播放完成后应切歌");
         gate.auto_next.reset_for_playback();
     }
     // 旧曲还在播放时新歌已进入队列同步，原生播放事件不能解除新歌的等待状态。

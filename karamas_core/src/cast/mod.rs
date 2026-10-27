@@ -21,6 +21,7 @@ pub struct Progress {
 #[derive(Debug, Clone, Copy)]
 pub struct PlaybackSnapshot {
     pub progress: Progress,
+    /// 播放/暂停状态；缓冲和定位不改变此值。
     pub is_playing: bool,
     /// None 表示当前没有可用的结束状态。
     pub ended: Option<bool>,
@@ -138,6 +139,11 @@ pub trait Caster: Send + Sync {
     /// 有状态回传的投屏器提供同步快照，其余协议沿用原有查询方式。
     fn playback_snapshot(&self) -> Option<PlaybackSnapshot> {
         None
+    }
+
+    /// 是否允许当前进度触发自动切歌；交互期间可暂时禁止。
+    fn can_auto_advance(&self) -> bool {
+        true
     }
     async fn set_volume(&self, volume: u32) -> Result<(), CastError>;
     async fn get_volume(&self) -> Result<Option<u32>, CastError>;

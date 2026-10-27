@@ -21,7 +21,7 @@ export interface LocalReport {
   currentSecs: number;
   totalSecs: number;
   paused: boolean;
-  buffering: boolean;
+  /** 媒体正在定位，或用户尚未松开播放器中的拖动操作。 */
   seeking: boolean;
   muted: boolean;
   ended: boolean;
