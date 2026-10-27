@@ -18,7 +18,7 @@ pub struct EnginePlaybackState {
     pub queued_count: usize,
     pub sung_count: usize,
     pub quality_qn: Option<u32>,
-    pub quality_format: cast::MediaFormat,
+    pub quality_format: Option<cast::MediaFormat>,
     pub danmaku: Option<bool>,
     pub capabilities: cast::Capabilities,
 }

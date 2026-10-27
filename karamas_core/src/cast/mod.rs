@@ -107,14 +107,30 @@ impl Default for Quality {
     }
 }
 
-/// B站媒体的取源方式；Auto 用于尚未选档的会话及原有清晰度调用。
+/// DLNA / 本机播放的取源方式。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum MediaFormat {
     #[default]
-    Auto,
     Mp4,
     Dash,
+}
+
+/// 只考虑不高于目标的清晰度点，同距时优先保持同一清晰度。
+pub fn select_media_quality(
+    preferred: (Quality, MediaFormat),
+    available: impl IntoIterator<Item = (Quality, MediaFormat)>,
+) -> Option<(Quality, MediaFormat)> {
+    available
+        .into_iter()
+        .filter(|point| point.0.as_qn() <= preferred.0.as_qn())
+        .min_by_key(|point| {
+            let delta = u64::from(preferred.0.as_qn() - point.0.as_qn());
+            (
+                delta * delta + u64::from(point.1 != preferred.1),
+                point.0 != preferred.0,
+            )
+        })
 }
 
 #[derive(Debug)]
@@ -194,7 +210,7 @@ pub trait Caster: Send + Sync {
         Err(CastError::Unsupported)
     }
 
-    /// 切换清晰度，使用该播放目标默认的取源方式。
+    /// 小电视按协议切换 qn；DLNA / 本机播放使用 set_media_quality。
     async fn set_quality(&self, _quality: Quality) -> Result<(), CastError> {
         Err(CastError::Unsupported)
     }
@@ -202,20 +218,17 @@ pub trait Caster: Send + Sync {
         Err(CastError::Unsupported)
     }
 
-    /// DLNA 和本机播放可分别选择 MP4、DASH；B站投屏沿用协议选档。
+    /// DLNA 和本机播放保存清晰度和取源方式，小电视使用独立的 qn 控制。
     async fn set_media_quality(
         &self,
-        quality: Quality,
-        format: MediaFormat,
+        _quality: Quality,
+        _format: MediaFormat,
     ) -> Result<(), CastError> {
-        if format != MediaFormat::Auto {
-            return Err(CastError::Unsupported);
-        }
-        self.set_quality(quality).await
+        Err(CastError::Unsupported)
     }
 
-    fn get_media_format(&self) -> MediaFormat {
-        MediaFormat::Auto
+    fn get_media_format(&self) -> Option<MediaFormat> {
+        None
     }
 
     fn capabilities(&self) -> Capabilities;

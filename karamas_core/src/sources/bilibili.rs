@@ -314,7 +314,7 @@ pub async fn get_page_duration(bv_id: &str, page: u32) -> Result<u32, String> {
 /// # Returns
 /// * `Result<String, String>` - 返回直链URL或错误信息
 pub async fn get_bilibili_direct_link(bv_id: &str, page: Option<u32>) -> Result<String, String> {
-    match get_bilibili_media_with_format(bv_id, page, 64, crate::cast::MediaFormat::Mp4)
+    match get_bilibili_media_with_format(bv_id, page, 64, crate::cast::MediaFormat::Mp4, false)
         .await?
         .media
     {
@@ -337,43 +337,20 @@ pub enum BilibiliMedia {
     },
 }
 
-/// 获取指定清晰度的 B站媒体。
-///
-/// `qn=80` 使用实测可用的匿名 DASH 接口。`try_look=1` 会在没有 Cookie 时
-/// 自动选择对应清晰度的 MP4 或 DASH 媒体。
-pub async fn get_bilibili_media(
-    bv_id: &str,
-    page: Option<u32>,
-    qn: u32,
-) -> Result<BilibiliMedia, String> {
-    get_bilibili_media_with_format(bv_id, page, qn, crate::cast::MediaFormat::Auto)
-        .await
-        .map(|resolved| resolved.media)
-}
-
-/// 按清晰度和取源方式读取媒体，返回实际的清晰度及方式。
+/// 根据保存的清晰度和取源方式 从当前分 P 的可用点中取源。
 pub async fn get_bilibili_media_with_format(
     bv_id: &str,
     page: Option<u32>,
     qn: u32,
     format: crate::cast::MediaFormat,
+    allow_mix: bool,
 ) -> Result<ResolvedBilibiliMedia, String> {
-    let page = page.unwrap_or(0);
-    if bv_id.starts_with("http://") || bv_id.starts_with("https://") {
-        return Ok(ResolvedBilibiliMedia {
-            media: BilibiliMedia::Direct {
-                url: bv_id.to_owned(),
-            },
-            quality: crate::cast::Quality::from_qn(qn).ok_or("不支持的清晰度")?,
-            format: crate::cast::MediaFormat::Mp4,
-        });
-    }
     let started = std::time::Instant::now();
-    let (cid, _) = get_page_info(bv_id, page).await?;
+    let (cid, _) = get_page_info(bv_id, page.unwrap_or(0)).await?;
     let cid_ms = started.elapsed().as_millis();
     let playurl_started = std::time::Instant::now();
-    let result = playback_media::resolve(bv_id, &cid.to_string(), qn, format).await;
-    log::info!(target: "DLNA1080", "B站媒体解析完成: bvid={}, qn={}, format={:?}, cid_ms={}, playurl_ms={}, success={}", bv_id, qn, format, cid_ms, playurl_started.elapsed().as_millis(), result.is_ok());
+    let result = playback_media::resolve(bv_id, &cid.to_string(), qn, format, allow_mix).await;
+    log::info!(target: "DLNA1080", "B站媒体解析完成: bvid={}, 目标=({}, {:?}), cid_ms={}, playurl_ms={}, success={}", bv_id, qn, format, cid_ms, playurl_started.elapsed().as_millis(), result.is_ok());
     result
 }
 
@@ -394,10 +371,16 @@ mod tests {
     #[tokio::test]
     #[ignore = "public Bilibili network fixture; run manually before release"]
     async fn test_anonymous_1080_dash() {
-        let media = get_bilibili_media("BV1dqj16aECG", Some(0), 80)
-            .await
-            .expect("目标视频应提供匿名 1080P DASH");
-        match media {
+        let media = get_bilibili_media_with_format(
+            "BV1dqj16aECG",
+            Some(0),
+            80,
+            crate::cast::MediaFormat::Dash,
+            true,
+        )
+        .await
+        .expect("目标视频应提供匿名 1080P DASH");
+        match media.media {
             BilibiliMedia::Dash {
                 width,
                 height,

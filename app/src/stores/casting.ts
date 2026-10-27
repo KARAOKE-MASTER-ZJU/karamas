@@ -110,9 +110,6 @@ export const useCastingStore = defineStore("casting", () => {
       await initializeDlnaProxy();
       if (isTauri()) await castingApi.setDlnaDirect(!enabled);
       dlnaProxyEnabled.value = enabled;
-      // 核心库在开启直连时将后续加载的清晰度重置为 720P。
-      if (!enabled && activeDevice.value?.kind === "dlna" && playback.value)
-        playback.value.qualityQn = 64;
       return preferences.saveDlnaProxyEnabled(enabled);
     } finally {
       changingDlnaProxy.value = false;

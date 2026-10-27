@@ -1,5 +1,8 @@
-use super::{BilibiliMedia, media_qualities::request_playurl};
-use crate::cast::{MediaFormat, Quality};
+use super::{
+    BilibiliMedia,
+    media_qualities::{parse_media_qualities, request_playurl},
+};
+use crate::cast::{MediaFormat, Quality, select_media_quality};
 use serde_json::Value;
 
 pub struct ResolvedBilibiliMedia {
@@ -13,23 +16,73 @@ pub(super) async fn resolve(
     cid: &str,
     qn: u32,
     format: MediaFormat,
+    allow_mix: bool,
 ) -> Result<ResolvedBilibiliMedia, String> {
-    match format {
-        MediaFormat::Mp4 => mp4(bvid, cid, qn).await,
-        MediaFormat::Dash => dash(bvid, cid, qn).await,
-        MediaFormat::Auto => {
-            if qn >= 80 {
-                dash(bvid, cid, qn).await
-            } else {
-                mp4(bvid, cid, qn).await
-            }
+    let preferred = (Quality::from_qn(qn).ok_or("不支持的清晰度")?, format);
+    let qn_string = qn.to_string();
+    let dash_params = [
+        ("qn", qn_string.as_str()),
+        ("fnval", "4048"),
+        ("fnver", "0"),
+        ("fourk", "1"),
+        ("try_look", "1"),
+    ];
+    let (dash_result, mp4_result) = tokio::join!(
+        request_playurl(bvid, cid, &dash_params),
+        request_mp4(bvid, cid, preferred.0.as_qn()),
+    );
+    let base = match (&dash_result, &mp4_result) {
+        (Ok(json), _) | (_, Ok(json)) => json,
+        (Err(dash), Err(mp4)) => return Err(format!("MP4：{mp4}；DASH：{dash}")),
+    };
+    let qualities = parse_media_qualities(base, mp4_result.as_ref().map_err(Clone::clone))?;
+    let mut points = Vec::new();
+    for quality in qualities {
+        let Some(qn) = Quality::from_qn(quality.qn) else {
+            continue;
+        };
+        if quality.direct_mp4 == Some(true) {
+            points.push((qn, MediaFormat::Mp4));
+        }
+        if allow_mix && quality.dash {
+            points.push((qn, MediaFormat::Dash));
         }
     }
+    let selected = select_media_quality(preferred, points).ok_or_else(|| {
+        format!(
+            "没有不高于 {} 的可用{}清晰度",
+            preferred.0.label(),
+            if allow_mix { "" } else { "MP4 " }
+        )
+    })?;
+    if selected != preferred {
+        log::info!(target: "DLNA1080", "选档回退: bvid={}, 目标=({}, {:?}), 本首=({}, {:?})", bvid,
+            preferred.0.as_qn(), preferred.1, selected.0.as_qn(), selected.1);
+    }
+    let resolved = if selected.1 == MediaFormat::Dash {
+        parse_dash(
+            bvid,
+            dash_result.as_ref().map_err(Clone::clone)?,
+            selected.0.as_qn(),
+        )?
+    } else {
+        let current = mp4_result.as_ref().map_err(Clone::clone)?;
+        if current["data"]["quality"].as_u64() == Some(selected.0.as_qn() as u64) {
+            parse_mp4(bvid, current)?
+        } else {
+            // 仅在最终选中其他 MP4 档位时补取该地址，不逐档探测。
+            parse_mp4(bvid, &request_mp4(bvid, cid, selected.0.as_qn()).await?)?
+        }
+    };
+    if (resolved.quality, resolved.format) != selected {
+        return Err("B站取源返回的清晰度已变化，请重试".into());
+    }
+    Ok(resolved)
 }
 
-async fn mp4(bvid: &str, cid: &str, qn: u32) -> Result<ResolvedBilibiliMedia, String> {
+async fn request_mp4(bvid: &str, cid: &str, qn: u32) -> Result<Value, String> {
     let qn_string = qn.to_string();
-    let json = request_playurl(
+    request_playurl(
         bvid,
         cid,
         &[
@@ -40,7 +93,10 @@ async fn mp4(bvid: &str, cid: &str, qn: u32) -> Result<ResolvedBilibiliMedia, St
             ("high_quality", "1"),
         ],
     )
-    .await?;
+    .await
+}
+
+fn parse_mp4(bvid: &str, json: &Value) -> Result<ResolvedBilibiliMedia, String> {
     let data = &json["data"];
     if !data["format"]
         .as_str()
@@ -58,7 +114,7 @@ async fn mp4(bvid: &str, cid: &str, qn: u32) -> Result<ResolvedBilibiliMedia, St
         .and_then(|qn| u32::try_from(qn).ok())
         .and_then(Quality::from_qn)
         .ok_or("MP4 没有有效的清晰度")?;
-    log::info!(target: "DLNA1080", "选中完整 MP4: bvid={}, 请求qn={}, 返回qn={}", bvid, qn, quality.as_qn());
+    log::info!(target: "DLNA1080", "选中完整 MP4: bvid={}, qn={}", bvid, quality.as_qn());
     Ok(ResolvedBilibiliMedia {
         media: BilibiliMedia::Direct { url },
         quality,
@@ -66,21 +122,8 @@ async fn mp4(bvid: &str, cid: &str, qn: u32) -> Result<ResolvedBilibiliMedia, St
     })
 }
 
-async fn dash(bvid: &str, cid: &str, qn: u32) -> Result<ResolvedBilibiliMedia, String> {
+fn parse_dash(bvid: &str, json: &Value, qn: u32) -> Result<ResolvedBilibiliMedia, String> {
     let quality = Quality::from_qn(qn).ok_or("不支持的清晰度")?;
-    let qn_string = qn.to_string();
-    let json = request_playurl(
-        bvid,
-        cid,
-        &[
-            ("qn", qn_string.as_str()),
-            ("fnval", "4048"),
-            ("fnver", "0"),
-            ("fourk", "1"),
-            ("try_look", "1"),
-        ],
-    )
-    .await?;
     let data = &json["data"]["dash"];
     let videos = data["video"].as_array().ok_or("B站未返回 DASH 视频轨")?;
     let audios = data["audio"].as_array().ok_or("B站未返回 DASH 音频轨")?;

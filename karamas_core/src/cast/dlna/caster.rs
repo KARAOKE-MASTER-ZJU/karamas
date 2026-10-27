@@ -61,7 +61,9 @@ impl DlnaCaster {
         reason: &str,
     ) -> Result<(), CastError> {
         let started = std::time::Instant::now();
-        let (quality, format) = crate::cast::dlna::settings::get_dlna_media_quality();
+        let preferred = crate::cast::dlna::settings::get_dlna_media_quality();
+        let mut quality = preferred.0;
+        let mut selected = None;
         let direct = crate::cast::dlna::settings::get_dlna_direct();
         let sequence = self
             .seek_sequence
@@ -70,9 +72,9 @@ impl DlnaCaster {
             .sessions
             .as_ref()
             .filter(|_| !direct)
-            .map(|sessions| sessions.activate_with_format(song, quality, format));
+            .map(|sessions| sessions.activate_with_format(song, preferred.0, preferred.1));
         let media_url = if direct {
-            let (url, actual_quality) = resolve_direct_url(song, quality, format).await?;
+            let (url, actual_quality) = resolve_direct_url(song, preferred.0, preferred.1).await?;
             if sequence
                 != self
                     .seek_sequence
@@ -80,8 +82,8 @@ impl DlnaCaster {
             {
                 return Err(CastError::Device("播放请求已过期".into()));
             }
-            crate::cast::dlna::settings::set_dlna_media_quality(actual_quality, MediaFormat::Mp4)
-                .map_err(|error| CastError::Device(error.to_string()))?;
+            quality = actual_quality;
+            selected = Some((actual_quality, MediaFormat::Mp4));
             url
         } else if let Some(session) = &session {
             session
@@ -91,15 +93,13 @@ impl DlnaCaster {
             if session.is_stopped() {
                 return Err(CastError::Device("曲目准备已被新请求替代".into()));
             }
-            let (quality, format) = session.resolved_quality();
-            crate::cast::dlna::settings::set_dlna_media_quality(quality, format)
-                .map_err(|error| CastError::Device(error.to_string()))?;
+            let actual_quality = session.resolved_quality();
+            quality = actual_quality.0;
+            selected = Some(actual_quality);
             // 设备处理 Stop/SetURI/Play 时并行预取起播窗口，不等待完整媒体下载。
             session.warm_seek(position);
             session.path()
-        } else if format == MediaFormat::Dash
-            || (format == MediaFormat::Auto && quality.as_qn() >= 80)
-        {
+        } else if preferred.1 == MediaFormat::Dash {
             with_start_offset(song, position)
         } else {
             song.to_owned()
@@ -169,6 +169,9 @@ impl DlnaCaster {
                 return Err(self.failure("恢复播放进度", error));
             }
         }
+        if let Some(actual) = selected {
+            crate::cast::dlna::settings::set_dlna_actual_quality(actual);
+        }
         log::info!(
             target: "DLNA1080",
             "DLNA 已重载媒体: reason={}, quality={}, start={}s, total_ms={}, preparation_ms={}, transport_wait_ms={}, stop_ms={}, set_uri_ms={}, play_ms={}",
@@ -194,18 +197,9 @@ impl DlnaCaster {
 }
 
 /// 解析直连媒体链接，返回媒体地址或错误信息
-async fn resolve_direct_url(
-    song: &str,
-    quality: Quality,
-    format: MediaFormat,
-) -> Result<(String, Quality), CastError> {
-    if format == MediaFormat::Dash {
-        return Err(CastError::Device("混流需要启用 DLNA 媒体代理".into()));
-    }
+async fn resolve_direct_url(song: &str, quality: Quality, format: MediaFormat) -> Result<(String, Quality), CastError> {
     if crate::sources::youtube::is_youtube_url(song) {
-        return Err(CastError::Device(
-            "此媒体需要在线混流，请启用 DLNA 媒体代理".into(),
-        ));
+        return Err(CastError::Device("此媒体需要在线混流，请启用 DLNA 媒体代理".into()));
     }
     let bilibili = crate::sources::bilibili::parse_bilibili_video(song);
     if bilibili.is_err() && (song.starts_with("http://") || song.starts_with("https://")) {
@@ -213,13 +207,8 @@ async fn resolve_direct_url(
     }
     let (bvid, page) = bilibili.map_err(CastError::Device)?;
     let resolved = crate::sources::bilibili::get_bilibili_media_with_format(
-        &bvid,
-        Some(page),
-        quality.as_qn(),
-        MediaFormat::Mp4,
-    )
-    .await
-    .map_err(CastError::Device)?;
+        &bvid, Some(page), quality.as_qn(), format, false,
+    ).await.map_err(CastError::Device)?;
     match resolved.media {
         crate::sources::bilibili::BilibiliMedia::Direct { url } => Ok((url, resolved.quality)),
         _ => Err(CastError::Device("直连模式需要 MP4 媒体".into())),
@@ -297,9 +286,7 @@ impl Caster for DlnaCaster {
             .load(std::sync::atomic::Ordering::Relaxed);
         if !crate::cast::dlna::settings::get_dlna_direct()
             && self.sessions.is_none()
-            && (self.get_media_format() == MediaFormat::Dash
-                || (self.get_media_format() == MediaFormat::Auto
-                    && self.get_quality()?.as_qn() >= 80))
+            && self.get_media_format() == Some(MediaFormat::Dash)
         {
             let song = self
                 .current_song
@@ -380,24 +367,13 @@ impl Caster for DlnaCaster {
             .map_err(|error| self.failure("查询音量", error))
     }
 
-    /// 设置清晰度
-    async fn set_quality(&self, quality: Quality) -> Result<(), CastError> {
-        self.set_media_quality(quality, MediaFormat::Auto).await
-    }
-
-    async fn set_media_quality(
-        &self,
-        quality: Quality,
-        format: MediaFormat,
-    ) -> Result<(), CastError> {
-        if crate::cast::dlna::settings::get_dlna_direct() && format == MediaFormat::Dash {
-            return Err(CastError::Device("混流需要启用 DLNA 媒体代理".into()));
-        }
+    /// 保存偏好，当前曲目按可用点选择；临时回退不覆盖偏好。
+    async fn set_media_quality(&self, quality: Quality, format: MediaFormat) -> Result<(), CastError> {
         let previous = crate::cast::dlna::settings::get_dlna_media_quality();
-        if previous == (quality, format) {
+        if previous == (quality, format) && self.get_quality()? == quality && self.get_media_format() == Some(format) {
             return Ok(());
         }
-        log::info!(target: "DLNA1080", "切换 DLNA 清晰度: {} {:?} -> {} {:?}", previous.0.label(), previous.1, quality.label(), format);
+        log::info!(target: "DLNA1080", "切换 DLNA 清晰度偏好: {:?} -> {:?}", previous, (quality, format));
         let position = self
             .controller
             .get_secs(&self.device)
@@ -405,12 +381,7 @@ impl Caster for DlnaCaster {
             .ok()
             .map(|progress| progress.0)
             .unwrap_or(0);
-        crate::cast::dlna::settings::set_dlna_media_quality(quality, format).map_err(
-            |message| {
-                log::error!(target: "DLNA1080", "拒绝 DLNA 清晰度切换: {}", message);
-                CastError::Device(message.to_string())
-            },
-        )?;
+        crate::cast::dlna::settings::set_dlna_media_quality(quality, format).map_err(|error| CastError::Device(error.to_string()))?;
 
         // Re-open the same proxy URL so the renderer immediately requests the
         // newly selected representation. Keep the old position when possible.
@@ -432,11 +403,11 @@ impl Caster for DlnaCaster {
 
     /// 查询当前清晰度
     fn get_quality(&self) -> Result<Quality, CastError> {
-        Ok(crate::cast::dlna::settings::get_dlna_quality())
+        Ok(crate::cast::dlna::settings::get_dlna_actual_quality().0)
     }
 
-    fn get_media_format(&self) -> MediaFormat {
-        crate::cast::dlna::settings::get_dlna_media_quality().1
+    fn get_media_format(&self) -> Option<MediaFormat> {
+        Some(crate::cast::dlna::settings::get_dlna_actual_quality().1)
     }
 
     /// 查询设备能力
@@ -451,39 +422,20 @@ impl Caster for DlnaCaster {
 
 #[cfg(test)]
 mod tests {
-    use super::Quality;
     use super::{resolve_direct_url, with_start_offset};
 
     #[tokio::test]
-    async fn direct_url_preserves_signed_mp4_and_rejects_dash() {
+    async fn direct_url_preserves_signed_mp4_and_rejects_unsupported_sources() {
+        let preferred = (super::Quality::P720, super::MediaFormat::Mp4);
         let url = "https://cdn.example/video.mp4?token=a%2Bb&expires=42";
-        assert_eq!(
-            resolve_direct_url(url, Quality::P720, super::MediaFormat::Mp4)
+        assert_eq!(resolve_direct_url(url, preferred.0, preferred.1).await.unwrap().0, url);
+        assert!(
+            resolve_direct_url("https://www.youtube.com/watch?v=test", preferred.0, preferred.1)
                 .await
-                .unwrap()
-                .0,
-            url
+                .is_err()
         );
         assert!(
-            resolve_direct_url(
-                "BV1dqj16aECG-page0",
-                Quality::P1080,
-                super::MediaFormat::Dash
-            )
-            .await
-            .is_err()
-        );
-        assert!(
-            resolve_direct_url(
-                "https://www.youtube.com/watch?v=test",
-                Quality::P720,
-                super::MediaFormat::Auto
-            )
-            .await
-            .is_err()
-        );
-        assert!(
-            resolve_direct_url("invalid-page0", Quality::P720, super::MediaFormat::Auto)
+            resolve_direct_url("invalid-page0", preferred.0, preferred.1)
                 .await
                 .is_err()
         );

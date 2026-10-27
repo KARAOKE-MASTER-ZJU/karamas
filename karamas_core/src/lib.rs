@@ -9,7 +9,7 @@ pub mod sources;
 
 pub use cast::dlna::{
     discover_device_from_url_core, discover_devices_core, discover_devices_with_updates_core,
-    settings::{get_dlna_direct, get_dlna_quality, set_dlna_direct, set_dlna_quality},
+    settings::{get_dlna_direct, set_dlna_direct},
 };
 pub use config::{API_TIMEOUT, PROXY_CONNECT_TIMEOUT, SOAP_TIMEOUT};
 pub use engine::{

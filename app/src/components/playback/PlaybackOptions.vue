@@ -14,7 +14,7 @@ const props = defineProps<{
   songUrl: string | null;
   dlnaProxyEnabled: boolean;
   qualityQn: number | null;
-  qualityFormat: MediaFormat;
+  qualityFormat: MediaFormat | null;
   mediaQualities: BilibiliMediaQuality[];
   mediaQualitiesLoading: boolean;
   mediaQualitiesError: string;
@@ -47,8 +47,8 @@ const options = computed<QualityOption[]>(() => {
   if (props.mode === "bilibili")
     return qualities.value.map((quality) => ({
       ...quality,
-      format: "auto",
-      id: `auto:${quality.qn}`,
+      format: null,
+      id: `bilibili:${quality.qn}`,
     }));
   const result: QualityOption[] = [];
   for (const quality of [...props.mediaQualities].sort((a, b) => a.qn - b.qn)) {

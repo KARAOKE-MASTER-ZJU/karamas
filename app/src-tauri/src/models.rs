@@ -77,7 +77,7 @@ pub struct PlaybackState {
     pub sung_count: usize,
     /// B站协议清晰度数值，查询不可用或失败时为 null。
     pub quality_qn: Option<u32>,
-    pub quality_format: karamas_core::cast::MediaFormat,
+    pub quality_format: Option<karamas_core::cast::MediaFormat>,
     /// 弹幕状态，设备不支持或查询失败时为 null。
     pub danmaku: Option<bool>,
     pub capabilities: DeviceCapabilities,
@@ -86,7 +86,7 @@ pub struct PlaybackState {
 #[derive(Serialize)]
 pub struct PlaybackQuality {
     pub qn: u32,
-    pub format: karamas_core::cast::MediaFormat,
+    pub format: Option<karamas_core::cast::MediaFormat>,
 }
 
 /// 重新投屏的正常结果；失败和超时通过命令错误返回。

@@ -131,12 +131,20 @@ pub async fn set_quality(
 ) -> CommandResult<PlaybackQuality> {
     let quality = karamas_core::cast::Quality::from_qn(qn)
         .ok_or_else(|| CommandError::new("INVALID_ARGUMENT", "不支持的清晰度"))?;
-    let (quality, format) =
-        karamas_core::set_media_quality_core(quality, format.unwrap_or_default()).await?;
-    Ok(PlaybackQuality {
-        qn: quality.as_qn(),
-        format,
-    })
+    if let Some(format) = format {
+        let (quality, format) = karamas_core::set_media_quality_core(quality, format).await?;
+        Ok(PlaybackQuality {
+            qn: quality.as_qn(),
+            format: Some(format),
+        })
+    } else {
+        // 小电视只接受 qn，不参与本地媒体方式选择。
+        let quality = karamas_core::set_quality_core(quality).await?;
+        Ok(PlaybackQuality {
+            qn: quality.as_qn(),
+            format: None,
+        })
+    }
 }
 
 /// 查询指定 B站视频分 P 的清晰度列表。

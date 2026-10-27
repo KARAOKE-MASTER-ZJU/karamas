@@ -3,7 +3,7 @@ use super::{
     playback::update_playback,
     state::{ENGINE_STATE, EngineContext},
 };
-use crate::cast::dlna::settings::set_dlna_quality;
+use crate::cast::dlna::settings::reset_dlna_media_quality;
 use crate::{
     cast::{
         self,
@@ -37,9 +37,8 @@ pub async fn start_engine_core(
 
     reset_engine();
 
-    // 每次进入 DLNA 会话都从已验证最稳定的 720P 开始。静态清晰度状态会
-    // 跨引擎重建存活，若不显式重置会让上一会话的 1080P 误成为默认值。
-    set_dlna_quality(cast::Quality::P720)?;
+    // 新会话默认 720P MP4，会话内保留用户选择的清晰度和取源方式。
+    reset_dlna_media_quality();
     info!(target: "DLNA1080", "DLNA 新会话默认清晰度: 720P");
 
     let handle = rt.clone();

@@ -49,10 +49,29 @@ pub async fn get_bilibili_media_qualities(
         ),
     );
     let json = dash_result?;
-    let mp4_qualities = match mp4_result.and_then(|json| parse_mp4_qualities(&json)) {
+    let qualities = parse_media_qualities(&json, mp4_result.as_ref().map_err(Clone::clone))?;
+    log::info!(
+        "B站媒体清晰度查询完成: bvid={}, page={}, 档位数={}, 未确认MP4数={}, 耗时={}ms",
+        bvid,
+        page + 1,
+        qualities.len(),
+        qualities
+            .iter()
+            .filter(|quality| quality.direct_mp4.is_none())
+            .count(),
+        started.elapsed().as_millis()
+    );
+    Ok(qualities)
+}
+
+pub(super) fn parse_media_qualities(
+    json: &Value,
+    mp4_result: Result<&Value, String>,
+) -> Result<Vec<BilibiliMediaQuality>, String> {
+    let mp4_qualities = match mp4_result.and_then(parse_mp4_qualities) {
         Ok(qualities) => Some(qualities),
         Err(error) => {
-            log::debug!("B站 MP4 清晰度未确认: bvid={bvid}, {error}");
+            log::debug!("B站 MP4 清晰度未确认: {error}");
             None
         }
     };
@@ -61,7 +80,7 @@ pub async fn get_bilibili_media_qualities(
             .as_ref()
             .map(|qualities| qualities.iter().any(|quality| quality.qn == qn))
     };
-    let advertised = parse_bilibili_qualities(&json)?;
+    let advertised = parse_bilibili_qualities(json)?;
     let mut qualities: Vec<_> = advertised
         .into_iter()
         .map(|quality| BilibiliMediaQuality {
@@ -106,17 +125,6 @@ pub async fn get_bilibili_media_qualities(
             }
         }
     }
-    log::info!(
-        "B站媒体清晰度查询完成: bvid={}, page={}, 档位数={}, 未确认MP4数={}, 耗时={}ms",
-        bvid,
-        page + 1,
-        qualities.len(),
-        qualities
-            .iter()
-            .filter(|quality| quality.direct_mp4.is_none())
-            .count(),
-        started.elapsed().as_millis()
-    );
     Ok(qualities)
 }
 

@@ -182,7 +182,7 @@ pub fn get_danmaku_core() -> bool {
     false
 }
 
-/// 直接设置清晰度，返回设置后的值。
+/// 小电视通过协议设置 qn，返回设置后的值。
 pub async fn set_quality_core(quality: cast::Quality) -> Result<cast::Quality, CoreError> {
     let ctx = {
         let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
@@ -203,7 +203,11 @@ pub async fn set_media_quality_core(
         guard.as_ref().cloned().ok_or("Engine not initialized")?
     };
     ctx.caster.set_media_quality(quality, format).await?;
-    Ok((ctx.caster.get_quality()?, ctx.caster.get_media_format()))
+    let format = ctx
+        .caster
+        .get_media_format()
+        .ok_or(cast::CastError::Unsupported)?;
+    Ok((ctx.caster.get_quality()?, format))
 }
 
 /// 切到下一档清晰度（循环），返回切换后的值。

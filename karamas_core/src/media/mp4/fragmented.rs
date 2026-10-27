@@ -1007,14 +1007,19 @@ mod tests {
     #[tokio::test]
     #[ignore = "downloads the complete public Bilibili test video"]
     async fn live_mux_target_video() {
-        let media = crate::sources::bilibili::get_bilibili_media("BV1dqj16aECG", Some(0), 80)
-            .await
-            .unwrap();
+        let media = crate::sources::bilibili::get_bilibili_media_with_format(
+            "BV1dqj16aECG",
+            Some(0),
+            80, crate::cast::MediaFormat::Dash,
+            true,
+        )
+        .await
+        .unwrap();
         let crate::sources::bilibili::BilibiliMedia::Dash {
             video_url,
             audio_url,
             ..
-        } = media
+        } = media.media
         else {
             panic!("expected DASH");
         };
@@ -1040,14 +1045,19 @@ mod tests {
     #[tokio::test]
     #[ignore = "opens a public Bilibili 1080P stream and verifies indexed seeking"]
     async fn live_mux_seeks_with_sidx_range() {
-        let media = crate::sources::bilibili::get_bilibili_media("BV1dqj16aECG", Some(0), 80)
-            .await
-            .unwrap();
+        let media = crate::sources::bilibili::get_bilibili_media_with_format(
+            "BV1dqj16aECG",
+            Some(0),
+            80, crate::cast::MediaFormat::Dash,
+            true,
+        )
+        .await
+        .unwrap();
         let crate::sources::bilibili::BilibiliMedia::Dash {
             video_url,
             audio_url,
             ..
-        } = media
+        } = media.media
         else {
             panic!("expected DASH");
         };

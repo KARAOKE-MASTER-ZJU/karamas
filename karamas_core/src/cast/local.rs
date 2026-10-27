@@ -74,6 +74,7 @@ struct State {
     song: Option<String>,
     quality: Quality,
     format: MediaFormat,
+    actual_quality: Option<(Quality, MediaFormat)>,
     volume: u32,
     muted: bool,
 }
@@ -102,7 +103,8 @@ impl LocalCaster {
                 stopped: false,
                 song: None,
                 quality: Quality::P720,
-                format: MediaFormat::Auto,
+                format: MediaFormat::Mp4,
+                actual_quality: None,
                 volume: 100,
                 muted: false,
             }),
@@ -191,10 +193,7 @@ impl LocalCaster {
             muted,
         })
         .await?;
-        let (quality, format) = session.resolved_quality();
-        let mut state = self.state.lock().unwrap();
-        state.quality = quality;
-        state.format = format;
+        self.state.lock().unwrap().actual_quality = Some(session.resolved_quality());
         Ok(())
     }
 
@@ -328,9 +327,6 @@ impl Caster for LocalCaster {
         let state = self.state.lock().unwrap();
         Ok(Some(if state.muted { 0 } else { state.volume }))
     }
-    async fn set_quality(&self, quality: Quality) -> Result<(), CastError> {
-        self.set_media_quality(quality, MediaFormat::Auto).await
-    }
     async fn set_media_quality(
         &self,
         quality: Quality,
@@ -362,10 +358,14 @@ impl Caster for LocalCaster {
         Ok(())
     }
     fn get_quality(&self) -> Result<Quality, CastError> {
-        Ok(self.state.lock().unwrap().quality)
+        let state = self.state.lock().unwrap();
+        Ok(state
+            .actual_quality
+            .map_or(state.quality, |actual| actual.0))
     }
-    fn get_media_format(&self) -> MediaFormat {
-        self.state.lock().unwrap().format
+    fn get_media_format(&self) -> Option<MediaFormat> {
+        let state = self.state.lock().unwrap();
+        Some(state.actual_quality.map_or(state.format, |actual| actual.1))
     }
     fn capabilities(&self) -> Capabilities {
         Capabilities {

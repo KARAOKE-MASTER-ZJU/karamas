@@ -117,7 +117,7 @@ pub async fn proxy_handler(
             part.strip_prefix("qn=")
                 .and_then(|value| value.parse::<u32>().ok())
         })
-        .unwrap_or_else(|| crate::cast::dlna::settings::get_dlna_quality().as_qn());
+        .unwrap_or_else(|| crate::cast::dlna::settings::get_dlna_media_quality().0.as_qn());
     let start_secs = req
         .query_string()
         .split('&')
@@ -132,17 +132,12 @@ pub async fn proxy_handler(
             url: origin_url.clone(),
         }
     } else {
+        let qn = crate::cast::Quality::from_qn(requested_qn)
+            .ok_or_else(|| actix_web::error::ErrorBadRequest("不支持的清晰度"))?;
         let format = crate::cast::dlna::settings::get_dlna_media_quality().1;
-        let resolved = match get_bilibili_media_with_format(bv_id, page, requested_qn, format).await {
-            Ok(resolved) => resolved,
-            Err(error) if format == crate::cast::MediaFormat::Auto && requested_qn >= 80 => {
-                log::warn!(target: "DLNA1080", "1080P 不可用，自动回退 720P: bvid={}, page={:?}, reason={}", bv_id, page, error);
-                get_bilibili_media_with_format(bv_id, page, 64, crate::cast::MediaFormat::Mp4)
-                    .await
-                    .map_err(actix_web::error::ErrorBadGateway)?
-            }
-            Err(error) => return Err(actix_web::error::ErrorBadGateway(error)),
-        };
+        let resolved = get_bilibili_media_with_format(bv_id, page, qn.as_qn(), format, true)
+            .await.map_err(actix_web::error::ErrorBadGateway)?;
+        crate::cast::dlna::settings::set_dlna_actual_quality((resolved.quality, resolved.format));
         resolved.media
     };
 
@@ -369,8 +364,14 @@ mod tests {
         use crate::{SharedState, media::session::MediaSessions, cast::Quality};
         use std::sync::Arc;
         let sessions = Arc::new(MediaSessions::default());
-        let old = sessions.activate("https://example.invalid/old.mp4", Quality::P720);
-        sessions.activate("https://example.invalid/current.mp4", Quality::P720);
+        let old = sessions.activate_with_format(
+            "https://example.invalid/old.mp4",
+            Quality::P720, crate::cast::MediaFormat::Mp4,
+        );
+        sessions.activate_with_format(
+            "https://example.invalid/current.mp4",
+            Quality::P720, crate::cast::MediaFormat::Mp4,
+        );
         let state = web::Data::new(SharedState {
             duration_cache: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             eplus_auth: Arc::new(tokio::sync::Mutex::new(None)),

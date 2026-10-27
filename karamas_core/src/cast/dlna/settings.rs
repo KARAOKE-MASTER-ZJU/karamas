@@ -1,46 +1,50 @@
-use crate::{cast, error::CoreError};
-use std::sync::atomic::Ordering;
+use crate::{
+    cast::{MediaFormat, Quality},
+    error::CoreError,
+};
+use std::sync::atomic::{AtomicBool, Ordering};
 
-// 清晰度与取源方式放在同一份状态中，切换时一起更新。
-static DLNA_MEDIA_QUALITY: std::sync::Mutex<(cast::Quality, cast::MediaFormat)> =
-    std::sync::Mutex::new((cast::Quality::P720, cast::MediaFormat::Auto));
-static DLNA_DIRECT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-/// 设置 DLNA 直连模式
-pub fn set_dlna_direct(enabled: bool) {
-    DLNA_DIRECT.store(enabled, Ordering::Relaxed);
-    if enabled {
-        let mut selected = DLNA_MEDIA_QUALITY.lock().unwrap();
-        *selected = (cast::Quality::P720, cast::MediaFormat::Auto);
-    }
+struct DlnaQuality {
+    preferred: (Quality, MediaFormat),
+    actual: Option<(Quality, MediaFormat)>,
 }
 
-/// 获取 DLNA 直连模式
+static DLNA_QUALITY: std::sync::Mutex<DlnaQuality> = std::sync::Mutex::new(DlnaQuality {
+    preferred: (Quality::P720, MediaFormat::Mp4),
+    actual: None,
+});
+static DLNA_DIRECT: AtomicBool = AtomicBool::new(false);
+
+/// 代理开关只影响可用点，不覆盖保存的清晰度偏好。
+pub fn set_dlna_direct(enabled: bool) {
+    DLNA_DIRECT.store(enabled, Ordering::Relaxed);
+}
+
 pub fn get_dlna_direct() -> bool {
     DLNA_DIRECT.load(Ordering::Relaxed)
 }
 
-/// 设置 DLNA 清晰度
-pub fn set_dlna_quality(quality: cast::Quality) -> Result<(), CoreError> {
-    set_dlna_media_quality(quality, cast::MediaFormat::Auto)
+pub fn reset_dlna_media_quality() {
+    *DLNA_QUALITY.lock().unwrap() = DlnaQuality {
+        preferred: (Quality::P720, MediaFormat::Mp4),
+        actual: None,
+    };
 }
 
-/// 获取 DLNA 清晰度
-pub fn get_dlna_quality() -> cast::Quality {
-    get_dlna_media_quality().0
+pub fn get_dlna_media_quality() -> (Quality, MediaFormat) {
+    DLNA_QUALITY.lock().unwrap().preferred
 }
 
-pub fn get_dlna_media_quality() -> (cast::Quality, cast::MediaFormat) {
-    *DLNA_MEDIA_QUALITY.lock().unwrap()
-}
-
-pub fn set_dlna_media_quality(
-    quality: cast::Quality,
-    format: cast::MediaFormat,
-) -> Result<(), CoreError> {
-    if get_dlna_direct() && format == cast::MediaFormat::Dash {
-        return Err("混流需要启用 DLNA 媒体代理".into());
-    }
-    *DLNA_MEDIA_QUALITY.lock().unwrap() = (quality, format);
+pub fn set_dlna_media_quality(quality: Quality, format: MediaFormat) -> Result<(), CoreError> {
+    DLNA_QUALITY.lock().unwrap().preferred = (quality, format);
     Ok(())
+}
+
+pub fn get_dlna_actual_quality() -> (Quality, MediaFormat) {
+    let quality = DLNA_QUALITY.lock().unwrap();
+    quality.actual.unwrap_or(quality.preferred)
+}
+
+pub fn set_dlna_actual_quality(quality: (Quality, MediaFormat)) {
+    DLNA_QUALITY.lock().unwrap().actual = Some(quality);
 }

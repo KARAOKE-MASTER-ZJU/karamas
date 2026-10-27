@@ -276,7 +276,10 @@ mod tests {
         use std::{collections::HashMap, sync::Arc};
 
         let sessions = Arc::new(MediaSessions::default());
-        let session = sessions.activate("https://www.youtube.com/watch?v=_1gTMhvRtB8", quality);
+        let session = sessions.activate_with_format(
+            "https://www.youtube.com/watch?v=_1gTMhvRtB8",
+            quality, crate::cast::MediaFormat::Dash,
+        );
         let started = std::time::Instant::now();
         let client = reqwest::Client::new();
         let media = session
