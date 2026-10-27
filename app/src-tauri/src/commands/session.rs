@@ -30,6 +30,7 @@ pub async fn start_casting<R: tauri::Runtime>(
     server_url: String,
     room_id: String,
     target: CastTarget,
+    on_local_command: tauri::ipc::Channel<karamas_core::cast::local::LocalCommand>,
 ) -> CommandResult<()> {
     let url = http_url(&server_url)?;
     if url.query().is_some() || url.fragment().is_some() || room_id.trim().is_empty() {
@@ -53,6 +54,18 @@ pub async fn start_casting<R: tauri::Runtime>(
     // 在仍可见时启动前台服务，避免连接设备期间切后台后无法再启动。
     crate::platform::start_casting_service(&app, &room_id).await?;
     let result = match target {
+        CastTarget::Local => {
+            let channel = on_local_command;
+            karamas_core::start_local_engine_core(
+                server_url,
+                room_id,
+                std::sync::Arc::new(move |command| {
+                    channel.send(command).map_err(|error| error.to_string())
+                }),
+                runtime,
+            )
+            .await
+        }
         CastTarget::Dlna { location } => {
             karamas_core::start_engine_core(server_url, room_id, location, runtime).await
         }

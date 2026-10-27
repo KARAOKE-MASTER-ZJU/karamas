@@ -24,7 +24,14 @@ pub(super) async fn sample_progress(ctx: &EngineContext) -> (i32, i32) {
         return (-1, -1);
     };
     let gate = ctx.playlist_manager.progress_gate.lock().await;
-    if ctx.stopped.load(Ordering::SeqCst) || gate.song().is_none() {
+    if ctx.stopped.load(Ordering::SeqCst) {
+        return (-1, -1);
+    }
+    if gate.song().is_none() {
+        drop(gate);
+        if ctx.caster.local_playback_ended().is_some() {
+            let _ = ctx.caster.stop().await;
+        }
         return (-1, -1);
     }
     let revision = gate.revision();
@@ -76,7 +83,15 @@ pub(super) async fn sample_progress(ctx: &EngineContext) -> (i32, i32) {
     let (current, total) = gate.filter(revision, current, total);
     // Validate the sample and consume once under the same lock as song updates
     // and play confirmations. An old poll cannot trigger after a new playback.
-    if gate.auto_next.observe(current, total) {
+    // 保留提前切歌的时间余量；本地暂停、缓冲和失联时不按进度推进。
+    let should_advance = match ctx.caster.local_playback_ended() {
+        Some(true) if current >= 0 && total > 0 => gate.auto_next.observe_finished(),
+        Some(true) => false,
+        Some(false) if ctx.is_playing() => gate.auto_next.observe(current, total),
+        Some(false) => false,
+        None => gate.auto_next.observe(current, total),
+    };
+    if should_advance {
         info!("歌曲即将结束，启动一次自动切歌任务");
         gate.auto_next
             .start_request(ctx.playlist_manager.clone(), hash, &ctx.rt);
@@ -144,6 +159,9 @@ pub(super) async fn play_and_confirm(
             )
         }
         Err(error) => {
+            if caster.local_playback_ended().is_some() {
+                gate.lock().await.local_play_failed(token);
+            }
             warn!("投屏失败：曲目={}，错误={}", song, error);
             false
         }

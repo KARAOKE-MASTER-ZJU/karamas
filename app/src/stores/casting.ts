@@ -1,13 +1,57 @@
 import { acceptHMRUpdate, defineStore } from "pinia";
-import { computed, ref } from "vue";
+import { computed, ref, shallowRef } from "vue";
 import { castingApi, errorMessage, isTauri } from "@/services/casting";
 import { useBilibiliStore } from "@/stores/bilibili";
 import { usePreferencesStore } from "@/stores/preferences";
 import type { ConnectionConfig, RoomEntryMode } from "@/types";
 import type { CastDevice, PlaybackState } from "@/types/casting";
+import type { LocalCommand, LocalReport } from "@/types/localPlayer";
 
 export const useCastingStore = defineStore("casting", () => {
   const preferences = usePreferencesStore();
+  const localCommand = shallowRef<LocalCommand | null>(null);
+  let localReport: LocalReport | null = null;
+  let localReportReceivedAt = 0;
+
+  function syncLocalState() {
+    const command = localCommand.value;
+    if (
+      activeDevice.value?.kind !== "local" ||
+      !command ||
+      !localReport ||
+      Date.now() - localReportReceivedAt >= 5000 ||
+      localReport.sessionId !== command.sessionId ||
+      localReport.commandId !== command.commandId
+    )
+      return;
+    volume.value = localReport.muted ? 0 : localReport.volume;
+    if (playback.value) {
+      playback.value.isPlaying =
+        !localReport.paused &&
+        !localReport.ended &&
+        !localReport.buffering &&
+        !localReport.seeking &&
+        !localReport.error;
+      playback.value.currentSecs =
+        localReport.totalSecs > 0 ? Math.floor(localReport.currentSecs) : null;
+      playback.value.totalSecs =
+        localReport.totalSecs > 0 ? Math.floor(localReport.totalSecs) : null;
+    }
+  }
+
+  // 原生控件和页面控件共用播放器回传，更新界面时不再次发送控制命令。
+  function applyLocalReport(report: LocalReport) {
+    const command = localCommand.value;
+    if (
+      !command ||
+      report.sessionId !== command.sessionId ||
+      report.commandId !== command.commandId
+    )
+      return;
+    localReport = report;
+    localReportReceivedAt = Date.now();
+    syncLocalState();
+  }
   const dlnaProxyEnabled = ref(preferences.preferences.dlnaProxyEnabled);
   const changingDlnaProxy = ref(false);
   const room = ref<ConnectionConfig | null>(null);
@@ -79,6 +123,8 @@ export const useCastingStore = defineStore("casting", () => {
     const device = selectedDevice.value;
     if (!config || !device) return;
     connecting.value = true;
+    localCommand.value = null;
+    localReport = null;
     ++revision;
     playback.value = null;
     activeDevice.value = null;
@@ -90,15 +136,26 @@ export const useCastingStore = defineStore("casting", () => {
         config,
         device.kind === "dlna"
           ? { kind: "dlna", location: device.location }
-          : {
-              kind: "bilibili",
-              deviceBuvid: device.buvid,
-              senderBuvid: preferences.ensureBilibiliBuvid(),
-              session: session!,
-            },
+          : device.kind === "local"
+            ? { kind: "local" }
+            : {
+                kind: "bilibili",
+                deviceBuvid: device.buvid,
+                senderBuvid: preferences.ensureBilibiliBuvid(),
+                session: session!,
+              },
+        device.kind === "local"
+          ? (command) => {
+              ++revision;
+              localCommand.value = command;
+            }
+          : undefined,
       );
       activeDevice.value = device;
+      syncLocalState();
     } catch (error) {
+      localCommand.value = null;
+      localReport = null;
       // 输入校验等前置失败也需要停止旧会话，避免仍播放旧房间。
       try {
         await castingApi.disconnect();
@@ -140,6 +197,8 @@ export const useCastingStore = defineStore("casting", () => {
     ++revision;
     try {
       if (connected.value) await castingApi.disconnect();
+      localCommand.value = null;
+      localReport = null;
       playback.value = null;
       activeDevice.value = null;
       selectedDevice.value = null;
@@ -150,7 +209,11 @@ export const useCastingStore = defineStore("casting", () => {
   }
   async function refreshVolume() {
     const currentRevision = revision;
-    if (!playback.value?.capabilities.absoluteVolume) return;
+    if (
+      activeDevice.value?.kind === "local" ||
+      !playback.value?.capabilities.absoluteVolume
+    )
+      return;
     const value = await castingApi.getVolume();
     if (currentRevision === revision) volume.value = value;
   }
@@ -168,6 +231,7 @@ export const useCastingStore = defineStore("casting", () => {
       const value = await castingApi.poll();
       if (currentRevision !== revision) return;
       playback.value = value;
+      syncLocalState();
       if (!value) {
         activeDevice.value = null;
         volume.value = null;
@@ -192,19 +256,22 @@ export const useCastingStore = defineStore("casting", () => {
   async function play() {
     await control(async () => {
       const playing = await castingApi.play();
-      if (playback.value) playback.value.isPlaying = playing;
+      if (playback.value && activeDevice.value?.kind !== "local")
+        playback.value.isPlaying = playing;
     });
   }
   async function pause() {
     await control(async () => {
       const playing = await castingApi.pause();
-      if (playback.value) playback.value.isPlaying = playing;
+      if (playback.value && activeDevice.value?.kind !== "local")
+        playback.value.isPlaying = playing;
     });
   }
   async function togglePause() {
     await control(async () => {
       const playing = await castingApi.togglePause();
-      if (playback.value) playback.value.isPlaying = playing;
+      if (playback.value && activeDevice.value?.kind !== "local")
+        playback.value.isPlaying = playing;
     });
   }
   async function changeVolume(increase: boolean) {
@@ -222,7 +289,7 @@ export const useCastingStore = defineStore("casting", () => {
     // 立即显示目标值，连续操作无需等待响应；旧的音量读取不能覆盖它。
     ++revision;
     const target = Math.max(0, Math.min(100, value));
-    volume.value = target;
+    if (activeDevice.value?.kind !== "local") volume.value = target;
     await castingApi.setVolume(target);
   }
 
@@ -231,7 +298,11 @@ export const useCastingStore = defineStore("casting", () => {
       recasting.value = true;
       try {
         const result = await castingApi.recast();
-        if (result === "played" && playback.value)
+        if (
+          result === "played" &&
+          playback.value &&
+          activeDevice.value?.kind !== "local"
+        )
           playback.value.isPlaying = true;
         return result;
       } finally {
@@ -267,6 +338,8 @@ export const useCastingStore = defineStore("casting", () => {
     });
   }
   return {
+    applyLocalReport,
+    localCommand,
     dlnaProxyEnabled,
     changingDlnaProxy,
     initializeDlnaProxy,

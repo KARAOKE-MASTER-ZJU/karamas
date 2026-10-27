@@ -62,7 +62,15 @@ async fn set_playing_core(playing: bool) -> Result<bool, CoreError> {
     };
     let _playback = ctx.playback_lock.lock().await;
     let _control = ctx.begin_progress_control().await?;
-    apply_playback_state(ctx.caster.as_ref(), &ctx.is_playing, playing).await
+    let result = apply_playback_state(ctx.caster.as_ref(), &ctx.is_playing, playing).await?;
+    if playing && ctx.caster.local_playback_ended().is_some() {
+        ctx.playlist_manager
+            .progress_gate
+            .lock()
+            .await
+            .confirm_local_resume();
+    }
+    Ok(result)
 }
 
 // 调用方持有 playback_lock；本地状态可能过期，始终向设备发送明确命令。
@@ -95,7 +103,15 @@ pub(super) async fn toggle_pause(ctx: &EngineContext) -> Result<bool, CoreError>
     let target_state = !ctx.is_playing();
     let _control = ctx.begin_progress_control().await?;
 
-    apply_playback_state(ctx.caster.as_ref(), &ctx.is_playing, target_state).await
+    let result = apply_playback_state(ctx.caster.as_ref(), &ctx.is_playing, target_state).await?;
+    if target_state && ctx.caster.local_playback_ended().is_some() {
+        ctx.playlist_manager
+            .progress_gate
+            .lock()
+            .await
+            .confirm_local_resume();
+    }
+    Ok(result)
 }
 
 /// 设置音量，返回设置后的值
@@ -195,7 +211,10 @@ pub fn get_quality_core() -> cast::Quality {
 
 /// 获取当前歌曲id，若未连接或无歌曲则返回空字符串。
 pub async fn get_current_song_id_core() -> String {
-    let ctx = ENGINE_STATE.read().ok().and_then(|state| state.as_ref().cloned());
+    let ctx = ENGINE_STATE
+        .read()
+        .ok()
+        .and_then(|state| state.as_ref().cloned());
     match ctx {
         Some(ctx) => ctx.playlist_manager.get_song_id().await.unwrap_or_default(),
         None => String::new(),
@@ -209,7 +228,10 @@ pub async fn get_current_song_title_core() -> String {
         guard.and_then(|g| g.as_ref().cloned())
     };
     if let Some(ctx) = ctx {
-        return ctx.playlist_manager.get_song_title().await
+        return ctx
+            .playlist_manager
+            .get_song_title()
+            .await
             .unwrap_or_else(|| "暂无歌曲".to_string());
     }
     "未连接".to_string()

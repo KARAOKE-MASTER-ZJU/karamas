@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   Cast,
+  Monitor,
   Tv,
   ChevronDown,
   RefreshCw,
@@ -88,12 +89,22 @@ async function selectDevice(device: CastDevice) {
         <input v-model="mode" type="radio" name="cast-mode" value="bilibili" />
         <Tv :size="18" /><span>小电视</span>
       </label>
+      <label :class="['mode-option', { selected: mode === 'other' }]">
+        <input v-model="mode" type="radio" name="cast-mode" value="other" />
+        <Monitor :size="18" /><span>其他</span>
+      </label>
     </fieldset>
     <div class="section-toolbar">
       <h2 id="device-title">
-        {{ mode === "dlna" ? "可用设备" : "小电视设备" }}
+        {{
+          mode === "dlna"
+            ? "可用设备"
+            : mode === "other"
+              ? "播放方式"
+              : "小电视设备"
+        }}
       </h2>
-      <div class="device-actions">
+      <div v-if="mode !== 'other'" class="device-actions">
         <button
           :class="
             mode === 'bilibili' && !auth.session

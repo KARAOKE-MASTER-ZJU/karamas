@@ -1,3 +1,4 @@
+import type { LocalCommand, LocalReport } from "@/types/localPlayer";
 import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { ConnectionConfig, LogLevel, RoomEntryMode } from "@/types";
@@ -29,6 +30,13 @@ export function errorMessage(error: unknown): string {
     return error.message;
   return "操作失败，请查看运行日志。";
 }
+let localChannel: Channel<LocalCommand> | null = null;
+
+function clearLocalChannel() {
+  if (localChannel) localChannel.onmessage = () => {};
+  localChannel = null;
+}
+
 export const castingApi = {
   moveToBackground: () => call<void>("move_to_background"),
   setDlnaDirect: (enabled: boolean) =>
@@ -61,9 +69,10 @@ export const castingApi = {
     call<DlnaDevice>("discover_dlna_device", { url }),
   listBilibiliDevices: (session: BilibiliSession) =>
     call<BilibiliDevice[]>("list_bilibili_devices", { session }),
-  start: (
+  start: async (
     room: ConnectionConfig,
     target:
+      | { kind: "local" }
       | { kind: "dlna"; location: string }
       | {
           kind: "bilibili";
@@ -71,8 +80,29 @@ export const castingApi = {
           deviceBuvid: string;
           senderBuvid: string;
         },
-  ) => call<void>("start_casting", { ...room, target }),
-  disconnect: () => call<void>("disconnect_casting"),
+    onLocalCommand?: (command: LocalCommand) => void,
+  ) => {
+    clearLocalChannel();
+    const channel = new Channel<LocalCommand>();
+    localChannel = channel;
+    if (onLocalCommand) channel.onmessage = onLocalCommand;
+    try {
+      await call<void>("start_casting", {
+        ...room,
+        target,
+        onLocalCommand: channel,
+      });
+    } catch (error) {
+      clearLocalChannel();
+      throw error;
+    }
+  },
+  reportLocalPlayback: (report: LocalReport) =>
+    call<boolean>("report_local_playback", { report }),
+  disconnect: async () => {
+    await call<void>("disconnect_casting");
+    clearLocalChannel();
+  },
   poll: () => call<PlaybackState | null>("poll_playback"),
   play: () => call<boolean>("play"),
   pause: () => call<boolean>("pause"),

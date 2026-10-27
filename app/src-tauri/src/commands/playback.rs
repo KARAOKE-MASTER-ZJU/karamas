@@ -159,3 +159,11 @@ pub async fn get_current_bilibili_parts() -> CommandResult<karamas_core::Current
 pub async fn select_current_bilibili_part(song_id: String, page_index: u32) -> CommandResult<bool> {
     Ok(karamas_core::select_current_bilibili_part_core(&song_id, page_index).await?)
 }
+
+/// 回传本机播放器的操作确认与真实进度，旧会话消息由核心丢弃。
+#[tauri::command]
+pub async fn report_local_playback(
+    report: karamas_core::cast::local::LocalReport,
+) -> CommandResult<bool> {
+    Ok(current_engine()?.report_local_playback(report).await?)
+}

@@ -174,3 +174,21 @@ pub async fn start_bilibili_engine_core(
     let cache = Arc::new(Mutex::new(std::collections::HashMap::new()));
     connect_room(base_url_str, room_id, caster, "127.0.0.1".parse().unwrap(), 0, cache, rt).await
 }
+
+/// 启动本机播放；宿主负责转发操作和回传播放器状态。
+pub async fn start_local_engine_core(
+    base_url: String,
+    room_id: String,
+    send: crate::cast::local::LocalCommandSink,
+    rt: tokio::runtime::Handle,
+) -> Result<(), CoreError> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    reset_engine();
+    let (ip, port, cache, state) = crate::media::server::start_local(rt.clone())?;
+    let caster = Arc::new(crate::cast::local::LocalCaster::new(
+        port,
+        state.media_sessions.clone(),
+        send,
+    ));
+    connect_room(base_url, room_id, caster, ip, port, cache, rt).await
+}

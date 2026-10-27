@@ -48,6 +48,36 @@ pub(crate) fn start(
     ),
     CoreError,
 > {
+    start_with_binding(Some(target_device_ip), handle)
+}
+
+/// 本机播放只监听回环地址，端口由系统分配。
+pub(crate) fn start_local(
+    handle: tokio::runtime::Handle,
+) -> Result<
+    (
+        std::net::IpAddr,
+        u16,
+        Arc<Mutex<std::collections::HashMap<String, u32>>>,
+        web::Data<SharedState>,
+    ),
+    CoreError,
+> {
+    start_with_binding(None, handle)
+}
+
+fn start_with_binding(
+    target_device_ip: Option<&str>,
+    handle: tokio::runtime::Handle,
+) -> Result<
+    (
+        std::net::IpAddr,
+        u16,
+        Arc<Mutex<std::collections::HashMap<String, u32>>>,
+        web::Data<SharedState>,
+    ),
+    CoreError,
+> {
     let cache = Arc::new(Mutex::new(std::collections::HashMap::new()));
     let shared_state = web::Data::new(SharedState {
         duration_cache: cache.clone(),
@@ -63,11 +93,17 @@ pub(crate) fn start(
     }
 
     // 优先使用已验证的 8080，被占用时回退到内核分配
-    let (listener, port) = match std::net::TcpListener::bind("0.0.0.0:8080") {
+    let (listener, port) = match std::net::TcpListener::bind(if target_device_ip.is_some() {
+        "0.0.0.0:8080"
+    } else {
+        "127.0.0.1:0"
+    }) {
         Ok(l) => {
-            info!("媒体服务器绑定端口 8080");
-            (l, 8080)
+            info!("媒体服务器监听地址: {}", l.local_addr()?);
+            let port = l.local_addr()?.port();
+            (l, port)
         }
+        Err(error) if target_device_ip.is_none() => return Err(error.into()),
         Err(_) => {
             warn!("端口 8080 被占用（可能被 Kodi WebUI 等服务使用），由内核分配可用端口");
             let l = std::net::TcpListener::bind("0.0.0.0:0")?;
@@ -77,7 +113,10 @@ pub(crate) fn start(
         }
     };
 
-    let local_ip_addr: std::net::IpAddr = get_best_local_ip(target_device_ip).parse()?;
+    let local_ip_addr: std::net::IpAddr = target_device_ip
+        .map(get_best_local_ip)
+        .unwrap_or_else(|| "127.0.0.1".into())
+        .parse()?;
     // 媒体代理只限制连接超时，避免截断长视频的流式响应。
     let proxy_client = reqwest::Client::builder()
         .connect_timeout(PROXY_CONNECT_TIMEOUT)

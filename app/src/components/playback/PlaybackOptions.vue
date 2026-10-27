@@ -28,8 +28,11 @@ const dlnaQualities = [
   { qn: 80, label: "1080P (Beta)" },
 ];
 const options = computed(() =>
-  props.mode === "dlna"
-    ? dlnaQualities.filter(({ qn }) => qn === 64 || props.dlnaProxyEnabled)
+  props.mode !== "bilibili"
+    ? dlnaQualities.filter(
+        ({ qn }) =>
+          qn === 64 || props.mode === "local" || props.dlnaProxyEnabled,
+      )
     : qualities.value,
 );
 const selectedQuality = computed(() =>

@@ -1,6 +1,7 @@
 //! 设备能力、控制契约和协议实现。
 pub mod bilibili;
 pub mod dlna;
+pub mod local;
 pub mod progress;
 mod request;
 
@@ -108,6 +109,15 @@ impl std::error::Error for CastError {}
 /// Caster 抽象接口
 #[async_trait]
 pub trait Caster: Send + Sync {
+    /// 本地播放器补充结束事件，正常播放仍沿用提前切歌的进度判断。
+    fn local_playback_ended(&self) -> Option<bool> {
+        None
+    }
+
+    fn report_local_playback(&self, _report: local::LocalReport) -> Result<bool, CastError> {
+        Err(CastError::Unsupported)
+    }
+
     /// 停止设备状态订阅并关闭接收连接，不向设备发送停止播放命令。
     fn stop_status_subscription(&self) {}
 

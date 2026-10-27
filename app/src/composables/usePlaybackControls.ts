@@ -16,8 +16,14 @@ export function usePlaybackControls() {
     await run(async () => {
       const result = await casting.recast();
       if (result === "noCurrentSong")
-        notify("当前没有可重新投屏的歌曲", "warning");
-      else if (result === "busy") notify("正在投屏，请稍后重试", "warning");
+        notify(
+          casting.activeDevice?.kind === "local"
+            ? "当前没有可重新播放的歌曲"
+            : "当前没有可重新投屏的歌曲",
+          "warning",
+        );
+      else if (result === "busy")
+        notify("正在处理播放操作，请稍后重试", "warning");
     });
   }
   return {

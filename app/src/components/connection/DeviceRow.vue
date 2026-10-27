@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Cast, Tv, RotateCw } from "@lucide/vue";
+import { Cast, Tv, Monitor, RotateCw } from "@lucide/vue";
 import type { CastDevice } from "@/types/casting";
 
 defineProps<{
@@ -21,7 +21,12 @@ const statusLabels = {
 
 <template>
   <li class="device-row" :class="{ active: status === 'connected' }">
-    <component :is="device.kind === 'dlna' ? Cast : Tv" :size="20" />
+    <component
+      :is="
+        device.kind === 'dlna' ? Cast : device.kind === 'local' ? Monitor : Tv
+      "
+      :size="20"
+    />
     <div class="device-info">
       <div class="device-heading">
         <h3>{{ device.name }}</h3>
@@ -33,7 +38,9 @@ const statusLabels = {
         {{
           device.kind === "dlna"
             ? device.location
-            : [device.brand, device.model].filter(Boolean).join(" · ")
+            : device.kind === "local"
+              ? "在本机播放视频和声音"
+              : [device.brand, device.model].filter(Boolean).join(" · ")
         }}
       </p>
     </div>
@@ -51,7 +58,17 @@ const statusLabels = {
       :disabled="disabled"
       @click="emit('select', device)"
     >
-      {{ status === "connected" ? "断开" : status ? "取消" : "连接" }}
+      {{
+        status === "connected"
+          ? device.kind === "local"
+            ? "关闭"
+            : "断开"
+          : status
+            ? "取消"
+            : device.kind === "local"
+              ? "开启"
+              : "连接"
+      }}
     </button>
   </li>
 </template>

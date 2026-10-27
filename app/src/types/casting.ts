@@ -17,7 +17,9 @@ export interface BilibiliDevice {
   buvid: string;
 }
 export type CastDevice =
-  (DlnaDevice & { kind: "dlna" }) | (BilibiliDevice & { kind: "bilibili" });
+  | (DlnaDevice & { kind: "dlna" })
+  | (BilibiliDevice & { kind: "bilibili" })
+  | { kind: "local"; name: string };
 export interface PlaybackState {
   songId: string | null;
   songUrl: string | null;

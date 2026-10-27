@@ -4,6 +4,7 @@ import { ref, watch } from "vue";
 import { castingApi } from "@/services/casting";
 
 const props = defineProps<{
+  local?: boolean;
   title: string | null;
   addedBy: string | null;
   songId: string | null;
@@ -70,8 +71,24 @@ function onCoverError(event: Event) {
     </div>
     <button
       class="icon-button recast-button"
-      :aria-label="recasting ? '重新投屏中' : '重新投屏'"
-      :title="recasting ? '重新投屏中' : '重新投屏'"
+      :aria-label="
+        local
+          ? recasting
+            ? '重新播放中'
+            : '重新播放'
+          : recasting
+            ? '重新投屏中'
+            : '重新投屏'
+      "
+      :title="
+        local
+          ? recasting
+            ? '重新播放中'
+            : '重新播放'
+          : recasting
+            ? '重新投屏中'
+            : '重新投屏'
+      "
       :aria-busy="recasting"
       :disabled="disabled || !songId"
       @click="emit('recast')"

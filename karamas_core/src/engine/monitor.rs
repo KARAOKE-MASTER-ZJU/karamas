@@ -23,6 +23,38 @@ pub struct EnginePlaybackState {
 }
 
 impl EngineContext {
+    /// 原生控件的状态回传与进度采样串行，防止旧的末尾进度触发切歌。
+    pub async fn report_local_playback(
+        &self,
+        report: cast::local::LocalReport,
+    ) -> Result<bool, CoreError> {
+        // 控制命令可能持有 progress_control 等待确认，确认回包不能再等待同一把锁。
+        if report.acknowledged {
+            return Ok(self.caster.report_local_playback(report)?);
+        }
+        let mut control = self.progress_control.lock().await;
+        if self.stopped.load(Ordering::SeqCst) {
+            return Ok(false);
+        }
+        let position = report.current_secs as u32;
+        let settled = !report.seeking && report.error.is_none();
+        let playing = settled && !report.paused && !report.buffering && !report.ended;
+        if !self.caster.report_local_playback(report)? {
+            return Ok(false);
+        }
+        *control += 1;
+        self.is_playing.store(playing, Ordering::SeqCst);
+        let mut gate = self.playlist_manager.progress_gate.lock().await;
+        if playing {
+            gate.confirm_local_resume();
+        }
+        if settled {
+            let revision = gate.revision();
+            gate.seek_succeeded(revision, position);
+        }
+        Ok(true)
+    }
+
     pub async fn current_progress(&self) -> (i32, i32) {
         let gate = self.playlist_manager.progress_gate.lock().await;
         if self.stopped.load(Ordering::SeqCst) {

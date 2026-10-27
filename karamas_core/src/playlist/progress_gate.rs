@@ -7,6 +7,7 @@ enum Phase {
     #[default]
     Ready,
     AwaitingCommand,
+    FailedCommand,
     ProtectingUntil(Instant),
 }
 
@@ -43,6 +44,20 @@ impl ProgressGate {
             let current = seconds.min(i32::MAX as u32) as i32;
             self.progress = Some((current, total));
             self.last_current = Some(current);
+        }
+    }
+
+    /// 播放首次失败后，恢复播放的确认可以解除等待状态。
+    pub(crate) fn confirm_local_resume(&mut self) {
+        if matches!(self.phase, Phase::FailedCommand) {
+            self.play_succeeded(self.revision, false, Instant::now());
+        }
+    }
+
+    /// 只有已失败的本地播放可由原生控件恢复，等待新歌时仍屏蔽旧播放器事件。
+    pub(crate) fn local_play_failed(&mut self, token: u64) {
+        if self.revision == token && self.song.is_some() {
+            self.phase = Phase::FailedCommand;
         }
     }
 
@@ -125,7 +140,7 @@ impl ProgressGate {
             return (-1, -1);
         }
         match self.phase {
-            Phase::AwaitingCommand => return (-1, -1),
+            Phase::AwaitingCommand | Phase::FailedCommand => return (-1, -1),
             Phase::ProtectingUntil(deadline) => {
                 // Zero is valid, including when the preceding song was also at zero.
                 let rewound = current == 0 || self.baseline.is_some_and(|old| current < old);

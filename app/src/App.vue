@@ -8,6 +8,7 @@ import HelpDialog from "@/components/HelpDialog.vue";
 import { usePreferencesStore } from "@/stores/preferences";
 import BilibiliLoginDialog from "@/components/BilibiliLoginDialog.vue";
 import { useBilibiliStore } from "@/stores/bilibili";
+import { useCastingStore } from "@/stores/casting";
 import { useCastingRuntime } from "@/composables/useCastingRuntime";
 import { useNotificationsStore } from "@/stores/notifications";
 import { useOperationNotice } from "@/composables/useOperationNotice";
@@ -18,6 +19,7 @@ import { useAndroidBack } from "@/composables/useAndroidBack";
 const route = useRoute();
 const preferences = usePreferencesStore();
 const auth = useBilibiliStore();
+const casting = useCastingStore();
 const notifications = useNotificationsStore();
 
 // 初始化应用主题和原生交互，读取配置失败时提示。
@@ -40,7 +42,13 @@ const showHelp = ref(false);
     <AppNavigation />
 
     <main id="main-content" class="workspace">
-      <div class="page-content">
+      <div
+        class="page-content"
+        :class="{
+          'local-playback-layout':
+            route.name === 'playback' && casting.activeDevice?.kind === 'local',
+        }"
+      >
         <!-- 页眉部分，显示页面标题和操作按钮 -->
         <header class="page-header">
           <!-- 页面标题部分，包含返回按钮和标题文本 -->
@@ -113,6 +121,9 @@ const showHelp = ref(false);
   max-width: 824px;
   padding: 0 48px 32px;
   margin: 0 auto;
+}
+.page-content.local-playback-layout {
+  max-width: none;
 }
 /* 页眉样式，设置最小高度、弹性布局和间距 */
 .page-header {

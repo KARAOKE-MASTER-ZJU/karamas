@@ -297,7 +297,7 @@ async fn reported_pause_drives_display_and_next_toggle_while_other_casters_keep_
     assert_eq!(sample_progress(&ctx).await, (0, 180));
 }
 
-fn context(caster: Arc<TestCaster>) -> EngineContext {
+fn context(caster: Arc<dyn Caster>) -> EngineContext {
     EngineContext {
         caster,
         playlist_manager: crate::playlist::PlaylistManager::new(
@@ -386,4 +386,107 @@ async fn late_query_does_not_restore_the_previous_songs_progress() {
     let state = ctx.playback_state().await;
     assert_eq!(state.song_id.as_deref(), Some("B"));
     assert_eq!(state.current_secs, Some(0));
+}
+
+fn local_report(command: &crate::cast::local::LocalCommand) -> crate::cast::local::LocalReport {
+    crate::cast::local::LocalReport {
+        session_id: command.session_id.clone(),
+        command_id: command.command_id,
+        current_secs: 180.0,
+        total_secs: 180.0,
+        paused: true,
+        buffering: false,
+        seeking: false,
+        muted: false,
+        ended: false,
+        volume: 75,
+        acknowledged: false,
+        error: None,
+    }
+}
+
+// 页面控件等待 seek 确认时持有进度锁，回包必须仍能完成，避免播放器死锁。
+#[tokio::test]
+async fn local_acknowledgement_does_not_wait_for_progress_control() {
+    let (send, mut receive) = tokio::sync::mpsc::unbounded_channel();
+    let caster = Arc::new(crate::cast::local::LocalCaster::new(
+        12345,
+        Arc::new(crate::media::session::MediaSessions::default()),
+        Arc::new(move |command| send.send(command).map_err(|e| e.to_string())),
+    ));
+    let ctx = context(caster);
+    let operation = async {
+        let (result, ()) = tokio::join!(crate::engine::controls::seek(&ctx, 10), async {
+            let command = receive.recv().await.unwrap();
+            let mut report = local_report(&command);
+            report.acknowledged = true;
+            report.current_secs = 10.0;
+            assert!(ctx.report_local_playback(report).await.unwrap());
+        });
+        result.unwrap();
+    };
+    tokio::time::timeout(Duration::from_secs(1), operation)
+        .await
+        .expect("操作确认不能等待控制锁");
+}
+
+// 原生拖动、暂停和缓冲即使到达结尾，也不能消费当前歌曲的自动切歌机会。
+#[tokio::test]
+async fn native_scrubbing_pause_and_buffering_do_not_advance_playlist() {
+    let (send, mut receive) = tokio::sync::mpsc::unbounded_channel();
+    let caster = Arc::new(crate::cast::local::LocalCaster::new(
+        12345,
+        Arc::new(crate::media::session::MediaSessions::default()),
+        Arc::new(move |command| send.send(command).map_err(|e| e.to_string())),
+    ));
+    let ctx = context(caster.clone());
+    let (result, command) = tokio::join!(caster.resume(), async {
+        let command = receive.recv().await.unwrap();
+        let mut report = local_report(&command);
+        report.acknowledged = true;
+        ctx.report_local_playback(report).await.unwrap();
+        command
+    });
+    result.unwrap();
+    {
+        let mut gate = ctx.playlist_manager.progress_gate.lock().await;
+        gate.update_song(Some("A".into()), Some("A".into()));
+        let token = gate.revision();
+        gate.play_succeeded(token, false, std::time::Instant::now());
+    }
+    for (paused, buffering, seeking) in [
+        (true, false, false),
+        (false, true, false),
+        (false, false, true),
+    ] {
+        let mut report = local_report(&command);
+        report.paused = paused;
+        report.buffering = buffering;
+        report.seeking = seeking;
+        ctx.report_local_playback(report).await.unwrap();
+        sample_progress(&ctx).await;
+        let mut gate = ctx.playlist_manager.progress_gate.lock().await;
+        assert!(
+            gate.auto_next.observe_finished(),
+            "原生操作期间不能提前切歌"
+        );
+        gate.auto_next.reset_for_playback();
+    }
+    // 旧曲还在播放时新歌已进入队列同步，原生播放事件不能解除新歌的等待状态。
+    ctx.playlist_manager
+        .progress_gate
+        .lock()
+        .await
+        .update_song(Some("B".into()), Some("A".into()));
+    let mut late = local_report(&command);
+    late.paused = false;
+    ctx.report_local_playback(late).await.unwrap();
+    assert_eq!(sample_progress(&ctx).await, (-1, -1));
+    let mut ended = local_report(&command);
+    ended.paused = false;
+    ended.ended = true;
+    ctx.report_local_playback(ended).await.unwrap();
+    assert_eq!(sample_progress(&ctx).await, (-1, -1));
+    let mut gate = ctx.playlist_manager.progress_gate.lock().await;
+    assert!(gate.auto_next.observe_finished());
 }

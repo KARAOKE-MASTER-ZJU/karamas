@@ -14,3 +14,5 @@ pub struct SharedState {
     pub eplus_auth: Arc<tokio::sync::Mutex<Option<String>>>,
     pub media_sessions: Arc<session::MediaSessions>,
 }
+
+pub(crate) use lifecycle::start_local;

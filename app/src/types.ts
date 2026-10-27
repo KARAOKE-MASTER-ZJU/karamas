@@ -1,5 +1,5 @@
 export type RoomEntryMode = "create" | "join"; // 房间进入模式类型
-export type CastMode = "dlna" | "bilibili"; // 投屏模式类型
+export type CastMode = "dlna" | "bilibili" | "local"; // 投屏模式类型
 export type Theme = "system" | "light" | "dark"; // 主题类型
 export type NoticeLevel = "info" | "warning" | "error"; // 操作提示级别类型
 export type LogLevel = "trace" | "debug" | NoticeLevel; // 日志级别类型

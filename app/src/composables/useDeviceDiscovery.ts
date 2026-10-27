@@ -3,16 +3,15 @@ import type { Ref } from "vue";
 import { useBilibiliStore } from "@/stores/bilibili";
 import { useOperationNotice } from "@/composables/useOperationNotice";
 import { castingApi, errorMessage } from "@/services/casting";
-import type { CastMode } from "@/types";
 import type { CastDevice } from "@/types/casting";
 
 export function useDeviceDiscovery(selectedDevice: Ref<CastDevice | null>) {
   const auth = useBilibiliStore();
   const { notify } = useOperationNotice();
-  const mode = ref<CastMode>("dlna");
+  const mode = ref<"dlna" | "bilibili" | "other">("dlna");
   const dlnaDevices = ref<CastDevice[]>([]);
   const bilibiliDevices = ref<CastDevice[]>([]);
-  const searching = reactive({ dlna: false, bilibili: false });
+  const searching = reactive({ dlna: false, bilibili: false, other: false });
   const deviceUrl = ref("");
   const deviceError = ref("");
   const resolvingDevice = ref(false);
@@ -21,6 +20,8 @@ export function useDeviceDiscovery(selectedDevice: Ref<CastDevice | null>) {
     disposed = true;
   });
   const devices = computed(() => {
+    if (mode.value === "other")
+      return [{ kind: "local" as const, name: "本地" }];
     const found =
       mode.value === "dlna" ? dlnaDevices.value : bilibiliDevices.value;
     const active = selectedDevice.value;
@@ -30,8 +31,8 @@ export function useDeviceDiscovery(selectedDevice: Ref<CastDevice | null>) {
       : found;
   });
 
-  async function searchDevices(kind: CastMode = mode.value) {
-    if (disposed || searching[kind]) return;
+  async function searchDevices(kind = mode.value) {
+    if (kind === "other" || disposed || searching[kind]) return;
     const session = auth.session;
     if (kind === "bilibili" && !session) {
       void auth.login();
@@ -87,7 +88,11 @@ export function useDeviceDiscovery(selectedDevice: Ref<CastDevice | null>) {
     if (kind === "bilibili" && auth.session) void searchDevices(kind);
   });
   function deviceKey(device: CastDevice) {
-    return device.kind === "dlna" ? device.location : device.buvid;
+    return device.kind === "dlna"
+      ? device.location
+      : device.kind === "local"
+        ? "local"
+        : device.buvid;
   }
   function isSelected(device: CastDevice) {
     return (

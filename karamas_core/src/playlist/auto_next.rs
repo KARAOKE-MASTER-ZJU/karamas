@@ -18,6 +18,13 @@ impl AutoNextSong {
         self.cancel_pending_request();
     }
 
+    /// 可信的播放器结束事件也适用于不足六秒的曲目。
+    pub(crate) fn observe_finished(&mut self) -> bool {
+        if self.fired { return false; }
+        self.fired = true;
+        true
+    }
+
     /// 取消尚未结束的自动切歌请求。
     pub(crate) fn cancel_pending_request(&mut self) {
         if let Some(task) = self.retry_task.take() {

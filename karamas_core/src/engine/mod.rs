@@ -13,7 +13,7 @@ pub use controls::{
     trigger_prev_song, volume_down_core, volume_up_core,
 };
 pub use lifecycle::{
-    connect_dlna_device, connect_room, reset_engine, start_bilibili_engine_core, start_engine_core,
+    connect_dlna_device, connect_room, reset_engine, start_bilibili_engine_core, start_engine_core, start_local_engine_core,
 };
 pub use monitor::EnginePlaybackState;
 pub use parts::{

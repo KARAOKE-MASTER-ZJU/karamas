@@ -1,7 +1,15 @@
 <script setup lang="ts">
-import { Cast, ExternalLink } from "@lucide/vue";
+import { Cast, Monitor, ExternalLink } from "@lucide/vue";
 import { RouterLink } from "vue-router";
+import {
+  onActivated,
+  onDeactivated,
+  onMounted,
+  onBeforeUnmount,
+  ref,
+} from "vue";
 import { storeToRefs } from "pinia";
+import LocalPlayer from "@/components/playback/LocalPlayer.vue";
 import NowPlaying from "@/components/playback/NowPlaying.vue";
 import PlaybackProgress from "@/components/playback/PlaybackProgress.vue";
 import PlaybackTransport from "@/components/playback/PlaybackTransport.vue";
@@ -16,6 +24,49 @@ const casting = useCastingStore();
 const { playback, volume, activeDevice, recasting, room } =
   storeToRefs(casting);
 const controls = usePlaybackControls();
+const videoContainer = ref<HTMLElement | null>(null);
+let layoutObserver: ResizeObserver | undefined;
+let layoutFrame = 0;
+
+function fitVideo() {
+  cancelAnimationFrame(layoutFrame);
+  layoutFrame = requestAnimationFrame(() => {
+    const slot = videoContainer.value;
+    const page = slot?.closest<HTMLElement>(".page-content");
+    const workspace = page?.closest<HTMLElement>(".workspace");
+    if (!slot || !page || !workspace) return;
+    // 只扣除视频上方内容；下方控件保留纵向排列，由用户滚动查看。
+    // 相对页面计算偏移，滚动时不会反复改变视频尺寸。
+    const videoTop =
+      slot.getBoundingClientRect().top - page.getBoundingClientRect().top;
+    const available = Math.max(
+      1,
+      Math.floor(workspace.clientHeight - videoTop - 16),
+    );
+    const value = `${available}px`;
+    if (slot.style.getPropertyValue("--local-video-max-height") !== value)
+      slot.style.setProperty("--local-video-max-height", value);
+  });
+}
+function observeVideoLayout() {
+  layoutObserver?.disconnect();
+  const page = videoContainer.value?.closest<HTMLElement>(".page-content");
+  const workspace = page?.closest<HTMLElement>(".workspace");
+  if (page && workspace) {
+    layoutObserver = new ResizeObserver(fitVideo);
+    layoutObserver.observe(page);
+    layoutObserver.observe(workspace);
+  }
+  fitVideo();
+}
+function stopObservingVideoLayout() {
+  layoutObserver?.disconnect();
+  cancelAnimationFrame(layoutFrame);
+}
+onMounted(observeVideoLayout);
+onActivated(observeVideoLayout);
+onDeactivated(stopObservingVideoLayout);
+onBeforeUnmount(stopObservingVideoLayout);
 </script>
 
 <template>
@@ -26,7 +77,10 @@ const controls = usePlaybackControls();
           :to="{ name: 'connection' }"
           class="session-chip device-chip"
         >
-          <Cast :size="14" /><span>{{
+          <component
+            :is="activeDevice?.kind === 'local' ? Monitor : Cast"
+            :size="14"
+          /><span>{{
             casting.connecting
               ? "连接中…"
               : (casting.activeDevice?.name ??
@@ -56,7 +110,11 @@ const controls = usePlaybackControls();
       aria-labelledby="playing-title"
     >
       <h2 id="playing-title">正在播放</h2>
+      <div ref="videoContainer" class="video-container">
+        <LocalPlayer />
+      </div>
       <NowPlaying
+        :local="activeDevice?.kind === 'local'"
         :title="playback?.title ?? null"
         :added-by="playback?.addedBy ?? null"
         :song-id="playback?.songId ?? null"
@@ -116,6 +174,9 @@ const controls = usePlaybackControls();
 </template>
 
 <style scoped>
+.video-container {
+  display: flow-root;
+}
 .session-header {
   padding: 0 0 20px;
   text-align: center;

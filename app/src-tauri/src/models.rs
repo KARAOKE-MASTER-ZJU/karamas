@@ -26,6 +26,7 @@ impl From<DlnaDevice> for DlnaDeviceInfo {
     rename_all_fields = "camelCase"
 )]
 pub enum CastTarget {
+    Local,
     Dlna {
         location: String,
     },
