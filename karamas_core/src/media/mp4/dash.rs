@@ -5,7 +5,7 @@ use crate::{
     media::cache::{RemoteSource, fetch_range},
     media::mp4::indexed::{Mp4Builder, VirtualMp4},
 };
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use futures_util::{StreamExt, TryStreamExt};
 use std::{
     io,
@@ -17,6 +17,7 @@ const PREFIX: u64 = 64 * 1024;
 const FRAGMENT_PREFIX: u64 = 16 * 1024;
 const MAX_METADATA: u64 = 16 * 1024 * 1024;
 const MAX_SEGMENTS: usize = 8192;
+const METADATA_CONCURRENCY: usize = 8;
 
 /// 构建 DASH 元数据无效的错误。
 fn bad(message: &str) -> io::Error {
@@ -104,11 +105,11 @@ fn segments(sidx: &[u8], position: u64, total: u64) -> io::Result<Vec<Range<u64>
     Ok(result)
 }
 
-/// 通过 Range 请求获取媒体源的总长度。
-async fn source_length(client: &reqwest::Client, url: &str) -> io::Result<u64> {
+/// 一次 Range 请求同时取得文件长度和初始化前缀，避免单独探测长度。
+async fn source_prefix(client: &reqwest::Client, url: &str) -> io::Result<(u64, Bytes)> {
     let response = client
         .get(url)
-        .header("Range", "bytes=0-7")
+        .header("Range", format!("bytes=0-{}", PREFIX - 1))
         .header("Referer", crate::media::upstream::referer(url))
         .header("User-Agent", crate::media::upstream::user_agent(url))
         .header("Accept-Encoding", "identity")
@@ -125,13 +126,33 @@ async fn source_length(client: &reqwest::Client, url: &str) -> io::Result<u64> {
         .and_then(|v| v.to_str().ok())
         .ok_or_else(|| bad("missing source range"))?;
     let total = range
-        .strip_prefix("bytes 0-7/")
-        .and_then(|n| n.parse::<u64>().ok())
+        .strip_prefix("bytes 0-")
+        .and_then(|range| range.split_once('/'))
+        .and_then(|(_, total)| total.parse::<u64>().ok())
         .ok_or_else(|| bad("invalid source range"))?;
     if total < 8 {
         return Err(bad("source is too short"));
     }
-    Ok(total)
+    let length = total.min(PREFIX);
+    if range != format!("bytes 0-{}/{total}", length - 1) {
+        return Err(bad("source did not return the exact prefix range"));
+    }
+    let mut prefix = BytesMut::with_capacity(length as usize);
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| io::Error::other(e.without_url()))?;
+        if prefix.len() + chunk.len() > length as usize {
+            return Err(bad("oversized source prefix"));
+        }
+        prefix.extend_from_slice(&chunk);
+    }
+    if prefix.len() != length as usize {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "truncated source prefix",
+        ));
+    }
+    Ok((total, prefix.freeze()))
 }
 
 struct SourceMetadata {
@@ -142,9 +163,13 @@ struct SourceMetadata {
 }
 
 /// 加载媒体源的初始化信息和分片元数据。
-async fn load_source(client: &reqwest::Client, url: &str) -> io::Result<SourceMetadata> {
-    let len = source_length(client, url).await?;
-    let prefix = fetch_range(client, url, 0..len.min(PREFIX), len).await?;
+async fn load_source(
+    client: &reqwest::Client,
+    url: &str,
+    track: &str,
+) -> io::Result<SourceMetadata> {
+    let started = Instant::now();
+    let (len, prefix) = source_prefix(client, url).await?;
     let mut position = 0u64;
     let mut ftyp = None;
     let mut moov = None;
@@ -192,8 +217,10 @@ async fn load_source(client: &reqwest::Client, url: &str) -> io::Result<SourceMe
     let ftyp = ftyp.ok_or_else(|| bad("missing file type"))?;
     let moov = moov.ok_or_else(|| bad("missing movie metadata"))?;
     let index = index.ok_or_else(|| bad("missing segment index"))?;
-    // Preserve source order despite concurrent requests: decode timestamps are
-    // checked for continuity by Mp4Builder. At most four requests per source.
+    let initialization_ms = started.elapsed().as_millis();
+    let fragment_count = index.len();
+    let fragments_started = Instant::now();
+    // 哪个请求完成就补入下一个，避免慢分片阻塞整个窗口；收齐后恢复源顺序。
     let mut loads = futures_util::stream::iter(index.into_iter().map(|range| async move {
         let mut position = range.start;
         let prefix_end = range.end.min(position + FRAGMENT_PREFIX);
@@ -249,7 +276,7 @@ async fn load_source(client: &reqwest::Client, url: &str) -> io::Result<SourceMe
         }
         Err(bad("too many boxes before fragment"))
     }))
-    .buffered(4);
+    .buffer_unordered(METADATA_CONCURRENCY);
     let mut fragments = Vec::new();
     let mut metadata_bytes = 0;
     while let Some(fragment) = loads.try_next().await? {
@@ -259,6 +286,9 @@ async fn load_source(client: &reqwest::Client, url: &str) -> io::Result<SourceMe
         }
         fragments.push(fragment);
     }
+    // Mp4Builder 按源顺序检查解码时间连续性，不能按网络完成顺序构建。
+    fragments.sort_unstable_by_key(|fragment| fragment.0);
+    log::info!(target: "DLNA1080", "DASH 轨道索引就绪: track={}, initialization_ms={}, fragments_ms={}, fragments={}, metadata_bytes={}", track, initialization_ms, fragments_started.elapsed().as_millis(), fragment_count, metadata_bytes);
     Ok(SourceMetadata {
         ftyp,
         moov,
@@ -281,9 +311,11 @@ pub async fn prepare(
 ) -> io::Result<PreparedDash> {
     let started = Instant::now();
     let (video, audio) = tokio::try_join!(
-        load_source(client, video_url),
-        load_source(client, audio_url)
+        load_source(client, video_url, "video"),
+        load_source(client, audio_url, "audio")
     )?;
+    let fetch_ms = started.elapsed().as_millis();
+    let build_started = Instant::now();
     let fragment_count = video.fragments.len() + audio.fragments.len();
     let mut builder = Mp4Builder::new(&video.ftyp, &video.moov, 0)?;
     builder.add_source(&audio.moov, 1)?;
@@ -295,7 +327,7 @@ pub async fn prepare(
     }
     let mp4 = builder.finish()?;
     mp4.validate_sources(&[video.len, audio.len])?;
-    log::info!(target: "DLNA1080", "可定位 MP4 索引准备完成: elapsed_ms={}, fragments={}, header_bytes={}, file_bytes={}", started.elapsed().as_millis(), fragment_count, mp4.prefix.len(), mp4.len);
+    log::info!(target: "DLNA1080", "可定位 MP4 索引准备完成: elapsed_ms={}, fetch_ms={}, build_ms={}, fragments={}, header_bytes={}, file_bytes={}", started.elapsed().as_millis(), fetch_ms, build_started.elapsed().as_millis(), fragment_count, mp4.prefix.len(), mp4.len);
     Ok(PreparedDash {
         mp4,
         sources: vec![

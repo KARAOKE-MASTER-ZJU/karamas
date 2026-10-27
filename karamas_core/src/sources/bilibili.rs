@@ -349,10 +349,15 @@ pub async fn get_bilibili_media(
     }
 
     // 第一步：获取CID
+    let started = std::time::Instant::now();
     let cid = get_video_cid(bv_id, page).await?;
+    let cid_ms = started.elapsed().as_millis();
 
     // 第二步：获取视频直链
-    get_video_url(bv_id, &cid, qn).await
+    let playurl_started = std::time::Instant::now();
+    let result = get_video_url(bv_id, &cid, qn).await;
+    log::info!(target: "DLNA1080", "B站媒体解析完成: bvid={}, qn={}, cid_ms={}, playurl_ms={}, success={}", bv_id, qn, cid_ms, playurl_started.elapsed().as_millis(), result.is_ok());
+    result
 }
 
 /// 获取视频的CID（分集ID）

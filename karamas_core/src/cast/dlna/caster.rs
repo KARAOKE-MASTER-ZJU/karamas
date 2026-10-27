@@ -60,6 +60,7 @@ impl DlnaCaster {
         position: u32,
         reason: &str,
     ) -> Result<(), CastError> {
+        let started = std::time::Instant::now();
         let quality = crate::cast::dlna::settings::get_dlna_quality();
         let direct = crate::cast::dlna::settings::get_dlna_direct();
         let sequence = self.seek_sequence.load(std::sync::atomic::Ordering::Relaxed);
@@ -75,23 +76,31 @@ impl DlnaCaster {
                 .prepare(&self.media_client)
                 .await
                 .map_err(|error| self.failure("准备媒体", error))?;
+            // 设备处理 Stop/SetURI/Play 时并行预取起播窗口，不等待完整媒体下载。
+            session.warm_seek(position);
             session.path()
         } else if quality == Quality::P1080 {
             with_start_offset(song, position)
         } else {
             song.to_owned()
         };
+        let preparation_ms = started.elapsed().as_millis();
+        let transport_wait = std::time::Instant::now();
         let _transport = self.transport.lock().await;
+        let transport_wait_ms = transport_wait.elapsed().as_millis();
         if direct && sequence != self.seek_sequence.load(std::sync::atomic::Ordering::Relaxed) {
             return Err(CastError::Device("播放请求已过期".into()));
         }
         if session.as_ref().is_some_and(|s| s.is_stopped()) {
             return Err(CastError::Device("曲目准备已被新请求替代".into()));
         }
+        let stop_started = std::time::Instant::now();
         let _ = self.controller.stop(&self.device).await;
+        let stop_ms = stop_started.elapsed().as_millis();
         if session.as_ref().is_some_and(|s| s.is_stopped()) {
             return Err(CastError::Device("播放请求已过期".into()));
         }
+        let set_uri_started = std::time::Instant::now();
         if direct {
             if let Some(sessions) = &self.sessions { sessions.clear(); }
             self.loaded_generation.store(0, std::sync::atomic::Ordering::Relaxed);
@@ -109,11 +118,14 @@ impl DlnaCaster {
             .await
             .map_err(|error| self.failure("设置媒体地址", error))?;
         }
+        let set_uri_ms = set_uri_started.elapsed().as_millis();
         if session.as_ref().is_some_and(|s| s.is_stopped()) {
             return Err(CastError::Device("播放请求已过期".into()));
         }
+        let play_started = std::time::Instant::now();
         self.controller.play_for_cast(&self.device).await
             .map_err(|error| self.failure("发送播放指令", error))?;
+        let play_ms = play_started.elapsed().as_millis();
         if let Some(session) = &session {
             self.loaded_generation
                 .store(session.generation, std::sync::atomic::Ordering::Relaxed);
@@ -127,10 +139,16 @@ impl DlnaCaster {
         }
         log::info!(
             target: "DLNA1080",
-            "DLNA 已重载媒体: reason={}, quality={}, start={}s",
+            "DLNA 已重载媒体: reason={}, quality={}, start={}s, total_ms={}, preparation_ms={}, transport_wait_ms={}, stop_ms={}, set_uri_ms={}, play_ms={}",
             reason,
             quality.label(),
-            position
+            position,
+            started.elapsed().as_millis(),
+            preparation_ms,
+            transport_wait_ms,
+            stop_ms,
+            set_uri_ms,
+            play_ms
         );
         Ok(())
     }
