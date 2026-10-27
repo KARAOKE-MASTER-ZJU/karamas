@@ -1,15 +1,35 @@
 package zju.idol.karamas
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.view.View
+import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
 import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 
 class MainActivity : TauriActivity() {
+  private var videoFullscreen: VideoFullscreenWebChromeClient? = null
+
+  override fun onWebViewCreate(webView: WebView) {
+    super.onWebViewCreate(webView)
+    // Wry 在此回调之后设置默认客户端，等初始化完成再接入全屏处理。
+    webView.post {
+      if (isDestroyed) return@post
+      val delegate = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        webView.webChromeClient
+      } else {
+        null
+      } ?: RustWebChromeClient(this, (webView as RustWebView).id)
+      videoFullscreen = VideoFullscreenWebChromeClient(this, delegate)
+      webView.webChromeClient = videoFullscreen
+    }
+  }
+
   override fun onDestroy() {
+    videoFullscreen?.onHideCustomView()
     // 配置变化保留服务，页面最终销毁时与 Rust 的退出清理一起停止服务。
     if (!isChangingConfigurations) stopService(Intent(this, CastingService::class.java))
     super.onDestroy()
