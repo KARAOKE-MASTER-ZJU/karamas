@@ -18,26 +18,37 @@ import { useBilibiliStore } from "@/stores/bilibili";
 import { useOperationNotice } from "@/composables/useOperationNotice";
 import { errorMessage } from "@/services/casting";
 import type { CastDevice } from "@/types/casting";
+import type { ConnectionTab } from "@/types/connection";
 
 const casting = useCastingStore();
 const auth = useBilibiliStore();
 const { selectedDevice } = storeToRefs(casting);
 const { notify } = useOperationNotice();
 const showManualConnect = ref(false);
+const mode = ref<ConnectionTab>("dlna");
+const discoveryMode = computed(() =>
+  mode.value === "other" ? "local" : mode.value,
+);
 const {
-  mode,
-  devices,
+  devices: discoveredDevices,
   searching,
   deviceUrl,
   deviceError,
   resolvingDevice,
   searchDevices,
   resolveDevice,
-  deviceKey,
-  isSelected,
-} = useDeviceDiscovery(selectedDevice);
+} = useDeviceDiscovery(discoveryMode);
+const devices = computed(() => {
+  const found = discoveredDevices.value;
+  const selected = selectedDevice.value;
+  return selected?.kind === discoveryMode.value &&
+    !found.some((device) => deviceKey(device) === deviceKey(selected))
+    ? [selected, ...found]
+    : found;
+});
+const isSearching = computed(() => searching[discoveryMode.value]);
 const searchLabel = computed(() =>
-  searching[mode.value]
+  isSearching.value
     ? "正在搜索设备"
     : mode.value === "dlna"
       ? "搜索设备"
@@ -45,6 +56,20 @@ const searchLabel = computed(() =>
         ? "刷新设备"
         : "扫码登录",
 );
+
+function deviceKey(device: CastDevice) {
+  return device.kind === "dlna"
+    ? device.location
+    : device.kind === "local"
+      ? "local"
+      : device.buvid;
+}
+function isSelected(device: CastDevice) {
+  return (
+    selectedDevice.value?.kind === device.kind &&
+    deviceKey(selectedDevice.value) === deviceKey(device)
+  );
+}
 
 function deviceStatus(device: CastDevice) {
   if (!isSelected(device)) return null;
@@ -111,21 +136,21 @@ async function selectDevice(device: CastDevice) {
               ? 'button text-button'
               : 'icon-button'
           "
-          :disabled="searching[mode] || auth.loggingIn"
+          :disabled="isSearching || auth.loggingIn"
           :aria-label="searchLabel"
-          :aria-busy="searching[mode]"
+          :aria-busy="isSearching"
           @click="searchDevices()"
         >
           <component
             :is="
-              searching[mode]
+              isSearching
                 ? LoaderCircle
                 : mode === 'dlna' || auth.session
                   ? RefreshCw
                   : ScanQrCode
             "
             :size="18"
-            :class="{ searching: searching[mode] }"
+            :class="{ searching: isSearching }"
             aria-hidden="true"
           />
           <span v-if="mode === 'bilibili' && !auth.session">扫码登录</span>
@@ -164,11 +189,11 @@ async function selectDevice(device: CastDevice) {
         @retry="retryDevice"
       />
     </ul>
-    <div v-else class="device-empty" :aria-busy="searching[mode]">
+    <div v-else class="device-empty" :aria-busy="isSearching">
       <component :is="mode === 'dlna' ? Cast : Tv" :size="32" />
       <p>
         {{
-          searching[mode]
+          isSearching
             ? "正在搜索设备…"
             : mode === "bilibili" && !auth.session
               ? "尚未登录哔哩哔哩"

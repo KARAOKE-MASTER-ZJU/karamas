@@ -3,15 +3,16 @@ import type { Ref } from "vue";
 import { useBilibiliStore } from "@/stores/bilibili";
 import { useOperationNotice } from "@/composables/useOperationNotice";
 import { castingApi, errorMessage } from "@/services/casting";
-import type { CastDevice } from "@/types/casting";
+import type { BilibiliDevice, DlnaDevice } from "@/types/casting";
+import type { CastMode } from "@/types";
 
-export function useDeviceDiscovery(selectedDevice: Ref<CastDevice | null>) {
+export function useDeviceDiscovery(mode: Ref<CastMode>) {
   const auth = useBilibiliStore();
   const { notify } = useOperationNotice();
-  const mode = ref<"dlna" | "bilibili" | "other">("dlna");
-  const dlnaDevices = ref<CastDevice[]>([]);
-  const bilibiliDevices = ref<CastDevice[]>([]);
-  const searching = reactive({ dlna: false, bilibili: false, other: false });
+  const dlnaDevices = ref<DlnaDevice[]>([]);
+  const bilibiliDevices = ref<BilibiliDevice[]>([]);
+  const localDevices = [{ kind: "local" as const, name: "本地" }];
+  const searching = reactive({ dlna: false, bilibili: false, local: false });
   const deviceUrl = ref("");
   const deviceError = ref("");
   const resolvingDevice = ref(false);
@@ -20,19 +21,22 @@ export function useDeviceDiscovery(selectedDevice: Ref<CastDevice | null>) {
     disposed = true;
   });
   const devices = computed(() => {
-    if (mode.value === "other")
-      return [{ kind: "local" as const, name: "本地" }];
-    const found =
-      mode.value === "dlna" ? dlnaDevices.value : bilibiliDevices.value;
-    const active = selectedDevice.value;
-    return active?.kind === mode.value &&
-      !found.some((device) => deviceKey(device) === deviceKey(active))
-      ? [active, ...found]
-      : found;
+    if (mode.value === "local") return localDevices;
+    if (mode.value === "dlna")
+      return dlnaDevices.value.map((device) => ({
+        ...device,
+        kind: "dlna" as const,
+      }));
+    if (mode.value === "bilibili")
+      return bilibiliDevices.value.map((device) => ({
+        ...device,
+        kind: "bilibili" as const,
+      }));
+    return [];
   });
 
   async function searchDevices(kind = mode.value) {
-    if (kind === "other" || disposed || searching[kind]) return;
+    if (kind === "local" || disposed || searching[kind]) return;
     const session = auth.session;
     if (kind === "bilibili" && !session) {
       void auth.login();
@@ -44,25 +48,17 @@ export function useDeviceDiscovery(selectedDevice: Ref<CastDevice | null>) {
         const found = await castingApi.discoverDlnaDevices((device) => {
           if (disposed) return;
           const index = dlnaDevices.value.findIndex(
-            (item) => item.kind === "dlna" && item.location === device.location,
+            (item) => item.location === device.location,
           );
-          const entry = { ...device, kind: "dlna" as const };
-          if (index < 0) dlnaDevices.value.push(entry);
-          else dlnaDevices.value[index] = entry;
+          if (index < 0) dlnaDevices.value.push(device);
+          else dlnaDevices.value[index] = device;
         });
         // 搜索期间保留已有设备，结束后用完整列表移除本轮未发现的项。
-        if (!disposed)
-          dlnaDevices.value = found.map((device) => ({
-            ...device,
-            kind: "dlna",
-          }));
+        if (!disposed) dlnaDevices.value = found;
       } else if (session) {
         const result = await castingApi.listBilibiliDevices(session);
         if (!disposed && session === auth.session)
-          bilibiliDevices.value = result.map((device) => ({
-            ...device,
-            kind: "bilibili",
-          }));
+          bilibiliDevices.value = result;
       }
     } catch (error) {
       if (!disposed) notify(errorMessage(error), "error");
@@ -87,22 +83,8 @@ export function useDeviceDiscovery(selectedDevice: Ref<CastDevice | null>) {
   watch(mode, (kind) => {
     if (kind === "bilibili" && auth.session) void searchDevices(kind);
   });
-  function deviceKey(device: CastDevice) {
-    return device.kind === "dlna"
-      ? device.location
-      : device.kind === "local"
-        ? "local"
-        : device.buvid;
-  }
-  function isSelected(device: CastDevice) {
-    return (
-      selectedDevice.value?.kind === device.kind &&
-      deviceKey(selectedDevice.value) === deviceKey(device)
-    );
-  }
-
   async function resolveDevice(
-    onResolved: (device: CastDevice) => Promise<void>,
+    onResolved: (device: DlnaDevice & { kind: "dlna" }) => Promise<void>,
   ) {
     deviceError.value = "";
     try {
@@ -119,15 +101,12 @@ export function useDeviceDiscovery(selectedDevice: Ref<CastDevice | null>) {
     }
     resolvingDevice.value = true;
     try {
-      const device: CastDevice = {
-        ...(await castingApi.discoverDlnaDevice(deviceUrl.value.trim())),
-        kind: "dlna",
-      };
-      if (
-        !dlnaDevices.value.some((item) => deviceKey(item) === deviceKey(device))
-      )
+      const device = await castingApi.discoverDlnaDevice(
+        deviceUrl.value.trim(),
+      );
+      if (!dlnaDevices.value.some((item) => item.location === device.location))
         dlnaDevices.value.push(device);
-      await onResolved(device);
+      await onResolved({ ...device, kind: "dlna" });
     } catch (error) {
       notify(errorMessage(error), "error");
     } finally {
@@ -136,7 +115,6 @@ export function useDeviceDiscovery(selectedDevice: Ref<CastDevice | null>) {
   }
 
   return {
-    mode,
     devices,
     searching,
     deviceUrl,
@@ -144,7 +122,5 @@ export function useDeviceDiscovery(selectedDevice: Ref<CastDevice | null>) {
     resolvingDevice,
     searchDevices,
     resolveDevice,
-    deviceKey,
-    isSelected,
   };
 }
