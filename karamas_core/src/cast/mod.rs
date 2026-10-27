@@ -39,24 +39,34 @@ pub struct Capabilities {
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Quality {
+    P240 = 6,
     P360 = 16,
     P480 = 32,
     P720 = 64,
+    P720P60 = 74,
     P1080 = 80,
     P1080H = 112,
     P1080P60 = 116,
     P4K = 120,
+    Hdr = 125,
+    Dolby = 126,
+    P8K = 127,
 }
 
 impl Quality {
-    pub const ALL: [Quality; 7] = [
+    pub const ALL: [Quality; 12] = [
+        Quality::P240,
         Quality::P360,
         Quality::P480,
         Quality::P720,
+        Quality::P720P60,
         Quality::P1080,
         Quality::P1080H,
         Quality::P1080P60,
         Quality::P4K,
+        Quality::Hdr,
+        Quality::Dolby,
+        Quality::P8K,
     ];
 
     pub fn as_qn(self) -> u32 {
@@ -69,13 +79,18 @@ impl Quality {
 
     pub fn label(self) -> &'static str {
         match self {
-            Quality::P360 => "360P",
-            Quality::P480 => "480P",
-            Quality::P720 => "720P",
-            Quality::P1080 => "1080P",
-            Quality::P1080H => "1080PHigh",
-            Quality::P1080P60 => "1080P60",
-            Quality::P4K => "4K",
+            Quality::P240 => "240P 极速",
+            Quality::P360 => "360P 流畅",
+            Quality::P480 => "480P 标清",
+            Quality::P720 => "720P 准高清",
+            Quality::P720P60 => "720P60 高帧率",
+            Quality::P1080 => "1080P 高清",
+            Quality::P1080H => "1080P 高码率",
+            Quality::P1080P60 => "1080P60 高帧率",
+            Quality::P4K => "4K 超清",
+            Quality::Hdr => "HDR 真彩",
+            Quality::Dolby => "杜比视界",
+            Quality::P8K => "8K 超高清",
         }
     }
 
@@ -90,6 +105,16 @@ impl Default for Quality {
     fn default() -> Self {
         Quality::P1080
     }
+}
+
+/// B站媒体的取源方式；Auto 用于尚未选档的会话及原有清晰度调用。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MediaFormat {
+    #[default]
+    Auto,
+    Mp4,
+    Dash,
 }
 
 #[derive(Debug)]
@@ -169,12 +194,28 @@ pub trait Caster: Send + Sync {
         Err(CastError::Unsupported)
     }
 
-    /// 切换清晰度。只有 Bilibili 投屏支持，其余 Caster 默认不支持。
+    /// 切换清晰度，使用该播放目标默认的取源方式。
     async fn set_quality(&self, _quality: Quality) -> Result<(), CastError> {
         Err(CastError::Unsupported)
     }
     fn get_quality(&self) -> Result<Quality, CastError> {
         Err(CastError::Unsupported)
+    }
+
+    /// DLNA 和本机播放可分别选择 MP4、DASH；B站投屏沿用协议选档。
+    async fn set_media_quality(
+        &self,
+        quality: Quality,
+        format: MediaFormat,
+    ) -> Result<(), CastError> {
+        if format != MediaFormat::Auto {
+            return Err(CastError::Unsupported);
+        }
+        self.set_quality(quality).await
+    }
+
+    fn get_media_format(&self) -> MediaFormat {
+        MediaFormat::Auto
     }
 
     fn capabilities(&self) -> Capabilities;

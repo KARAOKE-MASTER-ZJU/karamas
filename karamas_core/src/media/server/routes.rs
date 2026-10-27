@@ -1,6 +1,6 @@
 use super::SharedState;
 use crate::media::mp4::duration::get_mp4_duration;
-use crate::sources::bilibili::{BilibiliMedia, get_bilibili_media};
+use crate::sources::bilibili::{BilibiliMedia, get_bilibili_media_with_format};
 use actix_web::{HttpRequest, HttpResponse, route, web};
 use futures_util::StreamExt;
 use log::{debug, info};
@@ -132,33 +132,18 @@ pub async fn proxy_handler(
             url: origin_url.clone(),
         }
     } else {
-        match get_bilibili_media(bv_id, page, requested_qn).await {
-            Ok(media) => media,
-            // Not every public video exposes an anonymous id=80 DASH track. Do not
-            // leave a renderer waiting on a failed 1080p request: preserve the
-            // established 720p single-file route for that title.
-            Err(error) if requested_qn >= 80 => {
-                log::warn!(
-                    target: "DLNA1080",
-                    "1080P 不可用，自动回退 720P: bvid={}, page={:?}, reason={}",
-                    bv_id,
-                    page,
-                    error
-                );
-                get_bilibili_media(bv_id, page, 64)
+        let format = crate::cast::dlna::settings::get_dlna_media_quality().1;
+        let resolved = match get_bilibili_media_with_format(bv_id, page, requested_qn, format).await {
+            Ok(resolved) => resolved,
+            Err(error) if format == crate::cast::MediaFormat::Auto && requested_qn >= 80 => {
+                log::warn!(target: "DLNA1080", "1080P 不可用，自动回退 720P: bvid={}, page={:?}, reason={}", bv_id, page, error);
+                get_bilibili_media_with_format(bv_id, page, 64, crate::cast::MediaFormat::Mp4)
                     .await
-                    .map_err(|fallback_error| {
-                        log::error!(
-                            target: "DLNA1080",
-                            "720P 回退也失败: bvid={}, error={}",
-                            bv_id,
-                            fallback_error
-                        );
-                        actix_web::error::ErrorInternalServerError(fallback_error)
-                    })?
+                    .map_err(actix_web::error::ErrorBadGateway)?
             }
-            Err(error) => return Err(actix_web::error::ErrorInternalServerError(error)),
-        }
+            Err(error) => return Err(actix_web::error::ErrorBadGateway(error)),
+        };
+        resolved.media
     };
 
     if let BilibiliMedia::Dash {

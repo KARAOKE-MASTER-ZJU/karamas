@@ -120,7 +120,11 @@ pub async fn get_bilibili_media_qualities(
     Ok(qualities)
 }
 
-async fn request_playurl(bvid: &str, cid: &str, params: &[(&str, &str)]) -> Result<Value, String> {
+pub(super) async fn request_playurl(
+    bvid: &str,
+    cid: &str,
+    params: &[(&str, &str)],
+) -> Result<Value, String> {
     let json = bili_api_client()
         .get("https://api.bilibili.com/x/player/playurl")
         .query(&[("bvid", bvid), ("cid", cid)])
@@ -128,15 +132,15 @@ async fn request_playurl(bvid: &str, cid: &str, params: &[(&str, &str)]) -> Resu
         .header("Referer", format!("https://www.bilibili.com/video/{bvid}"))
         .send()
         .await
-        .map_err(|error| format!("获取媒体清晰度失败：{error}"))?
+        .map_err(|error| format!("获取播放信息失败：{error}"))?
         .error_for_status()
-        .map_err(|error| format!("获取媒体清晰度失败：{error}"))?
+        .map_err(|error| format!("获取播放信息失败：{error}"))?
         .json::<Value>()
         .await
-        .map_err(|error| format!("解析媒体清晰度失败：{error}"))?;
+        .map_err(|error| format!("解析播放信息失败：{error}"))?;
     if json["code"].as_i64() != Some(0) || !json["data"].is_object() {
         return Err(format!(
-            "获取媒体清晰度失败：{} ({})",
+            "获取播放信息失败：{} ({})",
             json["message"].as_str().unwrap_or("B站接口返回错误"),
             json["code"]
         ));

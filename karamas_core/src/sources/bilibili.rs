@@ -4,8 +4,8 @@ use std::sync::OnceLock;
 
 mod media_qualities;
 mod playback_media;
-pub use playback_media::get_bilibili_media;
-pub use media_qualities::{get_bilibili_media_qualities, BilibiliMediaQuality};
+pub use media_qualities::{BilibiliMediaQuality, get_bilibili_media_qualities};
+pub use playback_media::ResolvedBilibiliMedia;
 
 /// 全局共享 B站 API 客户端：连接池复用 + 超时。
 /// 请求超时由 `crate::config::API_TIMEOUT` 设置。
@@ -314,13 +314,16 @@ pub async fn get_page_duration(bv_id: &str, page: u32) -> Result<u32, String> {
 /// # Returns
 /// * `Result<String, String>` - 返回直链URL或错误信息
 pub async fn get_bilibili_direct_link(bv_id: &str, page: Option<u32>) -> Result<String, String> {
-    match get_bilibili_media(bv_id, page, 64).await? {
+    match get_bilibili_media_with_format(bv_id, page, 64, crate::cast::MediaFormat::Mp4)
+        .await?
+        .media
+    {
         BilibiliMedia::Direct { url } => Ok(url),
         BilibiliMedia::Dash { .. } => Err("720P 接口意外返回 DASH".to_string()),
     }
 }
 
-/// B站媒体地址。720P 保持单文件 MP4；1080P 使用独立的 DASH 视频、音频轨。
+/// B站媒体地址，区分音画 MP4 和独立的 DASH 视频、音频轨。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BilibiliMedia {
     Direct {
@@ -332,6 +335,46 @@ pub enum BilibiliMedia {
         width: u32,
         height: u32,
     },
+}
+
+/// 获取指定清晰度的 B站媒体。
+///
+/// `qn=80` 使用实测可用的匿名 DASH 接口。`try_look=1` 会在没有 Cookie 时
+/// 自动选择对应清晰度的 MP4 或 DASH 媒体。
+pub async fn get_bilibili_media(
+    bv_id: &str,
+    page: Option<u32>,
+    qn: u32,
+) -> Result<BilibiliMedia, String> {
+    get_bilibili_media_with_format(bv_id, page, qn, crate::cast::MediaFormat::Auto)
+        .await
+        .map(|resolved| resolved.media)
+}
+
+/// 按清晰度和取源方式读取媒体，返回实际的清晰度及方式。
+pub async fn get_bilibili_media_with_format(
+    bv_id: &str,
+    page: Option<u32>,
+    qn: u32,
+    format: crate::cast::MediaFormat,
+) -> Result<ResolvedBilibiliMedia, String> {
+    let page = page.unwrap_or(0);
+    if bv_id.starts_with("http://") || bv_id.starts_with("https://") {
+        return Ok(ResolvedBilibiliMedia {
+            media: BilibiliMedia::Direct {
+                url: bv_id.to_owned(),
+            },
+            quality: crate::cast::Quality::from_qn(qn).ok_or("不支持的清晰度")?,
+            format: crate::cast::MediaFormat::Mp4,
+        });
+    }
+    let started = std::time::Instant::now();
+    let (cid, _) = get_page_info(bv_id, page).await?;
+    let cid_ms = started.elapsed().as_millis();
+    let playurl_started = std::time::Instant::now();
+    let result = playback_media::resolve(bv_id, &cid.to_string(), qn, format).await;
+    log::info!(target: "DLNA1080", "B站媒体解析完成: bvid={}, qn={}, format={:?}, cid_ms={}, playurl_ms={}, success={}", bv_id, qn, format, cid_ms, playurl_started.elapsed().as_millis(), result.is_ok());
+    result
 }
 
 #[cfg(test)]

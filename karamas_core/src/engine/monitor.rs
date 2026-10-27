@@ -18,6 +18,7 @@ pub struct EnginePlaybackState {
     pub queued_count: usize,
     pub sung_count: usize,
     pub quality_qn: Option<u32>,
+    pub quality_format: cast::MediaFormat,
     pub danmaku: Option<bool>,
     pub capabilities: cast::Capabilities,
 }
@@ -85,6 +86,7 @@ impl EngineContext {
             queued_count: self.playlist_manager.get_queued_count().await,
             sung_count: self.playlist_manager.get_sung_count().await,
             quality_qn: self.caster.get_quality().ok().map(|q| q.as_qn()),
+            quality_format: self.caster.get_media_format(),
             danmaku: self.caster.get_danmaku().ok(),
             capabilities: self.caster.capabilities(),
         }

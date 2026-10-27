@@ -193,6 +193,19 @@ pub async fn set_quality_core(quality: cast::Quality) -> Result<cast::Quality, C
     Ok(quality)
 }
 
+/// 同时切换清晰度和取源方式，并返回生效后的选项。
+pub async fn set_media_quality_core(
+    quality: cast::Quality,
+    format: cast::MediaFormat,
+) -> Result<(cast::Quality, cast::MediaFormat), CoreError> {
+    let ctx = {
+        let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
+        guard.as_ref().cloned().ok_or("Engine not initialized")?
+    };
+    ctx.caster.set_media_quality(quality, format).await?;
+    Ok((ctx.caster.get_quality()?, ctx.caster.get_media_format()))
+}
+
 /// 切到下一档清晰度（循环），返回切换后的值。
 pub async fn cycle_quality_core() -> Result<cast::Quality, CoreError> {
     set_quality_core(get_quality_core().next()).await

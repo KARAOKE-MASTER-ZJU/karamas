@@ -1,5 +1,7 @@
 //! 本地播放器契约。宿主传递小消息，媒体数据由回环 HTTP 服务提供。
-use super::{Capabilities, CastError, Caster, PlaybackSnapshot, Progress, Quality, SongRef};
+use super::{
+    Capabilities, CastError, Caster, MediaFormat, PlaybackSnapshot, Progress, Quality, SongRef,
+};
 use crate::media::session::MediaSessions;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -71,6 +73,7 @@ struct State {
     stopped: bool,
     song: Option<String>,
     quality: Quality,
+    format: MediaFormat,
     volume: u32,
     muted: bool,
 }
@@ -99,6 +102,7 @@ impl LocalCaster {
                 stopped: false,
                 song: None,
                 quality: Quality::P720,
+                format: MediaFormat::Auto,
                 volume: 100,
                 muted: false,
             }),
@@ -162,14 +166,14 @@ impl LocalCaster {
     }
 
     async fn load(&self, song: &str, position: u32, playing: bool) -> Result<(), CastError> {
-        let (quality, volume, muted) = {
+        let (quality, format, volume, muted) = {
             let mut state = self.state.lock().unwrap();
             state.song = Some(song.to_owned());
             state.report = None;
-            (state.quality, state.volume, state.muted)
+            (state.quality, state.format, state.volume, state.muted)
         };
         self.command(LocalAction::Loading).await?;
-        let session = self.sessions.activate(song, quality);
+        let session = self.sessions.activate_with_format(song, quality, format);
         if let Err(error) = session.prepare(&self.client).await {
             let message = format!("准备本地视频失败：{error}");
             let _ = self
@@ -186,7 +190,12 @@ impl LocalCaster {
             volume,
             muted,
         })
-        .await
+        .await?;
+        let (quality, format) = session.resolved_quality();
+        let mut state = self.state.lock().unwrap();
+        state.quality = quality;
+        state.format = format;
+        Ok(())
     }
 
     fn fresh_report(state: &State) -> Option<&LocalReport> {
@@ -320,13 +329,22 @@ impl Caster for LocalCaster {
         Ok(Some(if state.muted { 0 } else { state.volume }))
     }
     async fn set_quality(&self, quality: Quality) -> Result<(), CastError> {
-        if !matches!(quality, Quality::P720 | Quality::P1080) {
-            return Err(CastError::Unsupported);
-        }
+        self.set_media_quality(quality, MediaFormat::Auto).await
+    }
+    async fn set_media_quality(
+        &self,
+        quality: Quality,
+        format: MediaFormat,
+    ) -> Result<(), CastError> {
         let _control = self.control.lock().await;
+        let previous = {
+            let state = self.state.lock().unwrap();
+            (state.quality, state.format)
+        };
         let (song, position, playing) = {
             let mut state = self.state.lock().unwrap();
             state.quality = quality;
+            state.format = format;
             let report = Self::fresh_report(&state);
             (
                 state.song.clone(),
@@ -335,12 +353,19 @@ impl Caster for LocalCaster {
             )
         };
         if let Some(song) = song {
-            self.load(&song, position, playing).await?;
+            if let Err(error) = self.load(&song, position, playing).await {
+                let mut state = self.state.lock().unwrap();
+                (state.quality, state.format) = previous;
+                return Err(error);
+            }
         }
         Ok(())
     }
     fn get_quality(&self) -> Result<Quality, CastError> {
         Ok(self.state.lock().unwrap().quality)
+    }
+    fn get_media_format(&self) -> MediaFormat {
+        self.state.lock().unwrap().format
     }
     fn capabilities(&self) -> Capabilities {
         Capabilities {

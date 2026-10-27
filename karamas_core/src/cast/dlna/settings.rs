@@ -1,15 +1,17 @@
 use crate::{cast, error::CoreError};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::Ordering;
 
-/// DLNA 媒体代理清晰度。720P 保持旧的完整 MP4 路径，1080P 启用 Rust fMP4 混流。
-static DLNA_QUALITY_QN: AtomicU32 = AtomicU32::new(64);
+// 清晰度与取源方式放在同一份状态中，切换时一起更新。
+static DLNA_MEDIA_QUALITY: std::sync::Mutex<(cast::Quality, cast::MediaFormat)> =
+    std::sync::Mutex::new((cast::Quality::P720, cast::MediaFormat::Auto));
 static DLNA_DIRECT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// 设置 DLNA 直连模式
 pub fn set_dlna_direct(enabled: bool) {
     DLNA_DIRECT.store(enabled, Ordering::Relaxed);
     if enabled {
-        DLNA_QUALITY_QN.store(64, Ordering::Relaxed);
+        let mut selected = DLNA_MEDIA_QUALITY.lock().unwrap();
+        *selected = (cast::Quality::P720, cast::MediaFormat::Auto);
     }
 }
 
@@ -20,20 +22,25 @@ pub fn get_dlna_direct() -> bool {
 
 /// 设置 DLNA 清晰度
 pub fn set_dlna_quality(quality: cast::Quality) -> Result<(), CoreError> {
-    if get_dlna_direct() && quality == cast::Quality::P1080 {
-        return Err("DLNA 直连模式不支持 B站 1080P，请先启用媒体代理".into());
-    }
-    match quality {
-        cast::Quality::P720 | cast::Quality::P1080 => {
-            DLNA_QUALITY_QN.store(quality.as_qn(), Ordering::Relaxed);
-            Ok(())
-        }
-        _ => Err("DLNA 仅支持 720P 和 1080P(beta)".into()),
-    }
+    set_dlna_media_quality(quality, cast::MediaFormat::Auto)
 }
 
 /// 获取 DLNA 清晰度
 pub fn get_dlna_quality() -> cast::Quality {
-    cast::Quality::from_qn(DLNA_QUALITY_QN.load(Ordering::Relaxed))
-        .unwrap_or(cast::Quality::P720)
+    get_dlna_media_quality().0
+}
+
+pub fn get_dlna_media_quality() -> (cast::Quality, cast::MediaFormat) {
+    *DLNA_MEDIA_QUALITY.lock().unwrap()
+}
+
+pub fn set_dlna_media_quality(
+    quality: cast::Quality,
+    format: cast::MediaFormat,
+) -> Result<(), CoreError> {
+    if get_dlna_direct() && format == cast::MediaFormat::Dash {
+        return Err("混流需要启用 DLNA 媒体代理".into());
+    }
+    *DLNA_MEDIA_QUALITY.lock().unwrap() = (quality, format);
+    Ok(())
 }

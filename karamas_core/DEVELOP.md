@@ -63,6 +63,8 @@ flowchart LR
 
 代理模式下，`DlnaCaster` 先通过 `media/session` 和 `sources` 准备当前曲目，再将本地媒体地址发给设备。DASH 媒体会预先构建 MP4 索引，并创建分块缓存。
 
+选档同时传递 `qn` 和 `MediaFormat`，媒体会话按指定方式取源，播放状态回传实际清晰度和方式。
+
 下图中的箭头表示拉流请求方向。控制指令和媒体字节通过不同路径传输。
 
 ```mermaid

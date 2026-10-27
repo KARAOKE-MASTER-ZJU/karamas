@@ -1,11 +1,11 @@
 //! Own one current song/quality representation. URLs carry a generation so an
 //! old renderer request can never recreate a previous song's cache.
 use crate::{
-    cast::Quality,
+    cast::{MediaFormat, Quality},
     media::cache::SongCache,
     media::mp4::dash,
     media::mp4::indexed::VirtualMp4,
-    sources::bilibili::{BilibiliMedia, get_bilibili_media},
+    sources::bilibili::{BilibiliMedia, get_bilibili_media_with_format, parse_bilibili_video},
 };
 use futures_util::StreamExt;
 use std::{
@@ -64,11 +64,19 @@ pub struct MediaSession {
     pub generation: u64,
     pub song: String,
     pub quality: Quality,
+    pub format: MediaFormat,
+    resolved_quality: Mutex<Option<(Quality, MediaFormat)>>,
     stopped: watch::Sender<bool>,
     ready: OnceCell<Arc<SessionMedia>>,
     warmup: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 impl MediaSession {
+    pub fn resolved_quality(&self) -> (Quality, MediaFormat) {
+        self.resolved_quality
+            .lock()
+            .unwrap()
+            .unwrap_or((self.quality, self.format))
+    }
     /// 生成包含当前会话代次的媒体路径。
     pub fn path(&self) -> String {
         format!("__ktv_media/{}.mp4", self.generation)
@@ -177,43 +185,55 @@ impl MediaSession {
             };
             let tracks = crate::sources::youtube::resolve(&self.song, max_height).await?;
             log::info!(target: "DLNA1080", "YouTube 双轨就绪: generation={}, duration={}s", self.generation, tracks.duration_secs);
-            return self.prepare_dash(client, &tracks.video_url, &tracks.audio_url).await;
+            let media = self
+                .prepare_dash(client, &tracks.video_url, &tracks.audio_url)
+                .await?;
+            *self.resolved_quality.lock().unwrap() = Some((self.quality, MediaFormat::Dash));
+            return Ok(media);
         }
-        if self.song.starts_with("http://") || self.song.starts_with("https://") {
+        let bilibili = parse_bilibili_video(&self.song);
+        if bilibili.is_err()
+            && (self.song.starts_with("http://") || self.song.starts_with("https://"))
+        {
+            *self.resolved_quality.lock().unwrap() = Some((self.quality, MediaFormat::Mp4));
             return Ok(SessionMedia::Direct(self.song.clone()));
         }
-        let path = self.song.split('?').next().unwrap_or(&self.song);
-        let (bvid, page) = match path.split_once("-page") {
-            Some((bvid, page)) => (
-                bvid,
-                page.parse::<u32>()
-                    .map_err(|_| io::Error::other("invalid Bilibili page"))?,
-            ),
-            None => (path, 0),
-        };
+        let (bvid, page) = bilibili.map_err(io::Error::other)?;
         let attempt = async {
-            let media = get_bilibili_media(bvid, Some(page), self.quality.as_qn())
-                .await
-                .map_err(io::Error::other)?;
-            match media {
-                BilibiliMedia::Direct { url } => Ok(SessionMedia::Direct(url)),
+            let resolved = get_bilibili_media_with_format(
+                &bvid,
+                Some(page),
+                self.quality.as_qn(),
+                self.format,
+            )
+            .await
+            .map_err(io::Error::other)?;
+            let media = match resolved.media {
+                BilibiliMedia::Direct { url } => SessionMedia::Direct(url),
                 BilibiliMedia::Dash {
                     video_url,
                     audio_url,
                     ..
-                } => self.prepare_dash(client, &video_url, &audio_url).await,
-            }
+                } => self.prepare_dash(client, &video_url, &audio_url).await?,
+            };
+            *self.resolved_quality.lock().unwrap() = Some((resolved.quality, resolved.format));
+            Ok(media)
         }
         .await;
         match attempt {
             Ok(media) => Ok(media),
-            Err(error) if self.quality == Quality::P1080 => {
+            Err(error) if self.format == MediaFormat::Auto && self.quality == Quality::P1080 => {
                 log::warn!(target: "DLNA1080", "可定位 1080P 准备失败，回退 720P: generation={}, error={}", self.generation, error);
-                match get_bilibili_media(bvid, Some(page), 64)
-                    .await
-                    .map_err(io::Error::other)?
-                {
-                    BilibiliMedia::Direct { url } => Ok(SessionMedia::Direct(url)),
+                let resolved =
+                    get_bilibili_media_with_format(&bvid, Some(page), 64, MediaFormat::Mp4)
+                        .await
+                        .map_err(io::Error::other)?;
+                match resolved.media {
+                    BilibiliMedia::Direct { url } => {
+                        *self.resolved_quality.lock().unwrap() =
+                            Some((resolved.quality, resolved.format));
+                        Ok(SessionMedia::Direct(url))
+                    }
                     _ => Err(io::Error::other("720P fallback unexpectedly returned DASH")),
                 }
             }
@@ -263,10 +283,21 @@ impl MediaSessions {
     }
     /// 为歌曲和清晰度创建媒体会话，并取消旧会话。
     pub fn activate(&self, song: &str, quality: Quality) -> Arc<MediaSession> {
+        self.activate_with_format(song, quality, MediaFormat::Auto)
+    }
+
+    pub fn activate_with_format(
+        &self,
+        song: &str,
+        quality: Quality,
+        format: MediaFormat,
+    ) -> Arc<MediaSession> {
         let session = Arc::new(MediaSession {
             generation: NEXT_GENERATION.fetch_add(1, Ordering::Relaxed),
             song: song.into(),
             quality,
+            format,
+            resolved_quality: Mutex::new(None),
             stopped: watch::channel(false).0,
             ready: OnceCell::new(),
             warmup: Mutex::new(None),
