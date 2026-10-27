@@ -155,7 +155,7 @@ function onCoverError(event: Event) {
 }
 @keyframes spin {
   to {
-    transform: rotate(360deg);
+    transform: rotate(-360deg);
   }
 }
 @media (prefers-reduced-motion: reduce) {
