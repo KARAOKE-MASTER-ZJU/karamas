@@ -34,6 +34,8 @@ onMounted(() => {
 });
 // 控制帮助对话框的显示状态
 const showHelp = ref(false);
+const workspace = ref<HTMLElement | null>(null);
+const pageContent = ref<HTMLElement | null>(null);
 </script>
 
 <template>
@@ -42,8 +44,9 @@ const showHelp = ref(false);
     <!-- 应用导航组件 -->
     <AppNavigation />
 
-    <main id="main-content" class="workspace">
+    <main id="main-content" ref="workspace" class="workspace">
       <div
+        ref="pageContent"
         class="page-content"
         :class="{
           'local-playback-layout':
@@ -82,6 +85,8 @@ const showHelp = ref(false);
         <PlaybackPage
           v-show="route.name === 'playback'"
           :active="route.name === 'playback'"
+          :viewport="workspace"
+          :content="pageContent"
         />
         <RouterView v-slot="{ Component }">
           <KeepAlive>

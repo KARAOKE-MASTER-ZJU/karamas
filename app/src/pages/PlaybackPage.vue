@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Cast, Monitor, ExternalLink } from "@lucide/vue";
 import { RouterLink } from "vue-router";
-import { onMounted, onBeforeUnmount, ref, watch } from "vue";
+import { ref, toRef } from "vue";
 import { storeToRefs } from "pinia";
 import LocalPlayer from "@/components/playback/LocalPlayer.vue";
 import NowPlaying from "@/components/playback/NowPlaying.vue";
@@ -12,61 +12,25 @@ import PlaybackOptions from "@/components/playback/PlaybackOptions.vue";
 import BilibiliPartsControl from "@/components/playback/BilibiliPartsControl.vue";
 import { useCastingStore } from "@/stores/casting";
 import { usePlaybackControls } from "@/composables/usePlaybackControls";
+import { useVideoLayout } from "@/composables/useVideoLayout";
 import { openSongRoom } from "@/services/songRoom";
 
-const props = defineProps<{ active: boolean }>();
+const props = defineProps<{
+  active: boolean;
+  viewport: HTMLElement | null;
+  content: HTMLElement | null;
+}>();
 const casting = useCastingStore();
 const { playback, volume, activeDevice, recasting, room } =
   storeToRefs(casting);
 const controls = usePlaybackControls();
 const videoContainer = ref<HTMLElement | null>(null);
-let layoutObserver: ResizeObserver | undefined;
-let layoutFrame = 0;
-
-function fitVideo() {
-  cancelAnimationFrame(layoutFrame);
-  layoutFrame = requestAnimationFrame(() => {
-    const slot = videoContainer.value;
-    const page = slot?.closest<HTMLElement>(".page-content");
-    const workspace = page?.closest<HTMLElement>(".workspace");
-    if (!slot || !page || !workspace) return;
-    // 只扣除视频上方内容；下方控件保留纵向排列，由用户滚动查看。
-    // 相对页面计算偏移，滚动时不会反复改变视频尺寸。
-    const videoTop =
-      slot.getBoundingClientRect().top - page.getBoundingClientRect().top;
-    const available = Math.max(
-      1,
-      Math.floor(workspace.clientHeight - videoTop - 16),
-    );
-    const value = `${available}px`;
-    if (slot.style.getPropertyValue("--local-video-max-height") !== value)
-      slot.style.setProperty("--local-video-max-height", value);
-  });
-}
-function observeVideoLayout() {
-  layoutObserver?.disconnect();
-  const page = videoContainer.value?.closest<HTMLElement>(".page-content");
-  const workspace = page?.closest<HTMLElement>(".workspace");
-  if (page && workspace) {
-    layoutObserver = new ResizeObserver(fitVideo);
-    layoutObserver.observe(page);
-    layoutObserver.observe(workspace);
-  }
-  fitVideo();
-}
-function stopObservingVideoLayout() {
-  layoutObserver?.disconnect();
-  cancelAnimationFrame(layoutFrame);
-}
-onMounted(() => {
-  if (props.active) observeVideoLayout();
-});
-watch(
-  () => props.active,
-  (active) => (active ? observeVideoLayout() : stopObservingVideoLayout()),
-  { flush: "post" },
+useVideoLayout(
+  videoContainer,
+  toRef(props, "viewport"),
+  toRef(props, "content"),
+  toRef(props, "active"),
 );
-onBeforeUnmount(stopObservingVideoLayout);
 </script>
 
 <template>
