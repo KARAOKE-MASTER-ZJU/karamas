@@ -1,6 +1,6 @@
 use crate::{
     error::{CommandError, CommandResult},
-    models::{PlaybackState, RecastResult},
+    models::{PlaybackQuality, PlaybackState, RecastResult},
     state::current_engine,
 };
 use std::sync::Arc;
@@ -26,6 +26,7 @@ pub async fn poll_playback() -> CommandResult<Option<PlaybackState>> {
         queued_count: playback.queued_count,
         sung_count: playback.sung_count,
         quality_qn: playback.quality_qn,
+        quality_format: playback.quality_format,
         danmaku: playback.danmaku,
         capabilities: playback.capabilities.into(),
     };
@@ -124,10 +125,18 @@ pub async fn set_danmaku(enabled: bool) -> CommandResult<bool> {
 
 /// 校验协议清晰度数值后调用核心库。
 #[tauri::command]
-pub async fn set_quality(qn: u32) -> CommandResult<u32> {
+pub async fn set_quality(
+    qn: u32,
+    format: Option<karamas_core::cast::MediaFormat>,
+) -> CommandResult<PlaybackQuality> {
     let quality = karamas_core::cast::Quality::from_qn(qn)
         .ok_or_else(|| CommandError::new("INVALID_ARGUMENT", "不支持的清晰度"))?;
-    Ok(karamas_core::set_quality_core(quality).await?.as_qn())
+    let (quality, format) =
+        karamas_core::set_media_quality_core(quality, format.unwrap_or_default()).await?;
+    Ok(PlaybackQuality {
+        qn: quality.as_qn(),
+        format,
+    })
 }
 
 /// 查询指定 B站视频分 P 的清晰度列表。

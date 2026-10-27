@@ -20,6 +20,11 @@ export type CastDevice =
   | (DlnaDevice & { kind: "dlna" })
   | (BilibiliDevice & { kind: "bilibili" })
   | { kind: "local"; name: string };
+export type MediaFormat = "auto" | "mp4" | "dash";
+export interface PlaybackQuality {
+  qn: number;
+  format: MediaFormat;
+}
 export interface PlaybackState {
   songId: string | null;
   songUrl: string | null;
@@ -32,6 +37,7 @@ export interface PlaybackState {
   queuedCount: number;
   sungCount: number;
   qualityQn: number | null;
+  qualityFormat: MediaFormat;
   danmaku: boolean | null;
   capabilities: {
     absoluteVolume: boolean;

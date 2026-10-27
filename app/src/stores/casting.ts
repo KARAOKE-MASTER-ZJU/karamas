@@ -5,7 +5,11 @@ import { useBilibiliMediaQualities } from "@/composables/useBilibiliMediaQualiti
 import { useBilibiliStore } from "@/stores/bilibili";
 import { usePreferencesStore } from "@/stores/preferences";
 import type { ConnectionConfig, RoomEntryMode } from "@/types";
-import type { CastDevice, PlaybackState } from "@/types/casting";
+import type {
+  CastDevice,
+  PlaybackQuality,
+  PlaybackState,
+} from "@/types/casting";
 import type { LocalCommand, LocalReport } from "@/types/localPlayer";
 
 export const useCastingStore = defineStore("casting", () => {
@@ -335,10 +339,13 @@ export const useCastingStore = defineStore("casting", () => {
       }
     });
   }
-  async function setQuality(qn: number) {
+  async function setQuality(selection: PlaybackQuality) {
     await control(async () => {
-      const quality = await castingApi.setQuality(qn);
-      if (playback.value) playback.value.qualityQn = quality;
+      const quality = await castingApi.setQuality(selection);
+      if (playback.value) {
+        playback.value.qualityQn = quality.qn;
+        playback.value.qualityFormat = quality.format;
+      }
     });
   }
   async function setDanmaku(enabled: boolean) {

@@ -128,9 +128,14 @@ useVideoLayout(
         :song-url="playback?.songUrl ?? null"
         :dlna-proxy-enabled="casting.dlnaProxyEnabled"
         :quality-qn="playback?.qualityQn ?? null"
+        :quality-format="playback?.qualityFormat ?? 'auto'"
+        :media-qualities="casting.mediaQualities"
+        :media-qualities-loading="casting.mediaQualitiesLoading"
+        :media-qualities-error="casting.mediaQualitiesError"
         :danmaku="playback?.danmaku ?? null"
-        :disabled="casting.sessionBusy"
+        :disabled="casting.busy"
         @quality="controls.setQuality"
+        @refresh-media-qualities="casting.refreshMediaQualities"
         @danmaku="controls.setDanmaku"
       />
     </section>

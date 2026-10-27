@@ -3,40 +3,99 @@ import { computed, toRef, useId } from "vue";
 import { ChevronDown, RefreshCw } from "@lucide/vue";
 import type { CastMode } from "@/types";
 import { useBilibiliQualities } from "@/composables/useBilibiliQualities";
+import type {
+  BilibiliMediaQuality,
+  MediaFormat,
+  PlaybackQuality,
+} from "@/types/casting";
 const props = defineProps<{
   mode: CastMode;
   songId: string | null;
   songUrl: string | null;
   dlnaProxyEnabled: boolean;
   qualityQn: number | null;
+  qualityFormat: MediaFormat;
+  mediaQualities: BilibiliMediaQuality[];
+  mediaQualitiesLoading: boolean;
+  mediaQualitiesError: string;
   danmaku: boolean | null;
   disabled: boolean;
 }>();
 const emit = defineEmits<{
-  quality: [qn: number];
+  quality: [selection: PlaybackQuality];
+  refreshMediaQualities: [];
   danmaku: [enabled: boolean];
 }>();
 const qualityId = useId();
 const danmakuId = useId();
-const { qualities, loading, error, refresh } = useBilibiliQualities(
+const {
+  qualities,
+  loading: bilibiliLoading,
+  error: bilibiliError,
+  refresh: refreshBilibili,
+} = useBilibiliQualities(
   toRef(props, "mode"),
   toRef(props, "songId"),
   toRef(props, "songUrl"),
 );
-const dlnaQualities = [
-  { qn: 64, label: "720P" },
-  { qn: 80, label: "1080P (Beta)" },
-];
-const options = computed(() =>
-  props.mode !== "bilibili"
-    ? dlnaQualities.filter(
-        ({ qn }) =>
-          qn === 64 || props.mode === "local" || props.dlnaProxyEnabled,
-      )
-    : qualities.value,
+interface QualityOption extends PlaybackQuality {
+  id: string;
+  label: string;
+}
+const canMux = computed(() => props.mode === "local" || props.dlnaProxyEnabled);
+const options = computed<QualityOption[]>(() => {
+  if (props.mode === "bilibili")
+    return qualities.value.map((quality) => ({
+      ...quality,
+      format: "auto",
+      id: `auto:${quality.qn}`,
+    }));
+  const result: QualityOption[] = [];
+  for (const quality of [...props.mediaQualities].sort((a, b) => a.qn - b.qn)) {
+    const label = quality.label.replace(/\s+/g, "");
+    if (quality.directMp4 === true)
+      result.push({
+        qn: quality.qn,
+        format: "mp4",
+        id: `mp4:${quality.qn}`,
+        label,
+      });
+    if (quality.dash && canMux.value)
+      result.push({
+        qn: quality.qn,
+        format: "dash",
+        id: `dash:${quality.qn}`,
+        label: `*${label}`,
+      });
+  }
+  // YouTube 继续使用已有的双轨取源能力。
+  if (
+    !result.length &&
+    canMux.value &&
+    /^https?:\/\/(?:www\.|m\.)?(?:youtube\.com|youtu\.be)\//.test(
+      props.songUrl ?? "",
+    )
+  )
+    return [
+      { qn: 64, format: "dash", id: "dash:64", label: "*720P准高清" },
+      { qn: 80, format: "dash", id: "dash:80", label: "*1080P高清" },
+    ];
+  return result;
+});
+const loading = computed(() =>
+  props.mode === "bilibili"
+    ? bilibiliLoading.value
+    : props.mediaQualitiesLoading,
 );
-const selectedQuality = computed(() =>
-  options.value.some(({ qn }) => qn === props.qualityQn) ? props.qualityQn : "",
+const error = computed(() =>
+  props.mode === "bilibili" ? bilibiliError.value : props.mediaQualitiesError,
+);
+const selectedQuality = computed(
+  () =>
+    options.value.find(
+      ({ qn, format }) =>
+        qn === props.qualityQn && format === props.qualityFormat,
+    )?.id ?? "",
 );
 const placeholder = computed(() => {
   if (loading.value) return "正在加载…";
@@ -45,7 +104,14 @@ const placeholder = computed(() => {
   return props.qualityQn === null ? "—" : "请选择清晰度";
 });
 function setQuality(event: Event) {
-  emit("quality", Number((event.target as HTMLSelectElement).value));
+  const option = options.value.find(
+    ({ id }) => id === (event.target as HTMLSelectElement).value,
+  );
+  if (option) emit("quality", { qn: option.qn, format: option.format });
+}
+function refresh() {
+  if (props.mode === "bilibili") void refreshBilibili();
+  else emit("refreshMediaQualities");
 }
 </script>
 
@@ -65,14 +131,14 @@ function setQuality(event: Event) {
           <option v-if="selectedQuality === ''" value="" disabled>
             {{ placeholder }}
           </option>
-          <option v-for="option in options" :key="option.qn" :value="option.qn">
+          <option v-for="option in options" :key="option.id" :value="option.id">
             {{ option.label }}
           </option>
         </select>
         <ChevronDown :size="16" aria-hidden="true" />
       </div>
     </div>
-    <div v-if="mode === 'bilibili' && error" class="quality-error">
+    <div v-if="error" class="quality-error">
       <p class="field-error" role="alert">{{ error }}</p>
       <button
         type="button"

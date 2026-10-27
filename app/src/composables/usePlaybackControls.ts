@@ -1,6 +1,7 @@
 import { useCastingStore } from "@/stores/casting";
 import { castingApi, errorMessage } from "@/services/casting";
 import { useOperationNotice } from "@/composables/useOperationNotice";
+import type { PlaybackQuality } from "@/types/casting";
 
 export function usePlaybackControls() {
   const casting = useCastingStore();
@@ -38,7 +39,8 @@ export function usePlaybackControls() {
     changeVolume: (increase: boolean) =>
       run(() => casting.changeVolume(increase)),
     setVolume: (volume: number) => run(() => casting.setVolume(volume)),
-    setQuality: (qn: number) => run(() => casting.setQuality(qn)),
+    setQuality: (selection: PlaybackQuality) =>
+      run(() => casting.setQuality(selection)),
     setDanmaku: (enabled: boolean) => run(() => casting.setDanmaku(enabled)),
   };
 }
