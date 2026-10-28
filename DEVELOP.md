@@ -82,6 +82,16 @@ CI 配置见 [GitHub Actions 工作流](.github/workflows/ci.yml)。
 
 四个 ABI 共用以下配置。
 
+首次发布时生成 RSA 2048 位签名密钥，存入 JKS keystore；已发布的应用继续使用原有 keystore。
+
+```bash
+mkdir -p ~/.android
+keytool -genkeypair -keystore ~/.android/karamas-release.jks -storetype JKS \
+  -alias karamas -keyalg RSA -keysize 2048 -validity 10000
+```
+
+按提示设置密码和证书信息，`ANDROID_KEY_ALIAS` 填 `karamas`。macOS 可用 `base64 < ~/.android/karamas-release.jks | tr -d '\n' | pbcopy` 复制编码后的 keystore。
+
 | Secret                      | 填写内容                         |
 | --------------------------- | -------------------------------- |
 | `ANDROID_KEYSTORE_BASE64`   | 发布 keystore 文件的 Base64 内容 |
@@ -107,6 +117,17 @@ CI 配置见 [GitHub Actions 工作流](.github/workflows/ci.yml)。
 `GITHUB_TOKEN` 由 GitHub Actions 自动提供。
 
 ### 桌面自动更新
+
+使用 Tauri signer 生成的 Minisign（Ed25519）密钥对，配置值填写其输出的 Base64 编码公钥和私钥完整内容。
+
+在项目根目录执行，按提示设置私钥密码：
+
+```bash
+mkdir -p ~/.tauri
+pnpm tauri signer generate -w ~/.tauri/karamas.key
+```
+
+公钥取 `karamas.key.pub`，私钥取 `karamas.key`，无需再次 Base64 编码。macOS 可用 `pbcopy < ~/.tauri/karamas.key.pub` 复制公钥，去掉 `.pub` 则复制私钥。后续版本继续使用同一对密钥。
 
 | 名称                                 | 用途                                                      |
 | ------------------------------------ | --------------------------------------------------------- |
