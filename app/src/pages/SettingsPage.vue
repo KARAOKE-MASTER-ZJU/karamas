@@ -141,12 +141,9 @@ async function logout() {
         :disabled="casting.busy"
         @change="updateDlnaProxy"
       />
-    </section>
-    <section class="content-section" aria-labelledby="experimental-title">
-      <h2 id="experimental-title">实验性功能</h2>
       <SettingSwitch
-        label="HLS 播放"
-        description="允许 DLNA 使用 HLS 播放音视频分轨源。开启反向代理后由本机代理媒体，否则由设备直接下载。需要接收端支持，部分设备可能无法播放或定位。下次切歌或重新投屏生效。"
+        label="HLS 播放（实验性）"
+        description="允许 DLNA 使用 HLS 播放音视频分轨源。需要接收端支持，部分设备可能无法播放或定位。下次切歌或重新投屏生效。"
         :checked="casting.dlnaHlsDirectEnabled"
         :busy="casting.changingDlnaProxy"
         :disabled="casting.busy"
