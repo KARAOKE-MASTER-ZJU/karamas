@@ -18,7 +18,9 @@ export function useBilibiliMediaQualities(songUrl: Ref<string | null>) {
     // 忽略 YouTube 和外部媒体；完整的视频和分 P 校验仍由核心库负责。
     if (
       !url ||
-      !/^(BV[0-9A-Za-z]{10}(?:-page\d+)?$|bilibili:\/\/video\/BV|https?:\/\/(?:www\.|m\.)?bilibili\.com\/video\/BV)/.test(url)
+      !/^(BV[0-9A-Za-z]{10}(?:-page\d+)?$|bilibili:\/\/video\/BV|https?:\/\/(?:www\.|m\.)?bilibili\.com\/video\/BV)/.test(
+        url,
+      )
     )
       return;
     loading.value = true;

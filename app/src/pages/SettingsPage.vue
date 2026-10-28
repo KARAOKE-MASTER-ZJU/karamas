@@ -57,7 +57,8 @@ async function updateDlnaProxy() {
 async function updateDlnaHlsDirect() {
   try {
     if (
-      (await casting.setDlnaHlsDirectEnabled(!casting.dlnaHlsDirectEnabled)) === false
+      (await casting.setDlnaHlsDirectEnabled(!casting.dlnaHlsDirectEnabled)) ===
+      false
     )
       notify("HLS 直链播放设置已生效，但无法保存本机配置。", "warning");
   } catch (error) {

@@ -44,7 +44,10 @@ interface QualityOption extends PlaybackQuality {
   label: string;
 }
 const canMux = computed(
-  () => props.mode === "local" || props.dlnaProxyEnabled || props.dlnaHlsDirectEnabled,
+  () =>
+    props.mode === "local" ||
+    props.dlnaProxyEnabled ||
+    props.dlnaHlsDirectEnabled,
 );
 const options = computed<QualityOption[]>(() => {
   if (props.mode === "bilibili")

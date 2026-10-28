@@ -54,7 +54,9 @@ export const useCastingStore = defineStore("casting", () => {
     syncLocalState();
   }
   const dlnaProxyEnabled = ref(preferences.preferences.dlnaProxyEnabled);
-  const dlnaHlsDirectEnabled = ref(preferences.preferences.dlnaHlsDirectEnabled);
+  const dlnaHlsDirectEnabled = ref(
+    preferences.preferences.dlnaHlsDirectEnabled,
+  );
   const changingDlnaProxy = ref(false);
   const room = ref<ConnectionConfig | null>(null);
   const selectedDevice = ref<CastDevice | null>(null);
