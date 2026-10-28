@@ -117,21 +117,28 @@ pub enum MediaFormat {
     Hls,
 }
 
-/// 只考虑不高于目标的清晰度点，同距时优先保持同一清晰度。
+/// 原模式优先，没有候选时按 MP4、DASH、HLS 的顺序选择其他模式。
+/// 每种模式都优先选择不高于目标的最高档，只有更高档时选择其中最低档。
 pub fn select_media_quality(
     preferred: (Quality, MediaFormat),
     available: impl IntoIterator<Item = (Quality, MediaFormat)>,
 ) -> Option<(Quality, MediaFormat)> {
-    available
-        .into_iter()
-        .filter(|point| point.0.as_qn() <= preferred.0.as_qn())
-        .min_by_key(|point| {
-            let delta = u64::from(preferred.0.as_qn() - point.0.as_qn());
-            (
-                delta * delta + u64::from(point.1 != preferred.1),
-                point.0 != preferred.0,
-            )
-        })
+    available.into_iter().min_by_key(|point| {
+        let mode_priority = if point.1 == preferred.1 {
+            0
+        } else {
+            match point.1 {
+                MediaFormat::Mp4 => 1,
+                MediaFormat::Dash => 2,
+                MediaFormat::Hls => 3,
+            }
+        };
+        (
+            mode_priority,
+            point.0.as_qn() > preferred.0.as_qn(),
+            point.0.as_qn().abs_diff(preferred.0.as_qn()),
+        )
+    })
 }
 
 #[derive(Debug)]

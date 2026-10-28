@@ -1,5 +1,5 @@
 use super::{
-    BilibiliMedia,
+    BilibiliMedia, BilibiliMediaQuality,
     media_qualities::{parse_media_qualities, playback_session, request_playurl},
 };
 use crate::cast::bilibili::BilibiliSession;
@@ -18,7 +18,7 @@ pub(super) async fn resolve(
     cid: &str,
     qn: u32,
     format: MediaFormat,
-    allow_mix: bool,
+    formats: &[MediaFormat],
 ) -> Result<ResolvedBilibiliMedia, String> {
     let preferred = (Quality::from_qn(qn).ok_or("不支持的清晰度")?, format);
     let session = playback_session();
@@ -39,35 +39,25 @@ pub(super) async fn resolve(
         (Err(dash), Err(mp4)) => return Err(format!("MP4：{mp4}；DASH：{dash}")),
     };
     let qualities = parse_media_qualities(base, mp4_result.as_ref().map_err(Clone::clone))?;
-    let mut points = Vec::new();
-    for quality in qualities {
-        let Some(qn) = Quality::from_qn(quality.qn) else {
-            continue;
-        };
-        if quality.direct_mp4 == Some(true) {
-            points.push((qn, MediaFormat::Mp4));
-        }
-        if allow_mix && quality.dash {
-            points.push((qn, MediaFormat::Dash));
-        }
-    }
+    let points = available_points(&qualities, dash_result.as_ref().ok(), formats);
     let selected = select_media_quality(preferred, points).ok_or_else(|| {
         format!(
-            "没有不高于 {} 的可用{}清晰度",
-            preferred.0.label(),
-            if allow_mix { "" } else { "MP4 " }
+            "没有符合模式和清晰度要求的媒体，目标为 {}",
+            preferred.0.label()
         )
     })?;
     if selected != preferred {
         log::info!(target: "DLNA1080", "选档回退: bvid={}, 目标=({}, {:?}), 本首=({}, {:?})", bvid,
             preferred.0.as_qn(), preferred.1, selected.0.as_qn(), selected.1);
     }
-    let resolved = if selected.1 == MediaFormat::Dash {
-        parse_dash(
+    let resolved = if selected.1 != MediaFormat::Mp4 {
+        let mut resolved = parse_dash(
             bvid,
             dash_result.as_ref().map_err(Clone::clone)?,
             selected.0.as_qn(),
-        )?
+        )?;
+        resolved.format = selected.1;
+        resolved
     } else {
         let current = mp4_result.as_ref().map_err(Clone::clone)?;
         if current["data"]["quality"].as_u64() == Some(selected.0.as_qn() as u64) {
@@ -84,6 +74,38 @@ pub(super) async fn resolve(
         return Err("B站取源返回的清晰度已变化，请重试".into());
     }
     Ok(resolved)
+}
+
+fn available_points(
+    qualities: &[BilibiliMediaQuality],
+    dash_json: Option<&Value>,
+    formats: &[MediaFormat],
+) -> Vec<(Quality, MediaFormat)> {
+    let mut points = Vec::new();
+    for quality in qualities {
+        let Some(qn) = Quality::from_qn(quality.qn) else {
+            continue;
+        };
+        if formats.contains(&MediaFormat::Mp4) && quality.direct_mp4 == Some(true) {
+            points.push((qn, MediaFormat::Mp4));
+        }
+        if quality.dash {
+            if formats.contains(&MediaFormat::Dash) {
+                points.push((qn, MediaFormat::Dash));
+            }
+            if formats.contains(&MediaFormat::Hls)
+                && dash_json.is_some_and(|json| {
+                    dash_tracks(json, qn.as_qn())
+                        .ok()
+                        .and_then(|(video, audio)| hls_track(video).zip(hls_track(audio)))
+                        .is_some()
+                })
+            {
+                points.push((qn, MediaFormat::Hls));
+            }
+        }
+    }
+    points
 }
 
 async fn request_mp4(
@@ -137,6 +159,26 @@ fn parse_mp4(bvid: &str, json: &Value) -> Result<ResolvedBilibiliMedia, String> 
 
 fn parse_dash(bvid: &str, json: &Value, qn: u32) -> Result<ResolvedBilibiliMedia, String> {
     let quality = Quality::from_qn(qn).ok_or("不支持的清晰度")?;
+    let (video, audio) = dash_tracks(json, qn)?;
+    log::info!(target: "DLNA1080", "选中 DASH 轨道: bvid={}, video_id={}, codec={}, {}x{}, audio_id={}",
+        bvid, qn, video["codecs"].as_str().unwrap_or("unknown"),
+        video["width"].as_u64().unwrap_or(0), video["height"].as_u64().unwrap_or(0),
+        audio["id"].as_u64().unwrap_or(0));
+    Ok(ResolvedBilibiliMedia {
+        media: BilibiliMedia::Dash {
+            video_url: track_url(video).unwrap(),
+            audio_url: track_url(audio).unwrap(),
+            width: video["width"].as_u64().unwrap_or(0) as u32,
+            height: video["height"].as_u64().unwrap_or(0) as u32,
+        },
+        quality,
+        format: MediaFormat::Dash,
+        hls_tracks: hls_track(video).zip(hls_track(audio)),
+    })
+}
+
+fn dash_tracks(json: &Value, qn: u32) -> Result<(&Value, &Value), String> {
+    let quality = Quality::from_qn(qn).ok_or("不支持的清晰度")?;
     let data = &json["data"]["dash"];
     let videos = data["video"].as_array().ok_or("B站未返回 DASH 视频轨")?;
     let audios = data["audio"].as_array().ok_or("B站未返回 DASH 音频轨")?;
@@ -158,21 +200,7 @@ fn parse_dash(bvid: &str, json: &Value, qn: u32) -> Result<ResolvedBilibiliMedia
         .filter(|audio| track_url(audio).is_some())
         .max_by_key(|audio| audio["bandwidth"].as_u64().unwrap_or(0))
         .ok_or("B站未返回有效的 DASH 音频轨")?;
-    log::info!(target: "DLNA1080", "选中 DASH 轨道: bvid={}, video_id={}, codec={}, {}x{}, audio_id={}",
-        bvid, qn, video["codecs"].as_str().unwrap_or("unknown"),
-        video["width"].as_u64().unwrap_or(0), video["height"].as_u64().unwrap_or(0),
-        audio["id"].as_u64().unwrap_or(0));
-    Ok(ResolvedBilibiliMedia {
-        media: BilibiliMedia::Dash {
-            video_url: track_url(video).unwrap(),
-            audio_url: track_url(audio).unwrap(),
-            width: video["width"].as_u64().unwrap_or(0) as u32,
-            height: video["height"].as_u64().unwrap_or(0) as u32,
-        },
-        quality,
-        format: MediaFormat::Dash,
-        hls_tracks: hls_track(video).zip(hls_track(audio)),
-    })
+    Ok((video, audio))
 }
 
 fn hls_track(track: &Value) -> Option<crate::media::hls::Track> {

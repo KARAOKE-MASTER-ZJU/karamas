@@ -5,7 +5,7 @@ use crate::{
     media::cache::SongCache,
     media::mp4::dash,
     media::mp4::indexed::VirtualMp4,
-    sources::bilibili::{BilibiliMedia, get_bilibili_media_with_format, parse_bilibili_video},
+    sources::bilibili::{BilibiliMedia, get_bilibili_media_with_formats, parse_bilibili_video},
 };
 use futures_util::StreamExt;
 use std::{
@@ -66,6 +66,7 @@ pub struct MediaSession {
     pub song: String,
     pub quality: Quality,
     pub format: MediaFormat,
+    allowed_formats: Vec<MediaFormat>,
     hls_direct: bool,
     resolved_quality: Mutex<Option<(Quality, MediaFormat)>>,
     stopped: watch::Sender<bool>,
@@ -82,7 +83,7 @@ impl MediaSession {
     /// 生成包含当前会话代次的媒体路径。
     pub fn path(&self) -> String {
         let format = self.resolved_quality().1;
-        if format == MediaFormat::Hls || (self.hls_direct && format == MediaFormat::Dash) {
+        if format == MediaFormat::Hls {
             format!("__ktv_media/{}/master.m3u8", self.generation)
         } else {
             format!("__ktv_media/{}.mp4", self.generation)
@@ -195,26 +196,16 @@ impl MediaSession {
 
     /// 解析歌曲媒体源，按需准备可定位的 DASH 媒体。
     async fn resolve(&self, client: &reqwest::Client) -> io::Result<SessionMedia> {
-        // HLS 使用同一组 DASH 轨道，只改变交付给播放器的封装方式。
-        let source_format = if self.format == MediaFormat::Hls {
-            MediaFormat::Dash
-        } else {
-            self.format
-        };
-        let output_format = |format| {
-            if self.format == MediaFormat::Hls && format == MediaFormat::Dash {
-                MediaFormat::Hls
-            } else {
-                format
-            }
-        };
         if crate::sources::youtube::is_youtube_url(&self.song) {
             let selected = select_media_quality(
-                (self.quality, source_format),
-                [
-                    (Quality::P720, MediaFormat::Dash),
-                    (Quality::P1080, MediaFormat::Dash),
-                ],
+                (self.quality, self.format),
+                self.allowed_formats
+                    .iter()
+                    .copied()
+                    .filter(|format| *format != MediaFormat::Mp4)
+                    .flat_map(|format| {
+                        [Quality::P720, Quality::P1080].map(|quality| (quality, format))
+                    }),
             )
             .ok_or_else(|| io::Error::other("YouTube 没有符合目标的可选清晰度"))?;
             let max_height = match selected.0 {
@@ -229,9 +220,10 @@ impl MediaSession {
                     &tracks.video_url,
                     &tracks.audio_url,
                     tracks.hls_tracks.as_ref(),
+                    selected.1,
                 )
                 .await?;
-            *self.resolved_quality.lock().unwrap() = Some((selected.0, output_format(selected.1)));
+            *self.resolved_quality.lock().unwrap() = Some(selected);
             return Ok(media);
         }
         let bilibili = parse_bilibili_video(&self.song);
@@ -242,12 +234,12 @@ impl MediaSession {
             return Ok(SessionMedia::Direct(self.song.clone()));
         }
         let (bvid, page) = bilibili.map_err(io::Error::other)?;
-        let resolved = get_bilibili_media_with_format(
+        let resolved = get_bilibili_media_with_formats(
             &bvid,
             Some(page),
             self.quality.as_qn(),
-            source_format,
-            true,
+            self.format,
+            &self.allowed_formats,
         )
         .await
         .map_err(io::Error::other)?;
@@ -258,12 +250,17 @@ impl MediaSession {
                 audio_url,
                 ..
             } => {
-                self.prepare_dash(client, &video_url, &audio_url, resolved.hls_tracks.as_ref())
-                    .await?
+                self.prepare_dash(
+                    client,
+                    &video_url,
+                    &audio_url,
+                    resolved.hls_tracks.as_ref(),
+                    resolved.format,
+                )
+                .await?
             }
         };
-        *self.resolved_quality.lock().unwrap() =
-            Some((resolved.quality, output_format(resolved.format)));
+        *self.resolved_quality.lock().unwrap() = Some((resolved.quality, resolved.format));
         Ok(media)
     }
 
@@ -274,8 +271,9 @@ impl MediaSession {
         video_url: &str,
         audio_url: &str,
         hls_tracks: Option<&(crate::media::hls::Track, crate::media::hls::Track)>,
+        format: MediaFormat,
     ) -> io::Result<SessionMedia> {
-        if self.hls_direct || self.format == MediaFormat::Hls {
+        if format == MediaFormat::Hls {
             let (video, audio) =
                 hls_tracks.ok_or_else(|| io::Error::other("媒体源缺少 HLS 所需的分段信息"))?;
             return Ok(SessionMedia::Hls(
@@ -322,7 +320,23 @@ impl MediaSessions {
         quality: Quality,
         format: MediaFormat,
     ) -> Arc<MediaSession> {
-        self.activate(song, quality, format, false)
+        self.activate_with_formats(
+            song,
+            quality,
+            format,
+            &[MediaFormat::Mp4, MediaFormat::Dash, MediaFormat::Hls],
+        )
+    }
+
+    /// 限定当前播放端允许的模式，避免回退到已关闭的模式。
+    pub(crate) fn activate_with_formats(
+        &self,
+        song: &str,
+        quality: Quality,
+        format: MediaFormat,
+        allowed_formats: &[MediaFormat],
+    ) -> Arc<MediaSession> {
+        self.activate(song, quality, format, allowed_formats, false)
     }
 
     pub fn activate_hls_with_format(
@@ -331,7 +345,13 @@ impl MediaSessions {
         quality: Quality,
         format: MediaFormat,
     ) -> Arc<MediaSession> {
-        self.activate(song, quality, format, true)
+        self.activate(
+            song,
+            quality,
+            format,
+            &[MediaFormat::Mp4, MediaFormat::Hls],
+            true,
+        )
     }
 
     fn activate(
@@ -339,6 +359,7 @@ impl MediaSessions {
         song: &str,
         quality: Quality,
         format: MediaFormat,
+        allowed_formats: &[MediaFormat],
         hls_direct: bool,
     ) -> Arc<MediaSession> {
         let session = Arc::new(MediaSession {
@@ -346,6 +367,7 @@ impl MediaSessions {
             song: song.into(),
             quality,
             format,
+            allowed_formats: allowed_formats.to_vec(),
             hls_direct,
             resolved_quality: Mutex::new(None),
             stopped: watch::channel(false).0,

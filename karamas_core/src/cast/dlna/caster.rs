@@ -64,12 +64,7 @@ impl DlnaCaster {
         let direct = crate::cast::dlna::settings::get_dlna_direct();
         let hls_enabled = crate::cast::dlna::settings::get_dlna_hls_direct();
         let hls_direct = direct && hls_enabled;
-        // 保留 HLS 偏好；开关关闭时代理回退到 DASH，直连仅使用单文件 MP4。
-        let format = if preferred.1 == MediaFormat::Hls && (direct || !hls_enabled) {
-            MediaFormat::Dash
-        } else {
-            preferred.1
-        };
+        let format = preferred.1;
         let sequence = self
             .seek_sequence
             .load(std::sync::atomic::Ordering::Relaxed);
@@ -80,6 +75,13 @@ impl DlnaCaster {
             .map(|sessions| {
                 if hls_direct {
                     sessions.activate_hls_with_format(song, preferred.0, format)
+                } else if !hls_enabled {
+                    sessions.activate_with_formats(
+                        song,
+                        preferred.0,
+                        format,
+                        &[MediaFormat::Mp4, MediaFormat::Dash],
+                    )
                 } else {
                     sessions.activate_with_format(song, preferred.0, format)
                 }

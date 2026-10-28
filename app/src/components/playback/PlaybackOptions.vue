@@ -53,18 +53,10 @@ const splitFormats = computed<MediaFormat[]>(() => {
   if (props.mode === "local") return ["hls", "dash"];
   if (props.mode === "dlna" && props.dlnaProxyEnabled)
     return props.dlnaHlsDirectEnabled ? ["hls", "dash"] : ["dash"];
-  return canMux.value ? ["dash"] : [];
+  return canMux.value ? ["hls"] : [];
 });
-function formatName(format: MediaFormat) {
-  return format === "dash" &&
-    props.mode === "dlna" &&
-    !props.dlnaProxyEnabled &&
-    props.dlnaHlsDirectEnabled
-    ? "HLS"
-    : format.toUpperCase();
-}
 function formatLabel(format: MediaFormat, label: string) {
-  return `[${formatName(format)}] ${label}`;
+  return `[${format.toUpperCase()}] ${label}`;
 }
 const options = computed<QualityOption[]>(() => {
   if (props.mode === "bilibili")
@@ -118,7 +110,7 @@ const optionGroups = computed(() => {
   return formats
     .map((format) => ({
       format,
-      label: formatName(format),
+      label: format.toUpperCase(),
       options: options.value
         .filter((option) => option.format === format)
         .sort((a, b) => a.qn - b.qn),

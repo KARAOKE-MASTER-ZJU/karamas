@@ -345,11 +345,30 @@ pub async fn get_bilibili_media_with_format(
     format: crate::cast::MediaFormat,
     allow_mix: bool,
 ) -> Result<ResolvedBilibiliMedia, String> {
+    let formats: &[crate::cast::MediaFormat] = if allow_mix {
+        &[
+            crate::cast::MediaFormat::Mp4,
+            crate::cast::MediaFormat::Dash,
+        ]
+    } else {
+        &[crate::cast::MediaFormat::Mp4]
+    };
+    get_bilibili_media_with_formats(bv_id, page, qn, format, formats).await
+}
+
+/// 按当前播放端允许的模式选档，HLS 与 DASH 分别参与回退。
+pub(crate) async fn get_bilibili_media_with_formats(
+    bv_id: &str,
+    page: Option<u32>,
+    qn: u32,
+    format: crate::cast::MediaFormat,
+    formats: &[crate::cast::MediaFormat],
+) -> Result<ResolvedBilibiliMedia, String> {
     let started = std::time::Instant::now();
     let (cid, _) = get_page_info(bv_id, page.unwrap_or(0)).await?;
     let cid_ms = started.elapsed().as_millis();
     let playurl_started = std::time::Instant::now();
-    let result = playback_media::resolve(bv_id, &cid.to_string(), qn, format, allow_mix).await;
+    let result = playback_media::resolve(bv_id, &cid.to_string(), qn, format, formats).await;
     log::info!(target: "DLNA1080", "B站媒体解析完成: bvid={}, 目标=({}, {:?}), cid_ms={}, playurl_ms={}, success={}", bv_id, qn, format, cid_ms, playurl_started.elapsed().as_millis(), result.is_ok());
     result
 }
