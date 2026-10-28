@@ -1,7 +1,7 @@
 <!-- 设置页面 -->
 
 <script setup lang="ts">
-import { ChevronRight, ChevronDown, Info, ScanQrCode } from "@lucide/vue";
+import { ChevronRight, ChevronDown, ScanQrCode } from "@lucide/vue";
 import { RouterLink } from "vue-router";
 import { storeToRefs } from "pinia";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -9,7 +9,8 @@ import { useOperationNotice } from "@/composables/useOperationNotice";
 import { useBilibiliStore } from "@/stores/bilibili";
 import { useCastingStore } from "@/stores/casting";
 import { errorMessage } from "@/services/casting";
-import { onDeactivated, onMounted, onScopeDispose, ref } from "vue";
+import { ref } from "vue";
+import SettingSwitch from "@/components/base/SettingSwitch.vue";
 import type { LogLevel, Theme } from "@/types";
 import { useLogsStore } from "@/stores/logs";
 import { logLevelLabels } from "@/utils/logs";
@@ -20,12 +21,6 @@ const casting = useCastingStore();
 const loggingOut = ref(false);
 const logs = useLogsStore();
 const changingLogLevel = ref(false);
-const showProxyInfo = ref(false);
-const proxyInfo = ref<HTMLElement | null>(null);
-const proxyInfoButton = ref<HTMLButtonElement | null>(null);
-const showHlsInfo = ref(false);
-const hlsInfo = ref<HTMLElement | null>(null);
-const hlsInfoButton = ref<HTMLButtonElement | null>(null);
 const { preferences } = storeToRefs(store);
 const { notify } = useOperationNotice();
 const themes: { value: Theme; label: string }[] = [
@@ -33,34 +28,6 @@ const themes: { value: Theme; label: string }[] = [
   { value: "light", label: "浅色" },
   { value: "dark", label: "深色" },
 ];
-
-function closeInfoOutside(event: PointerEvent) {
-  if (event.target instanceof Node && !proxyInfo.value?.contains(event.target))
-    showProxyInfo.value = false;
-  if (event.target instanceof Node && !hlsInfo.value?.contains(event.target))
-    showHlsInfo.value = false;
-}
-function closeInfoOnEscape(event: KeyboardEvent) {
-  if (event.key === "Escape" && showProxyInfo.value) {
-    showProxyInfo.value = false;
-    proxyInfoButton.value?.focus();
-  } else if (event.key === "Escape" && showHlsInfo.value) {
-    showHlsInfo.value = false;
-    hlsInfoButton.value?.focus();
-  }
-}
-onMounted(() => {
-  document.addEventListener("pointerdown", closeInfoOutside);
-  document.addEventListener("keydown", closeInfoOnEscape);
-});
-onDeactivated(() => {
-  showProxyInfo.value = false;
-  showHlsInfo.value = false;
-});
-onScopeDispose(() => {
-  document.removeEventListener("pointerdown", closeInfoOutside);
-  document.removeEventListener("keydown", closeInfoOnEscape);
-});
 
 function updateTheme(theme: Theme) {
   if (!store.saveTheme(theme))
@@ -165,87 +132,25 @@ async function logout() {
     </section>
     <section class="content-section" aria-labelledby="dlna-title">
       <h2 id="dlna-title">DLNA 投屏</h2>
-      <div class="settings-row">
-        <div ref="proxyInfo" class="setting-label">
-          <span id="dlna-proxy-label">反向代理</span>
-          <button
-            ref="proxyInfoButton"
-            type="button"
-            class="icon-button info-button"
-            aria-label="反向代理说明"
-            aria-controls="dlna-proxy-info"
-            :aria-expanded="showProxyInfo"
-            @click="showProxyInfo = !showProxyInfo"
-          >
-            <Info :size="15" aria-hidden="true" />
-          </button>
-          <div
-            v-if="showProxyInfo"
-            id="dlna-proxy-info"
-            class="info-popover"
-            role="note"
-            aria-label="反向代理说明"
-          >
-            <p>
-              开启后由本机代理媒体；关闭后设备直接访问媒体源。下次切歌或点击“重新投屏”生效。
-            </p>
-          </div>
-        </div>
-        <button
-          type="button"
-          class="setting-switch"
-          role="switch"
-          aria-labelledby="dlna-proxy-label"
-          :aria-checked="casting.dlnaProxyEnabled"
-          :aria-busy="casting.changingDlnaProxy"
-          :disabled="casting.busy"
-          @click="updateDlnaProxy"
-        >
-          <span />
-        </button>
-      </div>
+      <SettingSwitch
+        label="反向代理"
+        description="开启后由本机代理媒体；关闭后设备直接访问媒体源。下次切歌或点击“重新投屏”生效。"
+        :checked="casting.dlnaProxyEnabled"
+        :busy="casting.changingDlnaProxy"
+        :disabled="casting.busy"
+        @change="updateDlnaProxy"
+      />
     </section>
     <section class="content-section" aria-labelledby="experimental-title">
       <h2 id="experimental-title">实验性功能</h2>
-      <div class="settings-row">
-        <div ref="hlsInfo" class="setting-label">
-          <span id="dlna-hls-direct-label">HLS 直链播放</span>
-          <button
-            ref="hlsInfoButton"
-            type="button"
-            class="icon-button info-button"
-            aria-label="HLS 直链播放说明"
-            aria-controls="dlna-hls-direct-info"
-            :aria-expanded="showHlsInfo"
-            @click="showHlsInfo = !showHlsInfo"
-          >
-            <Info :size="15" aria-hidden="true" />
-          </button>
-          <div
-            v-if="showHlsInfo"
-            id="dlna-hls-direct-info"
-            class="info-popover"
-            role="note"
-            aria-label="HLS 直链播放说明"
-          >
-            <p>
-              关闭反向代理时，允许通过 HLS 清单播放高清音视频分轨源，媒体由设备直接下载。需要接收端支持，部分设备可能无法播放或定位。下次切歌或重新投屏生效。
-            </p>
-          </div>
-        </div>
-        <button
-          type="button"
-          class="setting-switch"
-          role="switch"
-          aria-labelledby="dlna-hls-direct-label"
-          :aria-checked="casting.dlnaHlsDirectEnabled"
-          :aria-busy="casting.changingDlnaProxy"
-          :disabled="casting.busy"
-          @click="updateDlnaHlsDirect"
-        >
-          <span />
-        </button>
-      </div>
+      <SettingSwitch
+        label="HLS 直链播放"
+        description="关闭反向代理时，允许通过 HLS 清单播放高清音视频分轨源，媒体由设备直接下载。需要接收端支持，部分设备可能无法播放或定位。下次切歌或重新投屏生效。"
+        :checked="casting.dlnaHlsDirectEnabled"
+        :busy="casting.changingDlnaProxy"
+        :disabled="casting.busy"
+        @change="updateDlnaHlsDirect"
+      />
     </section>
     <section class="content-section" aria-labelledby="account-title">
       <h2 id="account-title">账号</h2>
@@ -311,57 +216,6 @@ async function logout() {
 }
 .settings-select {
   width: 140px;
-}
-.setting-label {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.info-button {
-  width: 28px;
-  height: 28px;
-  color: var(--muted);
-}
-.info-popover {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  z-index: 10;
-  width: min(300px, calc(100vw - 40px));
-  padding: 14px 16px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 0 6px 24px #0002;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.7;
-}
-.info-popover p + p {
-  margin-top: 8px;
-}
-.setting-switch {
-  flex-shrink: 0;
-  width: 38px;
-  height: 22px;
-  border: 0;
-  border-radius: 11px;
-  padding: 3px;
-  background: var(--input-line);
-}
-.setting-switch[aria-checked="true"] {
-  background: var(--accent);
-}
-.setting-switch span {
-  display: block;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #fff;
-}
-.setting-switch[aria-checked="true"] span {
-  transform: translateX(16px);
 }
 .about-row {
   display: flex;
