@@ -34,10 +34,7 @@ impl DlnaCaster {
             server_port,
             current_song: std::sync::Mutex::new(None),
             sessions: None,
-            media_client: reqwest::Client::builder()
-                .connect_timeout(crate::config::PROXY_CONNECT_TIMEOUT)
-                .build()
-                .expect("valid media client"),
+            media_client: crate::media::upstream::client().expect("valid media client"),
             transport: tokio::sync::Mutex::new(()),
             seek_sequence: std::sync::atomic::AtomicU64::new(0),
             loaded_generation: std::sync::atomic::AtomicU64::new(0),
@@ -393,6 +390,9 @@ impl Caster for DlnaCaster {
 
     /// 保存偏好，当前曲目按可用点选择；临时回退不覆盖偏好。
     async fn set_media_quality(&self, quality: Quality, format: MediaFormat) -> Result<(), CastError> {
+        if format == MediaFormat::Hls {
+            return Err(CastError::Device("DLNA 的 HLS 播放请使用 HLS 直链播放设置".into()));
+        }
         let previous = crate::cast::dlna::settings::get_dlna_media_quality();
         if previous == (quality, format) && self.get_quality()? == quality && self.get_media_format() == Some(format) {
             return Ok(());

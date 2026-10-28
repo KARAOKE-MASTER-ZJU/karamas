@@ -109,10 +109,7 @@ impl LocalCaster {
                 muted: false,
             }),
             control: AsyncMutex::new(()),
-            client: reqwest::Client::builder()
-                .connect_timeout(crate::config::PROXY_CONNECT_TIMEOUT)
-                .build()
-                .expect("valid media client"),
+            client: crate::media::upstream::client().expect("valid media client"),
         }
     }
 

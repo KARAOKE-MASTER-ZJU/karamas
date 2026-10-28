@@ -1,5 +1,5 @@
 use super::{SharedState, proxy_handler};
-use crate::{config::PROXY_CONNECT_TIMEOUT, error::CoreError, media::session};
+use crate::{error::CoreError, media::session};
 use actix_web::{App, HttpServer, web};
 use log::{info, warn};
 use std::{
@@ -118,9 +118,7 @@ fn start_with_binding(
         .unwrap_or_else(|| "127.0.0.1".into())
         .parse()?;
     // 媒体代理只限制连接超时，避免截断长视频的流式响应。
-    let proxy_client = reqwest::Client::builder()
-        .connect_timeout(PROXY_CONNECT_TIMEOUT)
-        .build()?;
+    let proxy_client = crate::media::upstream::client()?;
     let shared_state_clone = shared_state.clone();
     let app_factory = move || {
         App::new()

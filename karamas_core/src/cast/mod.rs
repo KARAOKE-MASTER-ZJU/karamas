@@ -114,6 +114,7 @@ pub enum MediaFormat {
     #[default]
     Mp4,
     Dash,
+    Hls,
 }
 
 /// 只考虑不高于目标的清晰度点，同距时优先保持同一清晰度。

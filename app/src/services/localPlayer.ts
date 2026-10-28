@@ -4,6 +4,9 @@ import type {
   LocalPlayerState,
   LocalPlayerCallbacks,
 } from "@/types/localPlayer";
+import type Hls from "hls.js";
+
+const PLAYER_ERROR = "local-player-error";
 
 const MEDIA_EVENTS = [
   "play",
@@ -16,34 +19,43 @@ const MEDIA_EVENTS = [
   "seeked",
   "ended",
   "error",
+  PLAYER_ERROR,
 ] as const;
 
 function waitFor(
   element: HTMLVideoElement,
-  event: string,
+  event: string | (() => Promise<void>),
   signal: AbortSignal,
 ) {
   return new Promise<void>((resolve, reject) => {
     const finish = (failure?: Error) => {
       clearTimeout(timer);
-      element.removeEventListener(event, ready);
+      if (typeof event === "string") element.removeEventListener(event, ready);
       element.removeEventListener("error", failed);
+      element.removeEventListener(PLAYER_ERROR, failed);
       signal.removeEventListener("abort", cancelled);
       if (failure) reject(failure);
       else resolve();
     };
     const ready = () => finish();
-    const failed = () =>
-      finish(new Error("视频加载失败，可能是网络或格式不受支持，请重新播放。"));
+    const failed = (event: Event) =>
+      finish(
+        event instanceof CustomEvent && event.detail instanceof Error
+          ? event.detail
+          : new Error("视频加载失败，可能是网络或格式不受支持，请重新播放。"),
+      );
     const cancelled = () => finish(new Error("播放操作已取消"));
     const timer = setTimeout(
       () => finish(new Error("视频加载超时，请重新播放。")),
       25000,
     );
-    element.addEventListener(event, ready, { once: true });
+    if (typeof event === "string")
+      element.addEventListener(event, ready, { once: true });
     element.addEventListener("error", failed, { once: true });
+    element.addEventListener(PLAYER_ERROR, failed, { once: true });
     signal.addEventListener("abort", cancelled, { once: true });
     if (signal.aborted) cancelled();
+    else if (typeof event === "function") void event().then(ready, finish);
   });
 }
 
@@ -82,10 +94,45 @@ export function createLocalPlayer(
   let disposed = false;
   let reporting = false;
   let statusQueued = false;
+  let hls: Hls | undefined;
+
+  async function loadSource(url: string, signal: AbortSignal) {
+    const isHls = new URL(url).pathname.endsWith(".m3u8");
+    if (isHls && !video.canPlayType("application/vnd.apple.mpegurl")) {
+      const { default: Hls } = await import("hls.js");
+      if (signal.aborted) return;
+      if (!Hls.isSupported())
+        throw new Error(
+          "当前播放器不支持 HLS，请选择 [DASH] 或 [MP4] 清晰度。",
+        );
+      const instance = new Hls();
+      hls = instance;
+      instance.on(Hls.Events.ERROR, (_event, data) => {
+        if (!data.fatal || hls !== instance) return;
+        instance.stopLoad();
+        video.dispatchEvent(
+          new CustomEvent(PLAYER_ERROR, {
+            detail: new Error("HLS 视频加载失败，请重新播放或切换清晰度。"),
+          }),
+        );
+      });
+      const ready = waitFor(video, "loadedmetadata", signal);
+      instance.loadSource(url);
+      instance.attachMedia(video);
+      await ready;
+    } else {
+      const ready = waitFor(video, "loadedmetadata", signal);
+      video.src = url;
+      video.load();
+      await ready;
+    }
+  }
 
   let clearingMedia: Promise<void> | undefined;
   function clearMedia(): Promise<void> {
     activePointer = null;
+    hls?.destroy();
+    hls = undefined;
     video.pause();
     // Stop 和会话清空可能连续到达，共用一次画中画退出操作。
     clearingMedia ??= (async () => {
@@ -163,14 +210,13 @@ export function createLocalPlayer(
           state.loading = true;
           element.volume = action.volume / 100;
           element.muted = action.muted;
-          const ready = waitFor(element, "loadedmetadata", signal);
-          element.src = action.url;
-          element.load();
           state.hasMedia = true;
           notifyState();
-          await ready;
+          await loadSource(action.url, signal);
+          if (signal.aborted) return;
           await seekTo(element, action.position, signal);
-          if (action.playing) await element.play();
+          if (action.playing)
+            await waitFor(element, () => element.play(), signal);
           if (signal.aborted) return;
           state.loading = false;
           break;
@@ -178,7 +224,7 @@ export function createLocalPlayer(
         case "play":
           if (!state.hasMedia)
             throw new Error("视频尚未就绪，请点击重新播放。");
-          await element.play();
+          await waitFor(element, () => element.play(), signal);
           break;
         case "pause":
           element.pause();
@@ -245,14 +291,21 @@ export function createLocalPlayer(
       state.error = "";
       notifyState();
     }
-    if (event.type === "error" && state.hasMedia && !processing) {
-      state.error = "视频播放失败，请重新播放或切换清晰度。";
+    if (
+      ["error", PLAYER_ERROR].includes(event.type) &&
+      state.hasMedia &&
+      !processing
+    ) {
+      state.error =
+        event instanceof CustomEvent && event.detail instanceof Error
+          ? event.detail.message
+          : "视频播放失败，请重新播放或切换清晰度。";
       notifyState();
     }
     void sendStatus();
   }
   async function startWithGesture() {
-    await video.play();
+    await waitFor(video, () => video.play(), abort.signal);
     state.needsGesture = false;
     state.error = "";
     notifyState();

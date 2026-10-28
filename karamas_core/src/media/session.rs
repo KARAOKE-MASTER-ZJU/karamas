@@ -81,7 +81,8 @@ impl MediaSession {
     }
     /// 生成包含当前会话代次的媒体路径。
     pub fn path(&self) -> String {
-        if self.hls_direct && self.resolved_quality().1 == MediaFormat::Dash {
+        let format = self.resolved_quality().1;
+        if format == MediaFormat::Hls || (self.hls_direct && format == MediaFormat::Dash) {
             format!("__ktv_media/{}/master.m3u8", self.generation)
         } else {
             format!("__ktv_media/{}.mp4", self.generation)
@@ -90,6 +91,16 @@ impl MediaSession {
     /// 检查当前媒体会话是否已失效。
     pub fn is_stopped(&self) -> bool {
         *self.stopped.borrow()
+    }
+
+    /// 等待会话取消，停止旧曲目的分片下载。
+    pub async fn cancelled(&self) {
+        let mut stop = self.stopped.subscribe();
+        while !*stop.borrow_and_update() {
+            if stop.changed().await.is_err() {
+                break;
+            }
+        }
     }
     /// 取消当前会话的媒体准备、预取和缓存读取。
     fn cancel(&self) {
@@ -184,9 +195,22 @@ impl MediaSession {
 
     /// 解析歌曲媒体源，按需准备可定位的 DASH 媒体。
     async fn resolve(&self, client: &reqwest::Client) -> io::Result<SessionMedia> {
+        // HLS 使用同一组 DASH 轨道，只改变交付给播放器的封装方式。
+        let source_format = if self.format == MediaFormat::Hls {
+            MediaFormat::Dash
+        } else {
+            self.format
+        };
+        let output_format = |format| {
+            if self.format == MediaFormat::Hls && format == MediaFormat::Dash {
+                MediaFormat::Hls
+            } else {
+                format
+            }
+        };
         if crate::sources::youtube::is_youtube_url(&self.song) {
             let selected = select_media_quality(
-                (self.quality, self.format),
+                (self.quality, source_format),
                 [
                     (Quality::P720, MediaFormat::Dash),
                     (Quality::P1080, MediaFormat::Dash),
@@ -207,7 +231,7 @@ impl MediaSession {
                     tracks.hls_tracks.as_ref(),
                 )
                 .await?;
-            *self.resolved_quality.lock().unwrap() = Some(selected);
+            *self.resolved_quality.lock().unwrap() = Some((selected.0, output_format(selected.1)));
             return Ok(media);
         }
         let bilibili = parse_bilibili_video(&self.song);
@@ -222,7 +246,7 @@ impl MediaSession {
             &bvid,
             Some(page),
             self.quality.as_qn(),
-            self.format,
+            source_format,
             true,
         )
         .await
@@ -238,7 +262,8 @@ impl MediaSession {
                     .await?
             }
         };
-        *self.resolved_quality.lock().unwrap() = Some((resolved.quality, resolved.format));
+        *self.resolved_quality.lock().unwrap() =
+            Some((resolved.quality, output_format(resolved.format)));
         Ok(media)
     }
 
@@ -250,11 +275,11 @@ impl MediaSession {
         audio_url: &str,
         hls_tracks: Option<&(crate::media::hls::Track, crate::media::hls::Track)>,
     ) -> io::Result<SessionMedia> {
-        if self.hls_direct {
+        if self.hls_direct || self.format == MediaFormat::Hls {
             let (video, audio) =
-                hls_tracks.ok_or_else(|| io::Error::other("媒体源缺少 HLS 直链所需的分段信息"))?;
+                hls_tracks.ok_or_else(|| io::Error::other("媒体源缺少 HLS 所需的分段信息"))?;
             return Ok(SessionMedia::Hls(
-                crate::media::hls::Playlists::prepare(client, video, audio).await?,
+                crate::media::hls::Playlists::prepare(client, video, audio, !self.hls_direct).await?,
             ));
         }
         let prepared = tokio::time::timeout(
@@ -361,7 +386,7 @@ impl Drop for MediaSessions {
 pub fn generation_from_path(path: &str) -> Option<u64> {
     let path = path.strip_prefix("__ktv_media/")?;
     if let Some((generation, name)) = path.split_once('/') {
-        matches!(name, "master.m3u8" | "video.m3u8" | "audio.m3u8")
+        matches!(name, "master.m3u8" | "video.m3u8" | "audio.m3u8" | "video.mp4" | "audio.mp4")
             .then(|| generation.parse().ok())
             .flatten()
     } else {

@@ -20,7 +20,7 @@ export type CastDevice =
   | (DlnaDevice & { kind: "dlna" })
   | (BilibiliDevice & { kind: "bilibili" })
   | { kind: "local"; name: string };
-export type MediaFormat = "mp4" | "dash";
+export type MediaFormat = "mp4" | "dash" | "hls";
 export interface PlaybackQuality {
   qn: number;
   format: MediaFormat | null;

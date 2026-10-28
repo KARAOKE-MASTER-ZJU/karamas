@@ -49,6 +49,20 @@ const canMux = computed(
     props.dlnaProxyEnabled ||
     props.dlnaHlsDirectEnabled,
 );
+const splitFormats = computed<MediaFormat[]>(() => {
+  if (props.mode === "local") return ["hls", "dash"];
+  return canMux.value ? ["dash"] : [];
+});
+function formatLabel(format: MediaFormat, label: string) {
+  const name =
+    format === "dash" &&
+    props.mode === "dlna" &&
+    !props.dlnaProxyEnabled &&
+    props.dlnaHlsDirectEnabled
+      ? "HLS"
+      : format.toUpperCase();
+  return `[${name}] ${label}`;
+}
 const options = computed<QualityOption[]>(() => {
   if (props.mode === "bilibili")
     return qualities.value.map((quality) => ({
@@ -64,15 +78,16 @@ const options = computed<QualityOption[]>(() => {
         qn: quality.qn,
         format: "mp4",
         id: `mp4:${quality.qn}`,
-        label,
+        label: formatLabel("mp4", label),
       });
-    if (quality.dash && canMux.value)
-      result.push({
-        qn: quality.qn,
-        format: "dash",
-        id: `dash:${quality.qn}`,
-        label: `*${label}`,
-      });
+    if (quality.dash)
+      for (const format of splitFormats.value)
+        result.push({
+          qn: quality.qn,
+          format,
+          id: `${format}:${quality.qn}`,
+          label: formatLabel(format, label),
+        });
   }
   // YouTube 继续使用已有的双轨取源能力。
   if (
@@ -83,9 +98,16 @@ const options = computed<QualityOption[]>(() => {
     )
   )
     return [
-      { qn: 64, format: "dash", id: "dash:64", label: "*720P准高清" },
-      { qn: 80, format: "dash", id: "dash:80", label: "*1080P高清" },
-    ];
+      { qn: 64, label: "720P准高清" },
+      { qn: 80, label: "1080P高清" },
+    ].flatMap(({ qn, label }) =>
+      splitFormats.value.map((format) => ({
+        qn,
+        format,
+        id: `${format}:${qn}`,
+        label: formatLabel(format, label),
+      })),
+    );
   return result;
 });
 const loading = computed(() =>
@@ -186,7 +208,7 @@ function refresh() {
   font-size: 14px;
 }
 .quality-select {
-  width: 168px;
+  width: 220px;
 }
 .quality-error {
   display: flex;

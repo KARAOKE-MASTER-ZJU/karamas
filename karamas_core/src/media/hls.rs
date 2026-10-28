@@ -1,4 +1,4 @@
-//! 将有 sidx 索引的 DASH 轨道描述为 HLS 清单，媒体仍由接收端直连下载。
+//! 将有 sidx 索引的 DASH 轨道描述为 HLS 清单，支持直连或通过会话代理下载。
 use futures_util::StreamExt;
 use std::{fmt::Write, io, ops::Range, time::Duration};
 
@@ -50,6 +50,7 @@ pub struct Playlists {
     video: String,
     audio: String,
     headers: String,
+    sources: Option<[String; 2]>,
 }
 
 fn invalid(message: &str) -> io::Error {
@@ -71,14 +72,27 @@ impl Playlists {
         &self.headers
     }
 
+    /// 本机播放使用固定会话路径，避免向 WebView 暴露上游地址和鉴权参数。
+    pub fn source(&self, name: &str) -> Option<&str> {
+        let sources = self.sources.as_ref()?;
+        match name {
+            "video.mp4" => Some(&sources[0]),
+            "audio.mp4" => Some(&sources[1]),
+            _ => None,
+        }
+    }
+
     pub(crate) async fn prepare(
         client: &reqwest::Client,
         video: &Track,
         audio: &Track,
+        proxy: bool,
     ) -> io::Result<Self> {
         let started = std::time::Instant::now();
-        let (video_playlist, audio_playlist) =
-            tokio::try_join!(load_playlist(client, video), load_playlist(client, audio),)?;
+        let (video_playlist, audio_playlist) = tokio::try_join!(
+            load_playlist(client, video, if proxy { "video.mp4" } else { &video.url }),
+            load_playlist(client, audio, if proxy { "audio.mp4" } else { &audio.url }),
+        )?;
         let master = format!(
             "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"audio\",DEFAULT=YES,AUTOSELECT=YES,URI=\"audio.m3u8\"\n#EXT-X-STREAM-INF:BANDWIDTH={},CODECS=\"{},{}\",AUDIO=\"audio\"\nvideo.m3u8\n",
             video.bandwidth.saturating_add(audio.bandwidth).max(1),
@@ -89,17 +103,22 @@ impl Playlists {
             .append_pair("Referer", super::upstream::referer(&video.url))
             .append_pair("User-Agent", super::upstream::user_agent(&video.url))
             .finish();
-        log::info!(target: "DLNA_HLS", "HLS 直链清单就绪: elapsed_ms={}", started.elapsed().as_millis());
+        log::info!(target: "HLS", "HLS 清单就绪: proxy={}, elapsed_ms={}", proxy, started.elapsed().as_millis());
         Ok(Self {
             master,
             video: video_playlist,
             audio: audio_playlist,
             headers,
+            sources: proxy.then(|| [video.url.clone(), audio.url.clone()]),
         })
     }
 }
 
-async fn load_playlist(client: &reqwest::Client, track: &Track) -> io::Result<String> {
+async fn load_playlist(
+    client: &reqwest::Client,
+    track: &Track,
+    media_url: &str,
+) -> io::Result<String> {
     let expected = track.index.end - track.index.start;
     let response = client
         .get(&track.url)
@@ -115,13 +134,21 @@ async fn load_playlist(client: &reqwest::Client, track: &Track) -> io::Result<St
         .await
         .map_err(|e| io::Error::other(e.without_url()))?;
     if response.status() != reqwest::StatusCode::PARTIAL_CONTENT {
-        return Err(invalid("HLS 直链源不支持分段读取"));
+        let status = response.status();
+        if !status.is_success() {
+            return Err(io::Error::other(format!(
+                "读取 HLS 索引失败：上游返回 HTTP {status}"
+            )));
+        }
+        return Err(invalid(&format!(
+            "上游未按范围返回 HLS 索引（HTTP {status}）"
+        )));
     }
     let content_range = response
         .headers()
         .get("Content-Range")
         .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| invalid("HLS 直链源缺少范围信息"))?;
+        .ok_or_else(|| invalid("HLS 媒体源缺少范围信息"))?;
     let (range, total) = content_range
         .rsplit_once('/')
         .ok_or_else(|| invalid("无效的媒体范围"))?;
@@ -154,7 +181,7 @@ async fn load_playlist(client: &reqwest::Client, track: &Track) -> io::Result<St
         .unwrap_or(1);
     let mut playlist = format!(
         "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:{target}\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-MAP:URI=\"{}\",BYTERANGE=\"{}@{}\"\n",
-        track.url,
+        media_url,
         track.initialization.end - track.initialization.start,
         track.initialization.start,
     );
@@ -164,7 +191,7 @@ async fn load_playlist(client: &reqwest::Client, track: &Track) -> io::Result<St
             "#EXTINF:{duration:.8},\n#EXT-X-BYTERANGE:{}@{}\n{}",
             range.end - range.start,
             range.start,
-            track.url
+            media_url
         )
         .unwrap();
     }
@@ -238,4 +265,101 @@ fn parse_index(data: &[u8], position: u64, total: u64) -> io::Result<Vec<(Range<
         return Err(invalid("sidx 长度不匹配"));
     }
     Ok(segments)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    // HLS 开播只读分段目录；视频变长时不能退回逐片扫描，也不能把本机路径改回上游地址。
+    #[actix_web::test]
+    async fn long_tracks_prepare_from_indexes_for_proxy_and_direct_playback() {
+        let count = 2048u32;
+        let mut index = Vec::new();
+        index.extend_from_slice(&(32 + count * 12).to_be_bytes());
+        index.extend_from_slice(b"sidx");
+        for value in [0u32, 1, 1000, 0, 0, count] {
+            index.extend_from_slice(&value.to_be_bytes());
+        }
+        for _ in 0..count {
+            for value in [100u32, 5000, 0x9000_0000] {
+                index.extend_from_slice(&value.to_be_bytes());
+            }
+        }
+        let end = 16 + index.len() as u64;
+        let total = end + u64::from(count) * 100;
+        let requests = Arc::new(AtomicUsize::new(0));
+        let seen = requests.clone();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = HttpServer::new(move || {
+            let index = index.clone();
+            let seen = seen.clone();
+            App::new().default_service(web::to(move |req: HttpRequest| {
+                let index = index.clone();
+                let seen = seen.clone();
+                async move {
+                    assert_eq!(
+                        req.headers().get("Range").unwrap().to_str().unwrap(),
+                        format!("bytes=16-{}", end - 1)
+                    );
+                    assert_eq!(
+                        req.headers().get("Referer").unwrap().to_str().unwrap(),
+                        "https://www.bilibili.com/"
+                    );
+                    seen.fetch_add(1, Ordering::Relaxed);
+                    HttpResponse::PartialContent()
+                        .insert_header(("Content-Range", format!("bytes 16-{}/{total}", end - 1)))
+                        .body(index)
+                }
+            }))
+        })
+        .workers(1)
+        .listen(listener)
+        .unwrap()
+        .run();
+        let handle = server.handle();
+        actix_web::rt::spawn(server);
+        let track = |name| {
+            Track::new(
+                format!("http://{address}/{name}?token=private"),
+                if name == "video" {
+                    "avc1.640033"
+                } else {
+                    "mp4a.40.2"
+                },
+                1000,
+                "0-15",
+                &format!("16-{}", end - 1),
+            )
+            .unwrap()
+        };
+        let (video, audio) = (track("video"), track("audio"));
+        let client = reqwest::Client::new();
+        let proxy = Playlists::prepare(&client, &video, &audio, true)
+            .await
+            .unwrap();
+        assert_eq!(requests.load(Ordering::Relaxed), 2);
+        assert_eq!(proxy.source("video.mp4"), Some(video.url.as_str()));
+        assert_eq!(proxy.source("audio.mp4"), Some(audio.url.as_str()));
+        for (name, path) in [("video.m3u8", "video.mp4"), ("audio.m3u8", "audio.mp4")] {
+            let playlist = proxy.playlist(name).unwrap();
+            assert_eq!(playlist.matches("#EXTINF:").count(), count as usize);
+            assert!(playlist.contains(&format!("URI=\"{path}\"")));
+            assert!(!playlist.contains("token=private"));
+        }
+        let direct = Playlists::prepare(&client, &video, &audio, false)
+            .await
+            .unwrap();
+        assert_eq!(requests.load(Ordering::Relaxed), 4);
+        assert!(direct.source("video.mp4").is_none());
+        assert!(direct.playlist("video.m3u8").unwrap().contains(&video.url));
+        assert!(direct.request_headers().contains("Referer="));
+        handle.stop(true).await;
+    }
 }

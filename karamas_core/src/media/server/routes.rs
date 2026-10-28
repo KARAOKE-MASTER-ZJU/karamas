@@ -6,7 +6,7 @@ use futures_util::StreamExt;
 use log::{debug, info};
 
 /// 处理媒体代理请求，提供会话媒体或转发上游响应。
-#[route("/{url:.*}", method = "GET", method = "HEAD")]
+#[route("/{url:.*}", method = "GET", method = "HEAD", method = "OPTIONS")]
 pub async fn proxy_handler(
     req: HttpRequest,
     path: web::Path<(String,)>,
@@ -24,6 +24,9 @@ pub async fn proxy_handler(
             .and_then(|generation| shared_state.media_sessions.get(generation)) else {
                 return Ok(HttpResponse::Gone().finish());
             };
+        if req.method() == actix_web::http::Method::OPTIONS {
+            return Ok(super::hls::cors(&mut HttpResponse::NoContent()).finish());
+        }
         let media = match session.prepare(client.get_ref()).await {
             Ok(media) => media,
             Err(error) if error.kind() == std::io::ErrorKind::Interrupted => return Ok(HttpResponse::Gone().finish()),
@@ -35,6 +38,9 @@ pub async fn proxy_handler(
         match media.as_ref() {
             crate::media::session::SessionMedia::Hls(playlists) => {
                 let name = origin_url.rsplit('/').next().unwrap_or_default();
+                if let Some(url) = playlists.source(name) {
+                    return super::hls::serve_track(&req, client.get_ref(), session.clone(), url).await;
+                }
                 let Some(playlist) = playlists.playlist(name) else {
                     return Ok(HttpResponse::NotFound().finish());
                 };
@@ -43,6 +49,10 @@ pub async fn proxy_handler(
                     .insert_header(("Content-Type", "application/vnd.apple.mpegurl"))
                     .insert_header(("Cache-Control", "no-store"))
                     .insert_header(("Content-Length", playlist.len().to_string()));
+                super::hls::cors(&mut response);
+                if req.method() == actix_web::http::Method::HEAD {
+                    return Ok(response.finish());
+                }
                 return Ok(response.body(playlist.to_owned()));
             }
             crate::media::session::SessionMedia::Seekable { mp4, cache } => {
@@ -54,6 +64,9 @@ pub async fn proxy_handler(
                 origin_url = url.clone();
             }
         }
+    }
+    if req.method() == actix_web::http::Method::OPTIONS {
+        return Ok(HttpResponse::MethodNotAllowed().finish());
     }
     let query_string = req.query_string();
     if !is_session_path && !query_string.is_empty() {
@@ -378,7 +391,7 @@ mod tests {
         let sessions = Arc::new(MediaSessions::default());
         let old = sessions.activate_with_format(
             "https://example.invalid/old.mp4",
-            Quality::P720, crate::cast::MediaFormat::Mp4,
+            Quality::P720, crate::cast::MediaFormat::Hls,
         );
         sessions.activate_with_format(
             "https://example.invalid/current.mp4",
@@ -390,10 +403,12 @@ mod tests {
             media_sessions: sessions,
         });
         let app = actix_web::test::init_service(App::new().app_data(state).app_data(web::Data::new(Client::new())).service(proxy_handler)).await;
-        for method in [actix_web::http::Method::GET, actix_web::http::Method::HEAD] {
-            let request = actix_web::test::TestRequest::with_uri(&format!("/{}", old.path())).method(method).to_request();
-            let response = actix_web::test::call_service(&app, request).await;
-            assert_eq!(response.status(), actix_web::http::StatusCode::GONE);
+        for path in [old.path(), format!("__ktv_media/{}.mp4", old.generation), format!("__ktv_media/{}/video.mp4", old.generation), format!("__ktv_media/{}/audio.mp4", old.generation)] {
+            for method in [actix_web::http::Method::GET, actix_web::http::Method::HEAD, actix_web::http::Method::OPTIONS] {
+                let request = actix_web::test::TestRequest::with_uri(&format!("/{path}")).method(method).to_request();
+                let response = actix_web::test::call_service(&app, request).await;
+                assert_eq!(response.status(), actix_web::http::StatusCode::GONE);
+            }
         }
     }
 
