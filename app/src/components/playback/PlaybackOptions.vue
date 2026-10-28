@@ -55,15 +55,16 @@ const splitFormats = computed<MediaFormat[]>(() => {
     return props.dlnaHlsDirectEnabled ? ["hls", "dash"] : ["dash"];
   return canMux.value ? ["dash"] : [];
 });
-function formatLabel(format: MediaFormat, label: string) {
-  const name =
-    format === "dash" &&
+function formatName(format: MediaFormat) {
+  return format === "dash" &&
     props.mode === "dlna" &&
     !props.dlnaProxyEnabled &&
     props.dlnaHlsDirectEnabled
-      ? "HLS"
-      : format.toUpperCase();
-  return `[${name}] ${label}`;
+    ? "HLS"
+    : format.toUpperCase();
+}
+function formatLabel(format: MediaFormat, label: string) {
+  return `[${formatName(format)}] ${label}`;
 }
 const options = computed<QualityOption[]>(() => {
   if (props.mode === "bilibili")
@@ -73,7 +74,7 @@ const options = computed<QualityOption[]>(() => {
       id: `bilibili:${quality.qn}`,
     }));
   const result: QualityOption[] = [];
-  for (const quality of [...props.mediaQualities].sort((a, b) => a.qn - b.qn)) {
+  for (const quality of props.mediaQualities) {
     const label = quality.label.replace(/\s+/g, "");
     if (quality.directMp4 === true)
       result.push({
@@ -111,6 +112,18 @@ const options = computed<QualityOption[]>(() => {
       })),
     );
   return result;
+});
+const optionGroups = computed(() => {
+  const formats: MediaFormat[] = ["mp4", ...splitFormats.value];
+  return formats
+    .map((format) => ({
+      format,
+      label: formatName(format),
+      options: options.value
+        .filter((option) => option.format === format)
+        .sort((a, b) => a.qn - b.qn),
+    }))
+    .filter((group) => group.options.length > 0);
 });
 const loading = computed(() =>
   props.mode === "bilibili"
@@ -161,9 +174,30 @@ function refresh() {
           <option v-if="selectedQuality === ''" value="" disabled>
             {{ placeholder }}
           </option>
-          <option v-for="option in options" :key="option.id" :value="option.id">
-            {{ option.label }}
-          </option>
+          <template v-if="mode === 'bilibili'">
+            <option
+              v-for="option in options"
+              :key="option.id"
+              :value="option.id"
+            >
+              {{ option.label }}
+            </option>
+          </template>
+          <template v-else>
+            <optgroup
+              v-for="group in optionGroups"
+              :key="group.format"
+              :label="group.label"
+            >
+              <option
+                v-for="option in group.options"
+                :key="option.id"
+                :value="option.id"
+              >
+                {{ option.label }}
+              </option>
+            </optgroup>
+          </template>
         </select>
         <ChevronDown :size="16" aria-hidden="true" />
       </div>
