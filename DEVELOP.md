@@ -52,6 +52,8 @@ Cargo 包名、Rust 库名和应用中的依赖名统一为 `karamas_core`。`ru
 
 | 命令                               | 用途                           |
 | ---------------------------------- | ------------------------------ |
+| `pnpm check:all`                   | 运行全部 lint、格式和类型检查  |
+| `pnpm fix:all`                     | 自动修复 lint 和格式           |
 | `pnpm lint`                        | 检查前端代码，警告也会导致失败 |
 | `pnpm format:check`                | 检查前端、配置和文档格式       |
 | `pnpm check`                       | TypeScript 类型检查            |
@@ -61,6 +63,8 @@ Cargo 包名、Rust 库名和应用中的依赖名统一为 `karamas_core`。`ru
 | `cargo fmt -p karamas --check`     | 检查 Tauri 应用层 Rust 格式    |
 
 `pnpm lint:fix` 和 `pnpm format` 会修改文件。前端检查和格式化的范围见 `app/eslint.config.mjs` 和 `.prettierignore`。
+
+提交前自动运行 `pnpm format:check`，提醒遗漏的格式问题。完整检查由 CI 执行，本地也可以运行 `pnpm check:all`。
 
 CI 配置见 [GitHub Actions 工作流](.github/workflows/ci.yml)。
 
