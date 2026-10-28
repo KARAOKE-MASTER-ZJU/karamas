@@ -15,7 +15,8 @@ tauri-build = { version = "2.7.4", features = [] }
 tauri = { version = "2.12.5", features = [] }
 karamas_core = { path = "../../karamas_core" }
 serde = { version = "1.0.229", features = ["derive"] }
-tokio = { version = "1.54.1", features = ["sync"] }
+serde_json = "1"
+tokio = { version = "1.54.1", features = ["sync", "fs", "io-util"] }
 log = { version = "0.4.34", features = ["std"] }
 flexi_logger = { version = "0.31.10", default-features = false }
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
@@ -25,5 +26,12 @@ tauri-plugin-opener = "2.7.2"
 tauri-plugin-dialog = "2.8.3"
 tauri-plugin-fs = "2.7.1"
 
+[target.'cfg(target_os = "android")'.dependencies]
+semver = { version = "1", features = ["serde"] }
+sha2 = "0.11.1"
+
 [target.'cfg(any(target_os = "android", target_os = "ios", target_os = "macos"))'.dependencies]
 tauri-plugin-sharekit = "0.3.1"
+
+[target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
+tauri-plugin-updater = "2.14.1"

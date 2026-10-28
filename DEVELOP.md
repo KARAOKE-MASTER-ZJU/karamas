@@ -104,7 +104,25 @@ CI 配置见 [GitHub Actions 工作流](.github/workflows/ci.yml)。
 
 ### GitHub 和其他平台
 
-`GITHUB_TOKEN` 由 GitHub Actions 自动提供。Windows 和 Linux 当前无需额外 Secrets。
+`GITHUB_TOKEN` 由 GitHub Actions 自动提供。
+
+### 桌面自动更新
+
+| 名称                                 | 用途                                                      |
+| ------------------------------------ | --------------------------------------------------------- |
+| `TAURI_UPDATER_PUBLIC_KEY`           | Repository Variable 或同名 Secret，发布构建时注入更新公钥 |
+| `TAURI_SIGNING_PRIVATE_KEY`          | Secret，Tauri 更新产物签名密钥                            |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Secret，密钥设有密码时填写                                |
+
+发布工作流通过临时配置启用更新产物，注入公钥。本地配置的公钥留空，普通开发和构建无需发布密钥。
+
+## 自动更新
+
+桌面使用 `tauri-plugin-updater`，Android 由 Rust 下载 APK、Kotlin 调用系统安装器。平台实现位于 `app/src-tauri/src/updater/`，界面状态由 `app/src/stores/updater.ts` 管理。
+
+更新地址统一读取 `plugins.updater.endpoints`：桌面默认值在 `tauri.conf.json`，Android 在 `tauri.android.conf.json` 覆盖。测试构建用 `--config <文件>` 覆盖同一字段；本地 HTTP 测试源还需在覆盖配置中设置 `plugins.updater.dangerousInsecureTransportProtocol: true`。
+
+各平台产物上传后，发布流程通过 `app/scripts/update-manifests.mjs` 生成并校验 `latest.json` 和 `android-update.json`，再公开 Release。应用只检查最新正式版，操作方式见 [README](README.md#应用更新)。
 
 ## 日志
 

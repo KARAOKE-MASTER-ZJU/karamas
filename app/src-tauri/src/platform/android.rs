@@ -4,6 +4,43 @@ use tauri::{Manager, plugin::PluginHandle};
 
 struct AndroidPlatform<R: tauri::Runtime>(PluginHandle<R>);
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateVersion {
+    version_code: u64,
+}
+
+pub async fn android_update_version<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> CommandResult<u64> {
+    let result: UpdateVersion = app
+        .state::<AndroidPlatform<R>>()
+        .0
+        .run_mobile_plugin_async("updateVersion", ())
+        .await
+        .map_err(|error| CommandError::new("ANDROID_UPDATE", error.to_string()))?;
+    Ok(result.version_code)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InstallUpdateArgs<'a> {
+    path: &'a std::path::Path,
+    version_code: u64,
+}
+
+pub async fn install_android_update<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    path: &std::path::Path,
+    version_code: u64,
+) -> CommandResult<()> {
+    app.state::<AndroidPlatform<R>>()
+        .0
+        .run_mobile_plugin_async::<()>("installUpdate", InstallUpdateArgs { path, version_code })
+        .await
+        .map_err(|error| CommandError::new("ANDROID_UPDATE", error.to_string()))
+}
+
 pub async fn move_to_background<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> CommandResult<()> {
     app.state::<AndroidPlatform<R>>()
         .0

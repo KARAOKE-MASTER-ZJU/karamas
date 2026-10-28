@@ -1,0 +1,10 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/KARAOKE-MASTER-ZJU/karamas/releases/latest/download/android-update.json"
+      ]
+    }
+  }
+}

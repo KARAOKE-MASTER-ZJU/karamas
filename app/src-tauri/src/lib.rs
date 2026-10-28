@@ -4,6 +4,7 @@ mod logging;
 mod models;
 mod platform;
 mod state;
+mod updater;
 
 use state::BridgeState;
 use tauri::Manager;
@@ -12,6 +13,9 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
+
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
 
     #[cfg(target_os = "android")]
     let builder = builder.plugin(platform::init());
@@ -25,6 +29,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             logging::initialize(app.handle().clone())?;
+            app.manage(updater::UpdateState::default());
             // 接入层只保存资源和调用协调状态，播放状态由核心库维护。
             app.manage(BridgeState::new(
                 app.path().app_data_dir()?,

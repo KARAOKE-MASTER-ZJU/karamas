@@ -35,6 +35,14 @@ class StartCastingArgs {
     ]
 )
 class CastingPlatformPlugin(private val activity: Activity) : Plugin(activity) {
+    private val updater = AppUpdater(activity)
+
+    @Command
+    fun updateVersion(invoke: Invoke) = updater.version(invoke)
+
+    @Command
+    fun installUpdate(invoke: Invoke) = updater.install(invoke)
+
     private data class PendingPermission(val alias: String, val invoke: Invoke)
 
     private val pendingPermissions = mutableListOf<PendingPermission>()

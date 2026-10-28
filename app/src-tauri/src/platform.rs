@@ -4,6 +4,8 @@ use crate::error::CommandResult;
 mod android;
 
 #[cfg(target_os = "android")]
+pub use android::{android_update_version, install_android_update};
+#[cfg(target_os = "android")]
 pub use android::{ensure_network_access, init, start_casting_service, stop_casting_service};
 
 /// Android 返回桌面时保留 Activity 和正在投屏的会话。

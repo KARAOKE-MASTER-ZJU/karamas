@@ -15,6 +15,9 @@ import { useNotificationsStore } from "@/stores/notifications";
 import { useOperationNotice } from "@/composables/useOperationNotice";
 import { useTheme } from "@/composables/useTheme";
 import { useAndroidBack } from "@/composables/useAndroidBack";
+import { useUpdaterStore } from "@/stores/updater";
+import UpdateDialog from "@/components/UpdateDialog.vue";
+import UpdateStatusButton from "@/components/UpdateStatusButton.vue";
 
 // 使用路由、偏好设置、日志和通知存储
 const route = useRoute();
@@ -22,6 +25,7 @@ const preferences = usePreferencesStore();
 const auth = useBilibiliStore();
 const casting = useCastingStore();
 const notifications = useNotificationsStore();
+const updater = useUpdaterStore();
 
 // 初始化应用主题和原生交互，读取配置失败时提示。
 const { notify } = useOperationNotice();
@@ -29,6 +33,7 @@ useTheme();
 useCastingRuntime();
 useAndroidBack();
 onMounted(() => {
+  void updater.initialize();
   if (preferences.storageWarning)
     notify("未能读取本机配置，已使用默认设置。", "warning");
 });
@@ -71,6 +76,7 @@ const pageContent = ref<HTMLElement | null>(null);
 
           <!-- 页眉操作部分: 帮助按钮 -->
           <div class="header-actions">
+            <UpdateStatusButton />
             <button
               class="icon-button"
               aria-label="使用帮助"
@@ -110,6 +116,7 @@ const pageContent = ref<HTMLElement | null>(null);
     <!-- 帮助对话框组件，根据 showHelp 状态显示 -->
     <HelpDialog v-if="showHelp" @close="showHelp = false" />
     <BilibiliLoginDialog v-if="auth.showLogin" />
+    <UpdateDialog v-if="updater.showDialog" />
   </div>
 </template>
 

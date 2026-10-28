@@ -4,12 +4,18 @@ pub mod logging;
 pub mod playback;
 pub mod room;
 pub mod session;
+pub mod updater;
 
 /// 注册应用实际提供的 IPC 命令。
 pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static
 {
     tauri::generate_handler![
         crate::platform::move_to_background,
+        updater::update_supported,
+        updater::check_update,
+        updater::download_update,
+        updater::cancel_update_download,
+        updater::install_update,
         logging::set_log_level,
         logging::write_log,
         logging::get_logs,

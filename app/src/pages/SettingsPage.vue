@@ -14,7 +14,8 @@ import SettingSwitch from "@/components/base/SettingSwitch.vue";
 import type { LogLevel, Theme } from "@/types";
 import { useLogsStore } from "@/stores/logs";
 import { logLevelLabels } from "@/utils/logs";
-import { version } from "../../package.json";
+import { useUpdaterStore } from "@/stores/updater";
+const updater = useUpdaterStore();
 const store = usePreferencesStore();
 const auth = useBilibiliStore();
 const casting = useCastingStore();
@@ -181,10 +182,28 @@ async function logout() {
       <h2 id="about-title">关于</h2>
       <div class="about-row">
         <img src="/app-icon.svg" alt="" width="44" height="44" />
-        <div>
+        <div class="about-info">
           <strong>KARAM@S</strong>
-          <p>版本 {{ version }}</p>
+          <p>版本 {{ updater.currentVersion }}</p>
         </div>
+        <button
+          v-if="updater.supported"
+          class="button text-button about-update"
+          :disabled="updater.status === 'checking'"
+          @click="
+            updater.update || updater.busy
+              ? (updater.showDialog = true)
+              : updater.check()
+          "
+        >
+          {{
+            updater.status === "checking"
+              ? "检查中…"
+              : updater.update
+                ? `新版本 ${updater.update.version}`
+                : "检查更新"
+          }}
+        </button>
       </div>
     </section>
   </div>
@@ -221,6 +240,21 @@ async function logout() {
   gap: 14px;
   padding: 14px 0;
   font-size: 14px;
+}
+.about-row > img {
+  flex-shrink: 0;
+}
+.about-info {
+  flex: 1;
+  min-width: 0;
+}
+.about-update {
+  flex-shrink: 1;
+  height: auto;
+  min-height: var(--control-height);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: right;
 }
 .about-row strong {
   font-weight: 500;

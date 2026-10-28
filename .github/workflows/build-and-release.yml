@@ -98,11 +98,11 @@ jobs:
           - name: macos-x64
             os: macos-15
             target: x86_64-apple-darwin
-            bundles: dmg
+            bundles: app,dmg
           - name: macos-arm64
             os: macos-15
             target: aarch64-apple-darwin
-            bundles: dmg
+            bundles: app,dmg
           # 发布包使用较旧的 glibc 基线，两个架构均在原生 runner 上构建。
           - name: linux-x64
             os: ubuntu-22.04
@@ -219,15 +219,34 @@ jobs:
               for (const [key, value] of Object.entries(variables)) core.exportVariable(key, value);
             }
 
+      - name: 准备桌面更新配置
+        env:
+          UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY || secrets.TAURI_UPDATER_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          node <<'JS'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          if (!process.env.UPDATER_PUBLIC_KEY || !process.env.TAURI_SIGNING_PRIVATE_KEY) {
+            throw new Error('请配置 TAURI_UPDATER_PUBLIC_KEY 和 TAURI_SIGNING_PRIVATE_KEY');
+          }
+          fs.writeFileSync(path.join(process.env.RUNNER_TEMP, 'updater-config.json'), JSON.stringify({
+            bundle: { createUpdaterArtifacts: true },
+            plugins: { updater: { pubkey: process.env.UPDATER_PUBLIC_KEY.trim() } },
+          }));
+          JS
+
       - name: 构建并上传桌面发布包
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_BUNDLER_DMG_IGNORE_CI: "false"
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: app
           tauriScript: pnpm tauri
-          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --ci -- --locked
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} --config "${{ runner.temp }}/updater-config.json" --ci -- --locked
           tagName: ${{ env.RELEASE_TAG }}
           releaseName: ${{ env.RELEASE_TAG }}
           releaseCommitish: ${{ steps.checkout.outputs.commit }}
@@ -238,6 +257,9 @@ jobs:
           uploadWorkflowArtifacts: true
           workflowArtifactNamePattern: release-${{ matrix.name }}-[bundle]
           retryAttempts: 3
+          # 所有产物齐全后统一生成清单，避免矩阵任务并发覆盖。
+          uploadUpdaterJson: false
+          uploadUpdaterSignatures: true
 
   android:
     name: Android 发布包（${{ matrix.abi }}）
@@ -403,6 +425,17 @@ jobs:
             --out "$signed" "$RUNNER_TEMP/aligned.apk"
           "$tools/apksigner" verify --verbose "$signed"
           "$tools/zipalign" -c -P 16 4 "$signed"
+          mkdir -p update-metadata
+          node app/scripts/update-manifests.mjs android "$signed" "$ANDROID_ABI" \
+            app/src-tauri/gen/android/app/tauri.properties "update-metadata/android-${ANDROID_ABI}.json"
+
+      - name: 上传 Android 更新信息
+        uses: actions/upload-artifact@v7
+        with:
+          name: update-android-${{ matrix.abi }}
+          path: update-metadata/*.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: 上传 Android 产物
         uses: actions/upload-artifact@v7
@@ -456,6 +489,31 @@ jobs:
               raise SystemExit(f"CHANGELOG.md 必须包含唯一且非空的 [{version}] 版本记录")
           Path(os.environ["RUNNER_TEMP"], "release-notes.md").write_text(bodies[0] + "\n", encoding="utf-8")
           PY
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: 汇总 Android 更新信息
+        uses: actions/download-artifact@v8
+        with:
+          pattern: update-android-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/updater
+
+      - name: 生成并上传更新清单
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release download "$RELEASE_TAG" --pattern '*.sig' --dir "$RUNNER_TEMP/updater"
+          gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/release.json"
+          node app/scripts/update-manifests.mjs release "$RUNNER_TEMP/updater" \
+            "$RUNNER_TEMP/release.json" "$RUNNER_TEMP/release-notes.md" "${RELEASE_TAG#v}"
+          gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/updater/latest.json" \
+            "$RUNNER_TEMP/updater/android-update.json" --clobber
 
       - name: 发布已上传全部产物的草稿
         env:
