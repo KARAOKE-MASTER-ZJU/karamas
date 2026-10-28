@@ -1,3 +1,4 @@
+use crate::cast::bilibili::{self, BilibiliSession};
 use serde_json::Value;
 
 use super::{
@@ -24,6 +25,7 @@ pub async fn get_bilibili_media_qualities(
     let (bvid, page) = parse_bilibili_video(video)?;
     let (cid, _) = get_page_info(&bvid, page).await?;
     let cid = cid.to_string();
+    let session = playback_session();
     // 每个分 P 固定查一次 DASH、一次 MP4，不按清晰度逐档请求。
     let (dash_result, mp4_result) = tokio::join!(
         request_playurl(
@@ -35,6 +37,7 @@ pub async fn get_bilibili_media_qualities(
                 ("fourk", "1"),
                 ("try_look", "1"),
             ],
+            session.as_ref(),
         ),
         request_playurl(
             &bvid,
@@ -46,6 +49,7 @@ pub async fn get_bilibili_media_qualities(
                 ("platform", "html5"),
                 ("high_quality", "1"),
             ],
+            session.as_ref(),
         ),
     );
     let json = dash_result?;
@@ -128,24 +132,43 @@ pub(super) fn parse_media_qualities(
     Ok(qualities)
 }
 
+pub(super) fn playback_session() -> Option<BilibiliSession> {
+    bilibili::load_session().filter(|session| {
+        !session.access_token.is_empty() && !bilibili::is_session_expired(session)
+    })
+}
+
 pub(super) async fn request_playurl(
     bvid: &str,
     cid: &str,
     params: &[(&str, &str)],
+    session: Option<&BilibiliSession>,
 ) -> Result<Value, String> {
-    let json = bili_api_client()
-        .get("https://api.bilibili.com/x/player/playurl")
-        .query(&[("bvid", bvid), ("cid", cid)])
-        .query(params)
+    let endpoint = "https://api.bilibili.com/x/player/playurl";
+    let request = if let Some(session) = session {
+        let params = [("bvid", bvid), ("cid", cid)]
+            .iter()
+            .chain(params)
+            .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+            .collect();
+        let query = bilibili::sign_playurl_params(params, session);
+        bili_api_client().get(format!("{endpoint}?{query}"))
+    } else {
+        bili_api_client()
+            .get(endpoint)
+            .query(&[("bvid", bvid), ("cid", cid)])
+            .query(params)
+    };
+    let json = request
         .header("Referer", format!("https://www.bilibili.com/video/{bvid}"))
         .send()
         .await
-        .map_err(|error| format!("获取播放信息失败：{error}"))?
+        .map_err(|error| format!("获取播放信息失败：{}", error.without_url()))?
         .error_for_status()
-        .map_err(|error| format!("获取播放信息失败：{error}"))?
+        .map_err(|error| format!("获取播放信息失败：{}", error.without_url()))?
         .json::<Value>()
         .await
-        .map_err(|error| format!("解析播放信息失败：{error}"))?;
+        .map_err(|error| format!("解析播放信息失败：{}", error.without_url()))?;
     if json["code"].as_i64() != Some(0) || !json["data"].is_object() {
         return Err(format!(
             "获取播放信息失败：{} ({})",
@@ -190,6 +213,16 @@ fn parse_mp4_qualities(json: &Value) -> Result<Vec<BilibiliQuality>, String> {
     {
         return Err("HTML5 接口未返回单文件 MP4".into());
     }
-    // HTML5 响应给出整份 MP4 档位列表，quality 只表示本次返回地址的档位。
-    parse_bilibili_qualities(json)
+    let mut qualities = parse_bilibili_qualities(json)?;
+    // 登录后的 HTML5 列表也可能包含 FLV 档位，不能把它们当作 MP4。
+    if let Some(formats) = data["support_formats"].as_array() {
+        qualities.retain(|quality| {
+            formats
+                .iter()
+                .find(|format| format["quality"].as_u64() == Some(quality.qn as u64))
+                .and_then(|format| format["format"].as_str())
+                .is_none_or(|format| format.starts_with("mp4"))
+        });
+    }
+    Ok(qualities)
 }

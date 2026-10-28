@@ -1,7 +1,8 @@
 use super::{
     BilibiliMedia,
-    media_qualities::{parse_media_qualities, request_playurl},
+    media_qualities::{parse_media_qualities, playback_session, request_playurl},
 };
+use crate::cast::bilibili::BilibiliSession;
 use crate::cast::{MediaFormat, Quality, select_media_quality};
 use serde_json::Value;
 
@@ -19,6 +20,7 @@ pub(super) async fn resolve(
     allow_mix: bool,
 ) -> Result<ResolvedBilibiliMedia, String> {
     let preferred = (Quality::from_qn(qn).ok_or("不支持的清晰度")?, format);
+    let session = playback_session();
     let qn_string = qn.to_string();
     let dash_params = [
         ("qn", qn_string.as_str()),
@@ -28,8 +30,8 @@ pub(super) async fn resolve(
         ("try_look", "1"),
     ];
     let (dash_result, mp4_result) = tokio::join!(
-        request_playurl(bvid, cid, &dash_params),
-        request_mp4(bvid, cid, preferred.0.as_qn()),
+        request_playurl(bvid, cid, &dash_params, session.as_ref()),
+        request_mp4(bvid, cid, preferred.0.as_qn(), session.as_ref()),
     );
     let base = match (&dash_result, &mp4_result) {
         (Ok(json), _) | (_, Ok(json)) => json,
@@ -71,7 +73,10 @@ pub(super) async fn resolve(
             parse_mp4(bvid, current)?
         } else {
             // 仅在最终选中其他 MP4 档位时补取该地址，不逐档探测。
-            parse_mp4(bvid, &request_mp4(bvid, cid, selected.0.as_qn()).await?)?
+            parse_mp4(
+                bvid,
+                &request_mp4(bvid, cid, selected.0.as_qn(), session.as_ref()).await?,
+            )?
         }
     };
     if (resolved.quality, resolved.format) != selected {
@@ -80,7 +85,12 @@ pub(super) async fn resolve(
     Ok(resolved)
 }
 
-async fn request_mp4(bvid: &str, cid: &str, qn: u32) -> Result<Value, String> {
+async fn request_mp4(
+    bvid: &str,
+    cid: &str,
+    qn: u32,
+    session: Option<&BilibiliSession>,
+) -> Result<Value, String> {
     let qn_string = qn.to_string();
     request_playurl(
         bvid,
@@ -92,6 +102,7 @@ async fn request_mp4(bvid: &str, cid: &str, qn: u32) -> Result<Value, String> {
             ("platform", "html5"),
             ("high_quality", "1"),
         ],
+        session,
     )
     .await
 }

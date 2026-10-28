@@ -47,7 +47,7 @@ function retry() {
     </template>
     <div class="qr-content" :aria-busy="auth.loggingIn && !auth.qrUrl">
       <p class="credential-notice">
-        登录凭证仅保存在本机，用于查询同账号的投屏设备并控制播放。
+        登录凭证仅保存在本机，用于查询同账号的投屏设备、控制播放，以及获取账号可用的清晰度和播放地址。
       </p>
       <canvas
         v-show="auth.qrUrl && !qrError"

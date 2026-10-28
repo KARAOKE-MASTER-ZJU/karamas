@@ -1,4 +1,4 @@
-use super::session::now_ts;
+use super::session::{BilibiliSession, now_ts};
 use std::sync::OnceLock;
 
 pub(super) const APPKEY: &str = "4409e2ce8ffd12b8";
@@ -37,6 +37,19 @@ pub(super) fn sign_params(params: &[(String, String)]) -> String {
     let body = parts.join("&");
     let digest = md5::compute(format!("{}{}", body, APP_SECRET));
     format!("{}&sign={:x}", body, digest)
+}
+
+pub(crate) fn sign_playurl_params(
+    mut params: Vec<(String, String)>,
+    session: &BilibiliSession,
+) -> String {
+    params.retain(|(key, _)| key != "try_look");
+    params.extend([
+        ("access_key".into(), session.access_token.clone()),
+        ("appkey".into(), APPKEY.into()),
+        ("ts".into(), now_ts().to_string()),
+    ]);
+    sign_params(&params)
 }
 
 /// 对请求参数进行编码
