@@ -25,7 +25,7 @@ pub fn get_dlna_direct() -> bool {
     DLNA_DIRECT.load(Ordering::Relaxed)
 }
 
-/// 关闭媒体代理时，允许用 HLS 清单直连播放 DASH 音视频。
+/// 允许 DLNA 使用 HLS 播放；媒体由本机代理还是设备直连，取决于反向代理开关。
 pub fn set_dlna_hls_direct(enabled: bool) {
     DLNA_HLS_DIRECT.store(enabled, Ordering::Relaxed);
 }

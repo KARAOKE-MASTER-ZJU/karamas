@@ -51,6 +51,8 @@ const canMux = computed(
 );
 const splitFormats = computed<MediaFormat[]>(() => {
   if (props.mode === "local") return ["hls", "dash"];
+  if (props.mode === "dlna" && props.dlnaProxyEnabled)
+    return props.dlnaHlsDirectEnabled ? ["hls", "dash"] : ["dash"];
   return canMux.value ? ["dash"] : [];
 });
 function formatLabel(format: MediaFormat, label: string) {

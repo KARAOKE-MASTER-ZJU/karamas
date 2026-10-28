@@ -60,9 +60,9 @@ async function updateDlnaHlsDirect() {
       (await casting.setDlnaHlsDirectEnabled(!casting.dlnaHlsDirectEnabled)) ===
       false
     )
-      notify("HLS 直链播放设置已生效，但无法保存本机配置。", "warning");
+      notify("HLS 播放设置已生效，但无法保存本机配置。", "warning");
   } catch (error) {
-    notify(`设置 HLS 直链播放失败：${errorMessage(error)}`, "error");
+    notify(`设置 HLS 播放失败：${errorMessage(error)}`, "error");
   }
 }
 async function logout() {
@@ -145,8 +145,8 @@ async function logout() {
     <section class="content-section" aria-labelledby="experimental-title">
       <h2 id="experimental-title">实验性功能</h2>
       <SettingSwitch
-        label="HLS 直链播放"
-        description="关闭反向代理时，允许通过 HLS 清单播放高清音视频分轨源，媒体由设备直接下载。需要接收端支持，部分设备可能无法播放或定位。下次切歌或重新投屏生效。"
+        label="HLS 播放"
+        description="允许 DLNA 使用 HLS 播放音视频分轨源。开启反向代理后由本机代理媒体，否则由设备直接下载。需要接收端支持，部分设备可能无法播放或定位。下次切歌或重新投屏生效。"
         :checked="casting.dlnaHlsDirectEnabled"
         :busy="casting.changingDlnaProxy"
         :disabled="casting.busy"

@@ -62,7 +62,14 @@ impl DlnaCaster {
         let mut quality = preferred.0;
         let mut selected = None;
         let direct = crate::cast::dlna::settings::get_dlna_direct();
-        let hls_direct = direct && crate::cast::dlna::settings::get_dlna_hls_direct();
+        let hls_enabled = crate::cast::dlna::settings::get_dlna_hls_direct();
+        let hls_direct = direct && hls_enabled;
+        // 保留 HLS 偏好；开关关闭时代理回退到 DASH，直连仅使用单文件 MP4。
+        let format = if preferred.1 == MediaFormat::Hls && (direct || !hls_enabled) {
+            MediaFormat::Dash
+        } else {
+            preferred.1
+        };
         let sequence = self
             .seek_sequence
             .load(std::sync::atomic::Ordering::Relaxed);
@@ -72,13 +79,13 @@ impl DlnaCaster {
             .filter(|_| !direct || hls_direct)
             .map(|sessions| {
                 if hls_direct {
-                    sessions.activate_hls_with_format(song, preferred.0, preferred.1)
+                    sessions.activate_hls_with_format(song, preferred.0, format)
                 } else {
-                    sessions.activate_with_format(song, preferred.0, preferred.1)
+                    sessions.activate_with_format(song, preferred.0, format)
                 }
             });
         let media_url = if direct && !hls_direct {
-            let (url, actual_quality) = resolve_direct_url(song, preferred.0, preferred.1).await?;
+            let (url, actual_quality) = resolve_direct_url(song, preferred.0, format).await?;
             if sequence
                 != self
                     .seek_sequence
@@ -390,8 +397,8 @@ impl Caster for DlnaCaster {
 
     /// 保存偏好，当前曲目按可用点选择；临时回退不覆盖偏好。
     async fn set_media_quality(&self, quality: Quality, format: MediaFormat) -> Result<(), CastError> {
-        if format == MediaFormat::Hls {
-            return Err(CastError::Device("DLNA 的 HLS 播放请使用 HLS 直链播放设置".into()));
+        if format == MediaFormat::Hls && !crate::cast::dlna::settings::get_dlna_hls_direct() {
+            return Err(CastError::Device("请先开启 HLS 播放".into()));
         }
         let previous = crate::cast::dlna::settings::get_dlna_media_quality();
         if previous == (quality, format) && self.get_quality()? == quality && self.get_media_format() == Some(format) {

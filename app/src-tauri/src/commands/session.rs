@@ -112,7 +112,7 @@ pub async fn set_dlna_direct(enabled: bool) {
     karamas_core::set_dlna_direct(enabled);
 }
 
-/// 设置关闭媒体代理时是否允许 HLS 直链播放。
+/// 设置 DLNA 是否允许 HLS 播放，适用于反向代理和直连模式。
 #[tauri::command]
 pub async fn set_dlna_hls_direct(enabled: bool) {
     karamas_core::set_dlna_hls_direct(enabled);
