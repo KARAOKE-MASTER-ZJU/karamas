@@ -33,6 +33,18 @@ pub async fn proxy_handler(
             }
         };
         match media.as_ref() {
+            crate::media::session::SessionMedia::Hls(playlists) => {
+                let name = origin_url.rsplit('/').next().unwrap_or_default();
+                let Some(playlist) = playlists.playlist(name) else {
+                    return Ok(HttpResponse::NotFound().finish());
+                };
+                let mut response = HttpResponse::Ok();
+                response
+                    .insert_header(("Content-Type", "application/vnd.apple.mpegurl"))
+                    .insert_header(("Cache-Control", "no-store"))
+                    .insert_header(("Content-Length", playlist.len().to_string()));
+                return Ok(response.body(playlist.to_owned()));
+            }
             crate::media::session::SessionMedia::Seekable { mp4, cache } => {
                 return Ok(crate::media::mp4::http::serve(&req, mp4.clone(), cache.clone(), session.generation));
             }

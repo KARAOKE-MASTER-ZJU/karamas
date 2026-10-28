@@ -14,6 +14,7 @@ static DLNA_QUALITY: std::sync::Mutex<DlnaQuality> = std::sync::Mutex::new(DlnaQ
     actual: None,
 });
 static DLNA_DIRECT: AtomicBool = AtomicBool::new(false);
+static DLNA_HLS_DIRECT: AtomicBool = AtomicBool::new(false);
 
 /// 代理开关只影响可用点，不覆盖保存的清晰度偏好。
 pub fn set_dlna_direct(enabled: bool) {
@@ -22,6 +23,15 @@ pub fn set_dlna_direct(enabled: bool) {
 
 pub fn get_dlna_direct() -> bool {
     DLNA_DIRECT.load(Ordering::Relaxed)
+}
+
+/// 关闭媒体代理时，允许用 HLS 清单直连播放 DASH 音视频。
+pub fn set_dlna_hls_direct(enabled: bool) {
+    DLNA_HLS_DIRECT.store(enabled, Ordering::Relaxed);
+}
+
+pub fn get_dlna_hls_direct() -> bool {
+    DLNA_HLS_DIRECT.load(Ordering::Relaxed)
 }
 
 pub fn reset_dlna_media_quality() {

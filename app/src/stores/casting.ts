@@ -54,6 +54,7 @@ export const useCastingStore = defineStore("casting", () => {
     syncLocalState();
   }
   const dlnaProxyEnabled = ref(preferences.preferences.dlnaProxyEnabled);
+  const dlnaHlsDirectEnabled = ref(preferences.preferences.dlnaHlsDirectEnabled);
   const changingDlnaProxy = ref(false);
   const room = ref<ConnectionConfig | null>(null);
   const selectedDevice = ref<CastDevice | null>(null);
@@ -93,8 +94,11 @@ export const useCastingStore = defineStore("casting", () => {
   // 启动恢复和首次连接共用同一个任务，确保加载媒体前已应用配置。
   function initializeDlnaProxy(): Promise<void> {
     if (!isTauri()) return Promise.resolve();
-    proxyInitialization ??= castingApi
-      .setDlnaDirect(!dlnaProxyEnabled.value)
+    proxyInitialization ??= Promise.all([
+      castingApi.setDlnaDirect(!dlnaProxyEnabled.value),
+      castingApi.setDlnaHlsDirect(dlnaHlsDirectEnabled.value),
+    ])
+      .then(() => undefined)
       .catch((error: unknown) => {
         proxyInitialization = undefined;
         throw error;
@@ -111,6 +115,20 @@ export const useCastingStore = defineStore("casting", () => {
       if (isTauri()) await castingApi.setDlnaDirect(!enabled);
       dlnaProxyEnabled.value = enabled;
       return preferences.saveDlnaProxyEnabled(enabled);
+    } finally {
+      changingDlnaProxy.value = false;
+    }
+  }
+
+  async function setDlnaHlsDirectEnabled(enabled: boolean) {
+    if (busy.value) return;
+    changingDlnaProxy.value = true;
+    ++revision;
+    try {
+      await initializeDlnaProxy();
+      if (isTauri()) await castingApi.setDlnaHlsDirect(enabled);
+      dlnaHlsDirectEnabled.value = enabled;
+      return preferences.saveDlnaHlsDirectEnabled(enabled);
     } finally {
       changingDlnaProxy.value = false;
     }
@@ -355,9 +373,11 @@ export const useCastingStore = defineStore("casting", () => {
     applyLocalReport,
     localCommand,
     dlnaProxyEnabled,
+    dlnaHlsDirectEnabled,
     changingDlnaProxy,
     initializeDlnaProxy,
     setDlnaProxyEnabled,
+    setDlnaHlsDirectEnabled,
     room,
     selectedDevice,
     activeDevice,

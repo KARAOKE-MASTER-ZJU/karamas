@@ -54,6 +54,7 @@ fn stopped() -> io::Error {
 
 pub enum SessionMedia {
     Direct(String),
+    Hls(crate::media::hls::Playlists),
     Seekable {
         mp4: Arc<VirtualMp4>,
         cache: Arc<SongCache>,
@@ -65,6 +66,7 @@ pub struct MediaSession {
     pub song: String,
     pub quality: Quality,
     pub format: MediaFormat,
+    hls_direct: bool,
     resolved_quality: Mutex<Option<(Quality, MediaFormat)>>,
     stopped: watch::Sender<bool>,
     ready: OnceCell<Arc<SessionMedia>>,
@@ -79,7 +81,11 @@ impl MediaSession {
     }
     /// 生成包含当前会话代次的媒体路径。
     pub fn path(&self) -> String {
-        format!("__ktv_media/{}.mp4", self.generation)
+        if self.hls_direct && self.resolved_quality().1 == MediaFormat::Dash {
+            format!("__ktv_media/{}/master.m3u8", self.generation)
+        } else {
+            format!("__ktv_media/{}.mp4", self.generation)
+        }
     }
     /// 检查当前媒体会话是否已失效。
     pub fn is_stopped(&self) -> bool {
@@ -194,7 +200,12 @@ impl MediaSession {
             let tracks = crate::sources::youtube::resolve(&self.song, max_height).await?;
             log::info!(target: "DLNA1080", "YouTube 双轨就绪: generation={}, duration={}s", self.generation, tracks.duration_secs);
             let media = self
-                .prepare_dash(client, &tracks.video_url, &tracks.audio_url)
+                .prepare_dash(
+                    client,
+                    &tracks.video_url,
+                    &tracks.audio_url,
+                    tracks.hls_tracks.as_ref(),
+                )
                 .await?;
             *self.resolved_quality.lock().unwrap() = Some(selected);
             return Ok(media);
@@ -222,7 +233,10 @@ impl MediaSession {
                 video_url,
                 audio_url,
                 ..
-            } => self.prepare_dash(client, &video_url, &audio_url).await?,
+            } => {
+                self.prepare_dash(client, &video_url, &audio_url, resolved.hls_tracks.as_ref())
+                    .await?
+            }
         };
         *self.resolved_quality.lock().unwrap() = Some((resolved.quality, resolved.format));
         Ok(media)
@@ -234,7 +248,15 @@ impl MediaSession {
         client: &reqwest::Client,
         video_url: &str,
         audio_url: &str,
+        hls_tracks: Option<&(crate::media::hls::Track, crate::media::hls::Track)>,
     ) -> io::Result<SessionMedia> {
+        if self.hls_direct {
+            let (video, audio) =
+                hls_tracks.ok_or_else(|| io::Error::other("媒体源缺少 HLS 直链所需的分段信息"))?;
+            return Ok(SessionMedia::Hls(
+                crate::media::hls::Playlists::prepare(client, video, audio).await?,
+            ));
+        }
         let prepared = tokio::time::timeout(
             Duration::from_secs(60),
             dash::prepare(client, video_url, audio_url),
@@ -275,11 +297,31 @@ impl MediaSessions {
         quality: Quality,
         format: MediaFormat,
     ) -> Arc<MediaSession> {
+        self.activate(song, quality, format, false)
+    }
+
+    pub fn activate_hls_with_format(
+        &self,
+        song: &str,
+        quality: Quality,
+        format: MediaFormat,
+    ) -> Arc<MediaSession> {
+        self.activate(song, quality, format, true)
+    }
+
+    fn activate(
+        &self,
+        song: &str,
+        quality: Quality,
+        format: MediaFormat,
+        hls_direct: bool,
+    ) -> Arc<MediaSession> {
         let session = Arc::new(MediaSession {
             generation: NEXT_GENERATION.fetch_add(1, Ordering::Relaxed),
             song: song.into(),
             quality,
             format,
+            hls_direct,
             resolved_quality: Mutex::new(None),
             stopped: watch::channel(false).0,
             ready: OnceCell::new(),
@@ -317,10 +359,14 @@ impl Drop for MediaSessions {
 
 /// 从媒体路径中解析会话代次。
 pub fn generation_from_path(path: &str) -> Option<u64> {
-    path.strip_prefix("__ktv_media/")?
-        .strip_suffix(".mp4")?
-        .parse()
-        .ok()
+    let path = path.strip_prefix("__ktv_media/")?;
+    if let Some((generation, name)) = path.split_once('/') {
+        matches!(name, "master.m3u8" | "video.m3u8" | "audio.m3u8")
+            .then(|| generation.parse().ok())
+            .flatten()
+    } else {
+        path.strip_suffix(".mp4")?.parse().ok()
+    }
 }
 
 #[cfg(test)]

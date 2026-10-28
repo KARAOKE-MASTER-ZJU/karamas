@@ -127,6 +127,7 @@ useVideoLayout(
         :song-id="playback?.songId ?? null"
         :song-url="playback?.songUrl ?? null"
         :dlna-proxy-enabled="casting.dlnaProxyEnabled"
+        :dlna-hls-direct-enabled="casting.dlnaHlsDirectEnabled"
         :quality-qn="playback?.qualityQn ?? null"
         :quality-format="playback?.qualityFormat ?? null"
         :media-qualities="casting.mediaQualities"

@@ -10,6 +10,7 @@ pub struct ResolvedBilibiliMedia {
     pub media: BilibiliMedia,
     pub quality: Quality,
     pub format: MediaFormat,
+    pub(crate) hls_tracks: Option<(crate::media::hls::Track, crate::media::hls::Track)>,
 }
 
 pub(super) async fn resolve(
@@ -130,6 +131,7 @@ fn parse_mp4(bvid: &str, json: &Value) -> Result<ResolvedBilibiliMedia, String> 
         media: BilibiliMedia::Direct { url },
         quality,
         format: MediaFormat::Mp4,
+        hls_tracks: None,
     })
 }
 
@@ -169,7 +171,27 @@ fn parse_dash(bvid: &str, json: &Value, qn: u32) -> Result<ResolvedBilibiliMedia
         },
         quality,
         format: MediaFormat::Dash,
+        hls_tracks: hls_track(video).zip(hls_track(audio)),
     })
+}
+
+fn hls_track(track: &Value) -> Option<crate::media::hls::Track> {
+    let segment = track
+        .get("SegmentBase")
+        .or_else(|| track.get("segment_base"))?;
+    crate::media::hls::Track::new(
+        track_url(track)?,
+        track["codecs"].as_str()?,
+        track["bandwidth"].as_u64()?,
+        segment
+            .get("Initialization")
+            .or_else(|| segment.get("initialization"))?
+            .as_str()?,
+        segment
+            .get("indexRange")
+            .or_else(|| segment.get("index_range"))?
+            .as_str()?,
+    )
 }
 
 fn track_url(track: &Value) -> Option<String> {

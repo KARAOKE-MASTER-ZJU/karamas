@@ -13,6 +13,7 @@ const props = defineProps<{
   songId: string | null;
   songUrl: string | null;
   dlnaProxyEnabled: boolean;
+  dlnaHlsDirectEnabled: boolean;
   qualityQn: number | null;
   qualityFormat: MediaFormat | null;
   mediaQualities: BilibiliMediaQuality[];
@@ -42,7 +43,9 @@ interface QualityOption extends PlaybackQuality {
   id: string;
   label: string;
 }
-const canMux = computed(() => props.mode === "local" || props.dlnaProxyEnabled);
+const canMux = computed(
+  () => props.mode === "local" || props.dlnaProxyEnabled || props.dlnaHlsDirectEnabled,
+);
 const options = computed<QualityOption[]>(() => {
   if (props.mode === "bilibili")
     return qualities.value.map((quality) => ({

@@ -43,6 +43,8 @@ export const castingApi = {
   moveToBackground: () => call<void>("move_to_background"),
   setDlnaDirect: (enabled: boolean) =>
     call<void>("set_dlna_direct", { enabled }),
+  setDlnaHlsDirect: (enabled: boolean) =>
+    call<void>("set_dlna_hls_direct", { enabled }),
   setLogLevel: (level: LogLevel) => call<void>("set_log_level", { level }),
   writeLog: (message: string, level: LogLevel) =>
     call<void>("write_log", { message, level }),

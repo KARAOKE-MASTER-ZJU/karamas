@@ -65,15 +65,22 @@ impl DlnaCaster {
         let mut quality = preferred.0;
         let mut selected = None;
         let direct = crate::cast::dlna::settings::get_dlna_direct();
+        let hls_direct = direct && crate::cast::dlna::settings::get_dlna_hls_direct();
         let sequence = self
             .seek_sequence
             .load(std::sync::atomic::Ordering::Relaxed);
         let session = self
             .sessions
             .as_ref()
-            .filter(|_| !direct)
-            .map(|sessions| sessions.activate_with_format(song, preferred.0, preferred.1));
-        let media_url = if direct {
+            .filter(|_| !direct || hls_direct)
+            .map(|sessions| {
+                if hls_direct {
+                    sessions.activate_hls_with_format(song, preferred.0, preferred.1)
+                } else {
+                    sessions.activate_with_format(song, preferred.0, preferred.1)
+                }
+            });
+        let media_url = if direct && !hls_direct {
             let (url, actual_quality) = resolve_direct_url(song, preferred.0, preferred.1).await?;
             if sequence
                 != self
@@ -86,7 +93,7 @@ impl DlnaCaster {
             selected = Some((actual_quality, MediaFormat::Mp4));
             url
         } else if let Some(session) = &session {
-            session
+            let media = session
                 .prepare(&self.media_client)
                 .await
                 .map_err(|error| self.failure("准备媒体", error))?;
@@ -96,9 +103,24 @@ impl DlnaCaster {
             let actual_quality = session.resolved_quality();
             quality = actual_quality.0;
             selected = Some(actual_quality);
-            // 设备处理 Stop/SetURI/Play 时并行预取起播窗口，不等待完整媒体下载。
-            session.warm_seek(position);
-            session.path()
+            if hls_direct {
+                match media.as_ref() {
+                    crate::media::session::SessionMedia::Direct(url) => url.clone(),
+                    crate::media::session::SessionMedia::Hls(playlists) => format!(
+                        "http://{}/{}|{}",
+                        std::net::SocketAddr::new(self.server_ip, self.server_port),
+                        session.path(),
+                        playlists.request_headers(),
+                    ),
+                    _ => return Err(CastError::Device("未生成 HLS 直链清单".into())),
+                }
+            } else {
+                // 设备处理 Stop/SetURI/Play 时并行预取起播窗口，不等待完整媒体下载。
+                session.warm_seek(position);
+                session.path()
+            }
+        } else if hls_direct {
+            return Err(CastError::Device("HLS 清单服务尚未初始化".into()));
         } else if preferred.1 == MediaFormat::Dash {
             with_start_offset(song, position)
         } else {
@@ -127,11 +149,13 @@ impl DlnaCaster {
         }
         let set_uri_started = std::time::Instant::now();
         if direct {
-            if let Some(sessions) = &self.sessions {
-                sessions.clear();
+            if !hls_direct {
+                if let Some(sessions) = &self.sessions {
+                    sessions.clear();
+                }
+                self.loaded_generation
+                    .store(0, std::sync::atomic::Ordering::Relaxed);
             }
-            self.loaded_generation
-                .store(0, std::sync::atomic::Ordering::Relaxed);
             self.controller
                 .set_avtransport_url(&self.device, &media_url, "")
                 .await

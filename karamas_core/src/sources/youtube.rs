@@ -14,6 +14,7 @@ pub struct YoutubeDash {
     pub video_url: String,
     pub audio_url: String,
     pub duration_secs: u32,
+    pub(crate) hls_tracks: Option<(crate::media::hls::Track, crate::media::hls::Track)>,
 }
 
 /// 检查输入是否为 YouTube 视频 URL。
@@ -170,6 +171,18 @@ async fn resolve_inner(input: &str, max_height: u32) -> io::Result<YoutubeDash> 
     };
     let video_url = resolve(video)?;
     let audio_url = resolve(audio)?;
+    let hls_track = |format: &StreamingFormat, url: &str| {
+        let initialization = format.init_range.as_ref()?;
+        let index = format.index_range.as_ref()?;
+        crate::media::hls::Track::new(
+            url.to_owned(),
+            format.mime_type.split('"').nth(1)?,
+            format.bitrate,
+            &format!("{}-{}", initialization.start, initialization.end),
+            &format!("{}-{}", index.start, index.end),
+        )
+    };
+    let hls_tracks = hls_track(video, &video_url).zip(hls_track(audio, &audio_url));
     let duration_secs = response
         .video_details
         .as_ref()
@@ -179,6 +192,7 @@ async fn resolve_inner(input: &str, max_height: u32) -> io::Result<YoutubeDash> 
         video_url,
         audio_url,
         duration_secs,
+        hls_tracks,
     })
 }
 

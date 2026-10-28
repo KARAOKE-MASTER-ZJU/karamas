@@ -24,6 +24,7 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         session::disconnect_casting,
         session::get_dlna_direct,
         session::set_dlna_direct,
+        session::set_dlna_hls_direct,
         playback::poll_playback,
         playback::report_local_playback,
         playback::play,

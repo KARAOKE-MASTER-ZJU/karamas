@@ -16,6 +16,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     theme: "system",
     logLevel: "info",
     dlnaProxyEnabled: true,
+    dlnaHlsDirectEnabled: false,
     bilibiliBuvid: "",
   });
   // 初始化存储警告状态
@@ -41,6 +42,11 @@ export const usePreferencesStore = defineStore("preferences", () => {
         typeof stored.dlnaProxyEnabled === "boolean"
       )
         preferences.dlnaProxyEnabled = stored.dlnaProxyEnabled;
+      if (
+        "dlnaHlsDirectEnabled" in stored &&
+        typeof stored.dlnaHlsDirectEnabled === "boolean"
+      )
+        preferences.dlnaHlsDirectEnabled = stored.dlnaHlsDirectEnabled;
       if (
         "theme" in stored &&
         (stored.theme === "system" ||
@@ -93,6 +99,10 @@ export const usePreferencesStore = defineStore("preferences", () => {
     return save({ dlnaProxyEnabled });
   }
 
+  function saveDlnaHlsDirectEnabled(dlnaHlsDirectEnabled: boolean): boolean {
+    return save({ dlnaHlsDirectEnabled });
+  }
+
   return {
     preferences,
     storageWarning,
@@ -101,6 +111,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     saveTheme,
     saveLogLevel,
     saveDlnaProxyEnabled,
+    saveDlnaHlsDirectEnabled,
   };
 });
 

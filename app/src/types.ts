@@ -15,6 +15,7 @@ export interface Preferences extends ConnectionConfig {
   theme: Theme;
   logLevel: LogLevel;
   dlnaProxyEnabled: boolean;
+  dlnaHlsDirectEnabled: boolean;
   bilibiliBuvid: string;
 }
 

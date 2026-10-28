@@ -23,6 +23,9 @@ const changingLogLevel = ref(false);
 const showProxyInfo = ref(false);
 const proxyInfo = ref<HTMLElement | null>(null);
 const proxyInfoButton = ref<HTMLButtonElement | null>(null);
+const showHlsInfo = ref(false);
+const hlsInfo = ref<HTMLElement | null>(null);
+const hlsInfoButton = ref<HTMLButtonElement | null>(null);
 const { preferences } = storeToRefs(store);
 const { notify } = useOperationNotice();
 const themes: { value: Theme; label: string }[] = [
@@ -31,26 +34,32 @@ const themes: { value: Theme; label: string }[] = [
   { value: "dark", label: "深色" },
 ];
 
-function closeProxyInfoOutside(event: PointerEvent) {
+function closeInfoOutside(event: PointerEvent) {
   if (event.target instanceof Node && !proxyInfo.value?.contains(event.target))
     showProxyInfo.value = false;
+  if (event.target instanceof Node && !hlsInfo.value?.contains(event.target))
+    showHlsInfo.value = false;
 }
-function closeProxyInfoOnEscape(event: KeyboardEvent) {
+function closeInfoOnEscape(event: KeyboardEvent) {
   if (event.key === "Escape" && showProxyInfo.value) {
     showProxyInfo.value = false;
     proxyInfoButton.value?.focus();
+  } else if (event.key === "Escape" && showHlsInfo.value) {
+    showHlsInfo.value = false;
+    hlsInfoButton.value?.focus();
   }
 }
 onMounted(() => {
-  document.addEventListener("pointerdown", closeProxyInfoOutside);
-  document.addEventListener("keydown", closeProxyInfoOnEscape);
+  document.addEventListener("pointerdown", closeInfoOutside);
+  document.addEventListener("keydown", closeInfoOnEscape);
 });
 onDeactivated(() => {
   showProxyInfo.value = false;
+  showHlsInfo.value = false;
 });
 onScopeDispose(() => {
-  document.removeEventListener("pointerdown", closeProxyInfoOutside);
-  document.removeEventListener("keydown", closeProxyInfoOnEscape);
+  document.removeEventListener("pointerdown", closeInfoOutside);
+  document.removeEventListener("keydown", closeInfoOnEscape);
 });
 
 function updateTheme(theme: Theme) {
@@ -76,6 +85,16 @@ async function updateDlnaProxy() {
       notify("反向代理设置已生效，但无法保存本机配置。", "warning");
   } catch (error) {
     notify(`设置反向代理失败：${errorMessage(error)}`, "error");
+  }
+}
+async function updateDlnaHlsDirect() {
+  try {
+    if (
+      (await casting.setDlnaHlsDirectEnabled(!casting.dlnaHlsDirectEnabled)) === false
+    )
+      notify("HLS 直链播放设置已生效，但无法保存本机配置。", "warning");
+  } catch (error) {
+    notify(`设置 HLS 直链播放失败：${errorMessage(error)}`, "error");
   }
 }
 async function logout() {
@@ -181,6 +200,48 @@ async function logout() {
           :aria-busy="casting.changingDlnaProxy"
           :disabled="casting.busy"
           @click="updateDlnaProxy"
+        >
+          <span />
+        </button>
+      </div>
+    </section>
+    <section class="content-section" aria-labelledby="experimental-title">
+      <h2 id="experimental-title">实验性功能</h2>
+      <div class="settings-row">
+        <div ref="hlsInfo" class="setting-label">
+          <span id="dlna-hls-direct-label">HLS 直链播放</span>
+          <button
+            ref="hlsInfoButton"
+            type="button"
+            class="icon-button info-button"
+            aria-label="HLS 直链播放说明"
+            aria-controls="dlna-hls-direct-info"
+            :aria-expanded="showHlsInfo"
+            @click="showHlsInfo = !showHlsInfo"
+          >
+            <Info :size="15" aria-hidden="true" />
+          </button>
+          <div
+            v-if="showHlsInfo"
+            id="dlna-hls-direct-info"
+            class="info-popover"
+            role="note"
+            aria-label="HLS 直链播放说明"
+          >
+            <p>
+              关闭反向代理时，允许通过 HLS 清单播放高清音视频分轨源，媒体由设备直接下载。需要接收端支持，部分设备可能无法播放或定位。下次切歌或重新投屏生效。
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          class="setting-switch"
+          role="switch"
+          aria-labelledby="dlna-hls-direct-label"
+          :aria-checked="casting.dlnaHlsDirectEnabled"
+          :aria-busy="casting.changingDlnaProxy"
+          :disabled="casting.busy"
+          @click="updateDlnaHlsDirect"
         >
           <span />
         </button>
