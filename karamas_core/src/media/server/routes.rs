@@ -432,7 +432,7 @@ mod tests {
     async fn test_proxy() -> std::io::Result<()> {
         // 在外面创建全局唯一的 Client，内部已配置好纯 Rustls
         let client = Client::builder()
-            .use_rustls_tls() // 强制使用 rustls
+            .tls_backend_rustls() // 强制使用 rustls
             .build()
             .expect("Failed to create client");
 

@@ -1,4 +1,5 @@
 //! 投屏核心。宿主通过引擎接口组合设备协议、房间同步和媒体服务。
+//! 宿主须在发起网络请求前安装 Rustls crypto provider。
 pub mod cast;
 pub mod config;
 pub mod engine;
@@ -24,3 +25,12 @@ pub use engine::{
 };
 pub use error::CoreError;
 pub use media::server::SharedState;
+
+// 单元测试由独立进程运行，启动时安装与应用相同的 provider。
+#[cfg(test)]
+ctor::declarative::ctor! {
+    #[ctor(unsafe)]
+    fn init_test_crypto_provider() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    }
+}

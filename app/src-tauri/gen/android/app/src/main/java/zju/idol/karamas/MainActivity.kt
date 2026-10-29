@@ -1,5 +1,6 @@
 package zju.idol.karamas
 
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -11,6 +12,8 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 
 class MainActivity : TauriActivity() {
+  private external fun initializePlatformVerifier(context: Context)
+
   internal val playbackPresentation by lazy { PlaybackPresentation(this) }
   private var videoFullscreen: VideoFullscreenWebChromeClient? = null
 
@@ -49,6 +52,9 @@ class MainActivity : TauriActivity() {
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
+    // 父类 onCreate 会启动 Rust，须先加载原生库并初始化证书验证器。
+    System.loadLibrary("karamas_lib")
+    initializePlatformVerifier(applicationContext)
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     // 系统栏和刘海占用的区域留给原生容器，避免遮住网页标题和底部导航。

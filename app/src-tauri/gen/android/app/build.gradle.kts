@@ -1,10 +1,66 @@
+import groovy.json.JsonSlurper
+import java.io.ByteArrayOutputStream
 import java.util.Properties
+import javax.inject.Inject
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.ValueSource
+import org.gradle.api.provider.ValueSourceParameters
+import org.gradle.process.ExecOperations
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("rust")
+}
+
+abstract class RustlsVersion : ValueSource<String, RustlsVersion.Params> {
+    interface Params : ValueSourceParameters {
+        val manifestFile: RegularFileProperty
+    }
+
+    @get:Inject
+    abstract val execOperations: ExecOperations
+
+    override fun obtain(): String {
+        val manifest = parameters.manifestFile.get().asFile
+        val output = ByteArrayOutputStream()
+        execOperations.exec {
+            workingDir(manifest.parentFile)
+            commandLine(
+                "cargo", "metadata", "--format-version", "1", "--locked",
+                "--filter-platform", "aarch64-linux-android",
+                "--manifest-path", manifest.absolutePath
+            )
+            standardOutput = output
+        }.assertNormalExitValue()
+        val metadata = JsonSlurper().parseText(output.toString("UTF-8")) as Map<*, *>
+        val packages = metadata["packages"] as List<*>
+        val verifier = packages.map { it as Map<*, *> }.single {
+            it["name"] == "rustls-platform-verifier-android"
+        }
+        return verifier["version"] as String
+    }
+}
+
+val rustlsPlatformVerifierVersion = providers.of(RustlsVersion::class.java) {
+    parameters.manifestFile.set(layout.projectDirectory.file("../../../Cargo.toml"))
+}
+
+repositories {
+    maven {
+        url = uri("https://github.com/rustls/rustls-platform-verifier/raw/maven-archive/android-release-support/maven/")
+        content { includeGroup("org.rustls") }
+    }
+}
+
+configurations.configureEach {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "org.rustls" && requested.name == "rustls-platform-verifier") {
+            useVersion(rustlsPlatformVerifierVersion.get())
+            because("Android 验证器版本须与 Cargo 解析的支持包一致")
+        }
+    }
 }
 
 val tauriProperties = Properties().apply {
@@ -91,6 +147,7 @@ rust {
 }
 
 dependencies {
+    implementation("org.rustls:rustls-platform-verifier")
     implementation("androidx.webkit:webkit:1.14.0")
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.activity:activity-ktx:1.10.1")

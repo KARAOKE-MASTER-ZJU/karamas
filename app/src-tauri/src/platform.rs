@@ -5,6 +5,8 @@ pub mod playback_window;
 
 #[cfg(target_os = "android")]
 mod android;
+#[cfg(target_os = "android")]
+mod android_tls;
 
 #[cfg(target_os = "android")]
 pub use android::{android_update_version, install_android_update};

@@ -12,6 +12,7 @@ use tauri::Manager;
 /// 启动 Tauri 应用，注册命令、接入状态和日志转发。
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let builder = tauri::Builder::default();
 
     #[cfg(desktop)]

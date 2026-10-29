@@ -24,7 +24,7 @@ impl PlaylistManager {
     pub fn new(url: &str, room_id: String) -> Self {
         // 在初始化时构建一次 Client
         let client = Client::builder()
-            .use_rustls_tls()
+            .tls_backend_rustls()
             .timeout(crate::config::API_TIMEOUT)
             .build()
             .expect("构建 HTTP 客户端失败");

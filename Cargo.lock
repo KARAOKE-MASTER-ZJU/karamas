@@ -2724,12 +2724,15 @@ dependencies = [
  "chrono",
  "core-graphics",
  "flexi_logger",
+ "jni 0.22.4",
  "karamas_core",
  "log",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
- "reqwest 0.12.28",
+ "reqwest 0.13.5",
+ "rustls",
+ "rustls-platform-verifier",
  "semver",
  "serde",
  "serde_json",
@@ -2756,6 +2759,7 @@ dependencies = [
  "base64 0.23.1",
  "bytes",
  "chrono",
+ "ctor",
  "env_logger",
  "futures",
  "futures-util",
@@ -2767,7 +2771,7 @@ dependencies = [
  "mp4",
  "prost 0.14.4",
  "prost-types 0.14.4",
- "reqwest 0.12.28",
+ "reqwest 0.13.5",
  "roxmltree 0.21.2",
  "rquickjs",
  "rupnp",
@@ -4244,7 +4248,6 @@ dependencies = [
  "cookie",
  "cookie_store",
  "futures-core",
- "futures-util",
  "h2",
  "http 1.5.0",
  "http-body",
@@ -4265,14 +4268,12 @@ dependencies = [
  "sync_wrapper",
  "tokio",
  "tokio-rustls",
- "tokio-util",
  "tower",
  "tower-http",
  "tower-service",
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
- "wasm-streams 0.4.2",
  "web-sys",
  "webpki-roots 1.0.11",
 ]
@@ -4287,6 +4288,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-util",
+ "h2",
  "http 1.5.0",
  "http-body",
  "http-body-util",
@@ -4302,6 +4304,7 @@ dependencies = [
  "rustls-platform-verifier",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "sync_wrapper",
  "tokio",
  "tokio-rustls",
@@ -4312,7 +4315,7 @@ dependencies = [
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
- "wasm-streams 0.5.0",
+ "wasm-streams",
  "web-sys",
 ]
 
@@ -6287,19 +6290,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23f0c9c52aa7cd7d77769a4cfe2a9adb1b331f489a41d912ce14513d5ab995c6"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "wasm-streams"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15053d8d85c7eccdbefef60f06769760a563c7f0a9d6902a13d35c7800b0ad65"
-dependencies = [
- "futures-util",
- "js-sys",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
 ]
 
 [[package]]

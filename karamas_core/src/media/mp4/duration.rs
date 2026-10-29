@@ -5,7 +5,7 @@ use std::time::Duration;
 
 /// 读取远端 MP4 头部并解析视频时长。
 pub async fn get_mp4_duration(url: &str) -> Result<Duration> {
-    let client = Client::builder().use_rustls_tls().build()?;
+    let client = Client::builder().tls_backend_rustls().build()?;
 
     // 1. 先尝试获取前 2MB 数据，这通常足以包含大部分视频的 moov 块
     let response = client.get(url)
