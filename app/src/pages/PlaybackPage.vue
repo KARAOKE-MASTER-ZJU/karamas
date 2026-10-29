@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Cast, Monitor, ExternalLink } from "@lucide/vue";
 import { RouterLink } from "vue-router";
-import { ref, toRef } from "vue";
+import { computed, ref, toRef } from "vue";
 import { storeToRefs } from "pinia";
 import LocalPlayer from "@/components/playback/LocalPlayer.vue";
 import NowPlaying from "@/components/playback/NowPlaying.vue";
@@ -26,8 +26,14 @@ const { playback, volume, activeDevice, recasting, room } =
   storeToRefs(casting);
 const controls = usePlaybackControls();
 const videoContainer = ref<HTMLElement | null>(null);
-function handlePlaybackOutputChange() {
-  // 预留播放位置切换回调。
+const localPlayer = ref<InstanceType<typeof LocalPlayer> | null>(null);
+const playbackBusy = computed(
+  () => casting.sessionBusy || Boolean(localPlayer.value?.switching),
+);
+function handlePlaybackOutputChange(outputId: string) {
+  void controls.run(async () => {
+    await localPlayer.value?.setOutput(outputId);
+  });
 }
 useVideoLayout(
   videoContainer,
@@ -81,11 +87,13 @@ useVideoLayout(
         <h2 id="playing-title">正在播放</h2>
         <PlaybackOutputControl
           v-if="activeDevice?.kind === 'local'"
+          :selected="localPlayer?.output ?? 'embedded'"
+          :disabled="casting.busy || playbackBusy"
           @change="handlePlaybackOutputChange"
         />
       </div>
       <div ref="videoContainer" class="video-container">
-        <LocalPlayer :active="active" />
+        <LocalPlayer ref="localPlayer" :active="active" />
       </div>
       <NowPlaying
         :local="activeDevice?.kind === 'local'"
@@ -95,7 +103,7 @@ useVideoLayout(
         :song-url="playback?.songUrl ?? null"
         :queued-count="playback?.queuedCount ?? null"
         :sung-count="playback?.sungCount ?? null"
-        :disabled="!casting.connected || casting.sessionBusy"
+        :disabled="!casting.connected || playbackBusy"
         :recasting="recasting"
         @recast="controls.recast"
       />
@@ -104,17 +112,17 @@ useVideoLayout(
         :key="playback.songId"
         :song-id="playback.songId"
         :song-url="playback.songUrl"
-        :disabled="casting.sessionBusy"
+        :disabled="playbackBusy"
       />
       <PlaybackProgress
         :key="playback?.songId ?? undefined"
         :current-secs="playback?.currentSecs ?? null"
         :total-secs="playback?.totalSecs ?? null"
-        :disabled="!playback?.capabilities.seek || casting.sessionBusy"
+        :disabled="!playback?.capabilities.seek || playbackBusy"
         @seek="controls.seek"
       />
       <PlaybackTransport
-        :disabled="!casting.connected || casting.sessionBusy"
+        :disabled="!casting.connected || playbackBusy"
         :is-playing="playback?.isPlaying ?? false"
         :has-song="!!playback?.songId"
         :queued-count="playback?.queuedCount ?? 0"
@@ -126,7 +134,7 @@ useVideoLayout(
       />
       <VolumeControl
         :volume="volume"
-        :disabled="!casting.connected || casting.sessionBusy"
+        :disabled="!casting.connected || playbackBusy"
         :absolute="!!playback?.capabilities.absoluteVolume"
         @change="controls.changeVolume"
         @set-volume="controls.setVolume"
@@ -144,7 +152,7 @@ useVideoLayout(
         :media-qualities-loading="casting.mediaQualitiesLoading"
         :media-qualities-error="casting.mediaQualitiesError"
         :danmaku="playback?.danmaku ?? null"
-        :disabled="casting.busy"
+        :disabled="casting.busy || playbackBusy"
         @quality="controls.setQuality"
         @refresh-media-qualities="casting.refreshMediaQualities"
         @danmaku="controls.setDanmaku"

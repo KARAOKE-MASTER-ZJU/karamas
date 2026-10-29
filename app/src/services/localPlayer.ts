@@ -6,6 +6,29 @@ import type {
 } from "@/types/localPlayer";
 import type Hls from "hls.js";
 
+// 将控制命令合并到可重新加载的播放快照。
+export function updatePlaybackSnapshot(
+  snapshot: LocalCommand | null,
+  command: LocalCommand | null,
+): LocalCommand | null {
+  if (
+    !command ||
+    command.sessionId !== snapshot?.sessionId ||
+    snapshot?.action.kind !== "load" ||
+    ["loading", "load", "stop", "error"].includes(command.action.kind)
+  )
+    return command;
+  const action = { ...snapshot.action };
+  if (command.action.kind === "play") action.playing = true;
+  if (command.action.kind === "pause") action.playing = false;
+  if (command.action.kind === "seek") action.position = command.action.seconds;
+  if (command.action.kind === "volume") {
+    action.volume = command.action.value;
+    action.muted = false;
+  }
+  return { ...command, action };
+}
+
 const PLAYER_ERROR = "local-player-error";
 
 const MEDIA_EVENTS = [
@@ -88,6 +111,7 @@ export function createLocalPlayer(
     callbacks.onState({ ...state });
   }
   let current: LocalCommand | null = null;
+  let source: Extract<LocalCommand["action"], { kind: "load" }> | null = null;
   let processing = false;
   let activePointer: number | null = null;
   let abort = new AbortController();
@@ -183,6 +207,9 @@ export function createLocalPlayer(
     abort = new AbortController();
     const signal = abort.signal;
     current = command;
+    if (!command || ["loading", "stop", "error"].includes(command.action.kind))
+      source = null;
+    else if (command.action.kind === "load") source = command.action;
     processing = true;
     state.needsGesture = false;
     state.error = "";
@@ -348,5 +375,27 @@ export function createLocalPlayer(
     return clearMedia();
   }
 
-  return { apply, startWithGesture, dispose };
+  function snapshot(): LocalCommand | null {
+    if (!current || !source) return current;
+    if (processing && current.action.kind === "load") return current;
+    const action = {
+      ...source,
+      position: Number.isFinite(video.currentTime)
+        ? video.currentTime
+        : source.position,
+      playing: !video.paused && !video.ended,
+      volume: Math.round(video.volume * 100),
+      muted: video.muted,
+    };
+    const captured: LocalCommand = { ...current, action };
+    return processing ? updatePlaybackSnapshot(captured, current) : captured;
+  }
+
+  async function suspend() {
+    const command = snapshot();
+    await apply(null);
+    return command;
+  }
+
+  return { apply, snapshot, suspend, startWithGesture, dispose };
 }

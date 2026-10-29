@@ -12,6 +12,9 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
     tauri::generate_handler![
         crate::platform::move_to_background,
         crate::platform::displays::list_playback_displays,
+        crate::platform::playback_window::open_playback_window,
+        crate::platform::playback_window::close_playback_window,
+        crate::platform::playback_window::focus_playback_window,
         updater::update_supported,
         updater::check_update,
         updater::download_update,

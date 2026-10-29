@@ -41,6 +41,12 @@ function clearLocalChannel() {
 }
 
 export const castingApi = {
+  openPlaybackWindow: (token: string) =>
+    call<void>("open_playback_window", { token }),
+  closePlaybackWindow: (token: string) =>
+    call<boolean>("close_playback_window", { token }),
+  focusPlaybackWindow: (token: string) =>
+    call<void>("focus_playback_window", { token }),
   listPlaybackDisplays: () => call<PlaybackDisplay[]>("list_playback_displays"),
   moveToBackground: () => call<void>("move_to_background"),
   setDlnaDirect: (enabled: boolean) =>

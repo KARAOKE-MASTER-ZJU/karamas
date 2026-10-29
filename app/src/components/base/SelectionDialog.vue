@@ -7,7 +7,13 @@ defineProps<{
   closeLabel: string;
   refreshLabel: string;
   listLabel: string;
-  options: { id: T; label: string; description?: string; detail?: string }[];
+  options: {
+    id: T;
+    label: string;
+    description?: string;
+    detail?: string;
+    disabled?: boolean;
+  }[];
   selectedId: T | null;
   loading: boolean;
   loadingMessage: string;
@@ -59,7 +65,7 @@ const emit = defineEmits<{
           class="selection-option"
           :class="{ selected: option.id === selectedId }"
           :aria-pressed="option.id === selectedId"
-          :disabled="disabled"
+          :disabled="disabled || option.disabled"
           @click="emit('select', option.id)"
         >
           <span class="selection-label">

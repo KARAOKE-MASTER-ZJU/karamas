@@ -1,22 +1,37 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { ChevronDown } from "@lucide/vue";
 import SelectionDialog from "@/components/base/SelectionDialog.vue";
 import { castingApi, errorMessage } from "@/services/casting";
 import type { PlaybackDisplay } from "@/types/playbackOutput";
+import { supportsPlaybackWindow } from "@/services/playbackWindow";
 
+const props = defineProps<{ selected: string; disabled: boolean }>();
 const emit = defineEmits<{ change: [outputId: string] }>();
 const showDialog = ref(false);
-const selected = ref("embedded");
+const windowSupported = ref(false);
+onMounted(() => {
+  void supportsPlaybackWindow()
+    .then((value) => {
+      windowSupported.value = value;
+    })
+    .catch(() => {});
+});
 const displays = ref<PlaybackDisplay[]>([]);
 const loading = ref(false);
 const error = ref("");
 const refreshed = ref(false);
 const options = computed(() => [
   { id: "embedded", label: "本地内嵌播放", detail: "" },
-  { id: "window", label: "独立窗口", detail: "" },
+  {
+    id: "window",
+    label: "独立窗口",
+    detail: "",
+    disabled: !windowSupported.value,
+  },
   ...displays.value.map((display, index) => ({
     id: display.id,
+    disabled: true,
     label: `屏幕 ${index + 1}${display.name ? ` · ${display.name}` : ""}`,
     description: [
       `${display.width} × ${display.height}`,
@@ -27,11 +42,10 @@ const options = computed(() => [
   })),
 ]);
 const selectedLabel = computed(
-  () => options.value.find((option) => option.id === selected.value)?.label,
+  () => options.value.find((option) => option.id === props.selected)?.label,
 );
 
 function selectOutput(outputId: string) {
-  selected.value = outputId;
   emit("change", outputId);
   showDialog.value = false;
 }
@@ -49,12 +63,11 @@ async function refresh() {
     displays.value = await castingApi.listPlaybackDisplays();
     refreshed.value = true;
     if (
-      selected.value !== "embedded" &&
-      selected.value !== "window" &&
-      !displays.value.some((display) => display.id === selected.value)
+      props.selected !== "embedded" &&
+      props.selected !== "window" &&
+      !displays.value.some((display) => display.id === props.selected)
     ) {
-      selected.value = "embedded";
-      emit("change", selected.value);
+      emit("change", "embedded");
     }
   } catch (cause) {
     error.value = `检测屏幕失败：${errorMessage(cause)}`;
@@ -72,6 +85,7 @@ async function refresh() {
       :aria-label="`选择播放位置，当前：${selectedLabel}`"
       aria-haspopup="dialog"
       :aria-expanded="showDialog"
+      :disabled="disabled"
       @click="open"
     >
       <span>{{ selectedLabel }}</span>
@@ -87,6 +101,7 @@ async function refresh() {
       :options="options"
       :selected-id="selected"
       :loading="loading"
+      :disabled="disabled"
       :error="error"
       :message="refreshed && !displays.length ? '未检测到可用屏幕' : ''"
       @close="showDialog = false"
