@@ -68,7 +68,7 @@ async fn control_requests_retry_only_timeouts_before_response_headers() {
                 });
             }
         });
-        let client = reqwest::Client::builder()
+        let client = crate::http::client_builder()
             .no_proxy()
             .timeout(Duration::from_millis(200))
             .build()
@@ -97,7 +97,7 @@ async fn connection_refused_is_not_retried() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     drop(listener);
-    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let client = crate::http::client_builder().no_proxy().build().unwrap();
     let calls = AtomicUsize::new(0);
     let error = retry_cast_request("test request", || {
         calls.fetch_add(1, Ordering::SeqCst);

@@ -81,7 +81,7 @@ pub async fn check<R: Runtime>(
         .first()
         .ok_or_else(|| failure("未找到更新地址配置"))?;
     config.validate_url(endpoint)?;
-    let client = reqwest::Client::builder()
+    let client = karamas_core::http::client_builder()
         .timeout(Duration::from_secs(20))
         .build()
         .map_err(failure)?;
@@ -136,7 +136,7 @@ pub async fn download<R: Runtime>(
     let partial = directory.join("pending.apk.part");
     let path = directory.join("pending.apk");
     let result: CommandResult<()> = async {
-        let client = reqwest::Client::builder()
+        let client = karamas_core::http::client_builder()
             .timeout(Duration::from_secs(15 * 60))
             .build()
             .map_err(failure)?;

@@ -18,11 +18,17 @@ local-ip-address = "0.6.13"
 log = "0.4.34"
 socket2 = "0.6.5"
 
-reqwest = { version = "0.12", default-features = false, features = [
+# 保留原先由 innertube-rs 合并启用的上游 HTTP/2 和响应解压能力。
+reqwest = { version = "0.13.5", default-features = false, features = [
+    "brotli",
+    "gzip",
+    "http2",
     "json",
+    "query",
     "stream",
-    "rustls-tls-webpki-roots",
+    "rustls-no-provider",
 ] }
+webpki-roots = "1.0.11"
 
 rustls = { version = "0.23.46", default-features = false, features = [
     "ring",

@@ -123,7 +123,7 @@ mod tests {
             .insert_header(("Range", "bytes=4-7"))
             .insert_header(("If-Range", "\"track\""))
             .to_http_request();
-        let client = reqwest::Client::new();
+        let client = crate::http::client_builder().build().unwrap();
         let url = format!("http://{address}/track");
         let response = serve_track(&request, &client, session.clone(), &url)
             .await

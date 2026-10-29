@@ -1023,7 +1023,7 @@ mod tests {
         else {
             panic!("expected DASH");
         };
-        let client = reqwest::Client::builder().build().unwrap();
+        let client = crate::http::client_builder().build().unwrap();
         let muxed = mux_dash(&client, &video_url, &audio_url).await.unwrap();
         let expected = muxed.content_length;
         let path = "target/bilibili-1080-mux-test.mp4";
@@ -1061,7 +1061,7 @@ mod tests {
         else {
             panic!("expected DASH");
         };
-        let client = reqwest::Client::builder().build().unwrap();
+        let client = crate::http::client_builder().build().unwrap();
         let mut stream = mux_dash_from(&client, &video_url, &audio_url, 120)
             .await
             .unwrap()

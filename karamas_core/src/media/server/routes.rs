@@ -382,7 +382,6 @@ pub async fn proxy_handler(
 mod tests {
     use crate::media::server::proxy_handler;
     use actix_web::{App, HttpServer, web};
-    use reqwest::Client;
 
     #[actix_web::test]
     async fn obsolete_session_head_returns_gone_without_upstream_access() {
@@ -402,7 +401,7 @@ mod tests {
             eplus_auth: Arc::new(tokio::sync::Mutex::new(None)),
             media_sessions: sessions,
         });
-        let app = actix_web::test::init_service(App::new().app_data(state).app_data(web::Data::new(Client::new())).service(proxy_handler)).await;
+        let app = actix_web::test::init_service(App::new().app_data(state).app_data(web::Data::new(crate::http::client_builder().build().unwrap())).service(proxy_handler)).await;
         for path in [old.path(), format!("__ktv_media/{}.mp4", old.generation), format!("__ktv_media/{}/video.mp4", old.generation), format!("__ktv_media/{}/audio.mp4", old.generation)] {
             for method in [actix_web::http::Method::GET, actix_web::http::Method::HEAD, actix_web::http::Method::OPTIONS] {
                 let request = actix_web::test::TestRequest::with_uri(&format!("/{path}")).method(method).to_request();
@@ -415,7 +414,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires public Bilibili access"]
     async fn test_https() {
-        let client = reqwest::Client::new();
+        let client = crate::http::client_builder().build().unwrap();
 
         match client
             .get("https://www.bilibili.com/")
@@ -431,8 +430,7 @@ mod tests {
     #[ignore = "manual long-running proxy server"]
     async fn test_proxy() -> std::io::Result<()> {
         // 在外面创建全局唯一的 Client，内部已配置好纯 Rustls
-        let client = Client::builder()
-            .use_rustls_tls() // 强制使用 rustls
+        let client = crate::http::client_builder()
             .build()
             .expect("Failed to create client");
 

@@ -436,7 +436,7 @@ mod tests {
         assert!(first.is_stopped());
         assert_eq!(
             first
-                .prepare(&reqwest::Client::new())
+                .prepare(&crate::http::client_builder().build().unwrap())
                 .await
                 .err()
                 .unwrap()
@@ -459,7 +459,7 @@ mod tests {
             Quality::P720,
             MediaFormat::Mp4,
         );
-        let client = reqwest::Client::new();
+        let client = crate::http::client_builder().build().unwrap();
         let (a, b) = tokio::join!(s.prepare(&client), s.prepare(&client));
         assert!(Arc::ptr_eq(&a.unwrap(), &b.unwrap()));
     }

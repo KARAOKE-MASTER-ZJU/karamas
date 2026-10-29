@@ -410,7 +410,7 @@ mod tests {
                 stream.write_all(response.as_bytes()).await.unwrap();
             });
             let context = format!("[Bilibili] 播放歌曲：command=1，设备=test-device，端点={endpoint}");
-            let response = reqwest::Client::builder().no_proxy().build().unwrap()
+            let response = crate::http::client_builder().no_proxy().build().unwrap()
                 .post(&endpoint).send().await.unwrap();
             let error = read_control_response(&context, 1, response).await.unwrap_err().to_string();
             server.await.unwrap();
