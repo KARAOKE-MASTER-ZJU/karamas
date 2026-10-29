@@ -41,8 +41,8 @@ function clearLocalChannel() {
 }
 
 export const castingApi = {
-  openPlaybackWindow: (token: string) =>
-    call<void>("open_playback_window", { token }),
+  openPlaybackWindow: (token: string, displayId: string | null = null) =>
+    call<void>("open_playback_window", { token, displayId }),
   closePlaybackWindow: (token: string) =>
     call<boolean>("close_playback_window", { token }),
   focusPlaybackWindow: (token: string) =>

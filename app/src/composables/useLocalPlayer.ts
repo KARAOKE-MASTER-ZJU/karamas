@@ -1,4 +1,5 @@
 import {
+  computed,
   onMounted,
   onScopeDispose,
   reactive,
@@ -30,7 +31,8 @@ export function useLocalPlayer(
 ) {
   const casting = useCastingStore();
   const { run } = usePlaybackControls();
-  const output = ref<"embedded" | "window">("embedded");
+  const output = ref("embedded");
+  const detached = computed(() => output.value !== "embedded");
   const switching = ref(false);
   const state = reactive<LocalPlayerState>({
     hasMedia: false,
@@ -74,7 +76,7 @@ export function useLocalPlayer(
 
   function restoreAfterClose() {
     remote = undefined;
-    if (disposed || output.value !== "window") return;
+    if (disposed || !detached.value) return;
     output.value = "embedded";
     routingPaused = false;
     void player?.apply(snapshot);
@@ -86,65 +88,23 @@ export function useLocalPlayer(
       !player ||
       disposed ||
       switching.value ||
-      !["embedded", "window"].includes(target)
+      !(
+        target === "embedded" ||
+        target === "window" ||
+        target.startsWith("screen:")
+      )
     )
       return;
     if (target === output.value) {
-      if (target === "window") await remote?.focus();
+      if (detached.value) await remote?.focus();
       return;
     }
     switching.value = true;
-    let suspendedEmbedded = false;
+    const displayId = target.startsWith("screen:") ? target : null;
+    let restoreEmbedded = false;
     try {
-      if (target === "window") {
-        const opened = createPlaybackWindow({
-          onReady: () => {
-            if (output.value === "window") {
-              void run(async () => remote?.apply(snapshot));
-            }
-          },
-          onPlayback: (report) => {
-            if (output.value === "window" && !routingPaused)
-              acceptPlayback(report);
-          },
-          onState: (value) => {
-            if (output.value === "window") Object.assign(state, value);
-          },
-          onClosing: () => {
-            if (switching.value) closeRequested = true;
-            else void run(() => setOutput("embedded"));
-          },
-          onClosed: restoreAfterClose,
-          onRetry: () => {
-            void retry();
-          },
-        });
-        remote = opened;
-        await opened.open();
-        if (
-          disposed ||
-          closeRequested ||
-          casting.activeDevice?.kind !== "local"
-        ) {
-          await opened.close();
-          remote = undefined;
-          return;
-        }
-        routingPaused = true;
-        suspendedEmbedded = true;
-        const current = casting.localCommand;
-        const captured = await player.suspend();
-        if (
-          current &&
-          casting.localCommand === current &&
-          captured?.sessionId === current.sessionId &&
-          captured.commandId === current.commandId
-        )
-          snapshot = captured;
-        output.value = "window";
-        routingPaused = false;
-        await opened.apply(snapshot);
-      } else {
+      if (detached.value) {
+        restoreEmbedded = true;
         routingPaused = true;
         const current = casting.localCommand;
         const opened = remote;
@@ -163,7 +123,58 @@ export function useLocalPlayer(
         await opened?.close();
         remote = undefined;
         output.value = "embedded";
+        routingPaused = target !== "embedded";
+      }
+      if (target !== "embedded") {
+        const opened = createPlaybackWindow({
+          onReady: () => {
+            if (detached.value) {
+              void run(async () => remote?.apply(snapshot));
+            }
+          },
+          onPlayback: (report) => {
+            if (detached.value && !routingPaused) acceptPlayback(report);
+          },
+          onState: (value) => {
+            if (detached.value) Object.assign(state, value);
+          },
+          onClosing: () => {
+            if (switching.value) closeRequested = true;
+            else void run(() => setOutput("embedded"));
+          },
+          onClosed: restoreAfterClose,
+          onRetry: () => {
+            void retry();
+          },
+        });
+        remote = opened;
+        await opened.open(displayId);
+        if (
+          disposed ||
+          closeRequested ||
+          casting.activeDevice?.kind !== "local"
+        ) {
+          await opened.close();
+          remote = undefined;
+          routingPaused = false;
+          if (restoreEmbedded) await player.apply(snapshot);
+          return;
+        }
+        routingPaused = true;
+        restoreEmbedded = true;
+        const current = casting.localCommand;
+        const captured = await player.suspend();
+        if (
+          current &&
+          casting.localCommand === current &&
+          captured?.sessionId === current.sessionId &&
+          captured.commandId === current.commandId
+        )
+          snapshot = captured;
+        output.value = target;
         routingPaused = false;
+        await opened.apply(snapshot);
+      } else {
         await player.apply(snapshot);
       }
     } catch (cause) {
@@ -171,14 +182,14 @@ export function useLocalPlayer(
         await remote?.close();
       } catch (closeCause) {
         routingPaused = false;
-        if (output.value === "window") await remote?.apply(snapshot);
+        if (detached.value) await remote?.apply(snapshot);
         throw Object.assign(
           new Error(`${errorMessage(cause)}；${errorMessage(closeCause)}`),
           { cause: closeCause },
         );
       }
       remote = undefined;
-      const restore = suspendedEmbedded || output.value === "window";
+      const restore = restoreEmbedded || detached.value;
       output.value = "embedded";
       routingPaused = false;
       if (restore && !disposed) await player.apply(snapshot);
@@ -239,7 +250,7 @@ export function useLocalPlayer(
       if (windowToken || disposed) return;
       snapshot = updatePlaybackSnapshot(snapshot, command);
       if (routingPaused) return;
-      if (output.value === "window") {
+      if (detached.value) {
         void run(async () => remote?.apply(command));
         if (!command) void run(() => setOutput("embedded"));
       } else void player?.apply(command);
@@ -278,6 +289,7 @@ export function useLocalPlayer(
   return {
     ...toRefs(state),
     output,
+    detached,
     switching,
     setOutput,
     focusOutput: () => run(async () => remote?.focus()),

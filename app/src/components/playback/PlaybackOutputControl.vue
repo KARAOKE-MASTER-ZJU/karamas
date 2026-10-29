@@ -31,7 +31,7 @@ const options = computed(() => [
   },
   ...displays.value.map((display, index) => ({
     id: display.id,
-    disabled: true,
+    disabled: !windowSupported.value,
     label: `屏幕 ${index + 1}${display.name ? ` · ${display.name}` : ""}`,
     description: [
       `${display.width} × ${display.height}`,

@@ -22,11 +22,12 @@ pub fn open_playback_window<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     window: tauri::WebviewWindow<R>,
     token: String,
+    display_id: Option<String>,
 ) -> CommandResult<()> {
     authorize(&window)?;
     #[cfg(not(desktop))]
     {
-        let _ = (app, token);
+        let _ = (app, token, display_id);
         Err(CommandError::new(
             "WINDOW_UNSUPPORTED",
             "当前平台暂不支持独立播放窗口。",
@@ -42,6 +43,7 @@ pub fn open_playback_window<R: tauri::Runtime>(
         {
             return Err(CommandError::new("WINDOW_TOKEN", "播放窗口标识无效。"));
         }
+        let display = resolve_display(&app, display_id.as_deref())?;
         {
             let state = app.state::<PlaybackWindowState>();
             let mut current = state.0.lock().unwrap();
@@ -59,6 +61,7 @@ pub fn open_playback_window<R: tauri::Runtime>(
             "playback",
             tauri::WebviewUrl::App("index.html".into()),
         )
+        .visible(false)
         .title("KARAM@S · 播放窗口")
         .inner_size(960.0, 540.0)
         .min_inner_size(320.0, 180.0)
@@ -92,6 +95,10 @@ pub fn open_playback_window<R: tauri::Runtime>(
                         }),
                     );
                 });
+                if let Err(error) = place_window(&player, display.as_ref()) {
+                    let _ = player.destroy();
+                    return Err(error);
+                }
                 Ok(())
             }
             Err(error) => {
@@ -182,4 +189,41 @@ pub fn on_page_load<R: tauri::Runtime>(
             let _ = player.destroy();
         }
     }
+}
+
+#[cfg(desktop)]
+fn resolve_display<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    id: Option<&str>,
+) -> CommandResult<Option<tauri::window::Monitor>> {
+    let Some(id) = id else {
+        return Ok(None);
+    };
+    let monitors = app
+        .available_monitors()
+        .map_err(|error| CommandError::new("DISPLAY_DISCOVERY", error.to_string()))?;
+    monitors
+        .into_iter()
+        .enumerate()
+        .find(|(index, monitor)| super::displays::monitor_id(*index, monitor) == id)
+        .map(|(_, monitor)| Some(monitor))
+        .ok_or_else(|| CommandError::new("DISPLAY_UNAVAILABLE", "所选屏幕已变化，请刷新屏幕列表。"))
+}
+
+#[cfg(desktop)]
+fn place_window<R: tauri::Runtime>(
+    player: &tauri::WebviewWindow<R>,
+    display: Option<&tauri::window::Monitor>,
+) -> CommandResult<()> {
+    let place = || -> tauri::Result<()> {
+        player.unminimize()?;
+        if let Some(display) = display {
+            player.set_size(*display.size())?;
+            player.set_position(*display.position())?;
+            player.set_fullscreen(true)?;
+        }
+        player.show()?;
+        player.set_focus()
+    };
+    place().map_err(|error| CommandError::new("WINDOW_DISPLAY", error.to_string()))
 }

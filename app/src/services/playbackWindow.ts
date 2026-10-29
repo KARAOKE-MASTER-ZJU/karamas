@@ -78,7 +78,7 @@ export function createPlaybackWindow(callbacks: {
   let suspended: ReturnType<typeof pending<LocalCommand | null>> | undefined;
   let destroyed: ReturnType<typeof pending<void>> | undefined;
 
-  async function open() {
+  async function open(displayId: string | null = null) {
     ready = pending("播放窗口启动超时，请重试。", 15000);
     try {
       unlisten = await listen<WindowMessage>(MESSAGE_EVENT, ({ payload }) => {
@@ -115,7 +115,7 @@ export function createPlaybackWindow(callbacks: {
             break;
         }
       });
-      await castingApi.openPlaybackWindow(token);
+      await castingApi.openPlaybackWindow(token, displayId);
       await ready.promise;
     } catch (error) {
       ready.reject(new Error("播放窗口启动失败。"));

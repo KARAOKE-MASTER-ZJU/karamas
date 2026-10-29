@@ -56,14 +56,13 @@ pub async fn list_playback_displays<R: tauri::Runtime>(
             .enumerate()
             .map(|(index, (monitor, native))| {
                 let source = monitor.name().cloned().unwrap_or_default();
-                let position = monitor.position();
                 let name = native
                     .as_ref()
                     .map(|metadata| metadata.name.trim())
                     .filter(|name| !name.is_empty())
                     .unwrap_or(source.trim());
                 PlaybackDisplay {
-                    id: format!("screen:{index}:{source}:{}:{}", position.x, position.y),
+                    id: monitor_id(index, &monitor),
                     name: readable_name(name),
                     width: monitor.size().width,
                     height: monitor.size().height,
@@ -92,4 +91,11 @@ fn readable_name(name: &str) -> String {
         return format!("Display {number}");
     }
     name.to_owned()
+}
+
+#[cfg(desktop)]
+pub(super) fn monitor_id(index: usize, monitor: &tauri::window::Monitor) -> String {
+    let name = monitor.name().map(String::as_str).unwrap_or_default();
+    let position = monitor.position();
+    format!("screen:{index}:{name}:{}:{}", position.x, position.y)
 }

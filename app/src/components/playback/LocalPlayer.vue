@@ -14,6 +14,7 @@ const {
   error,
   needsGesture,
   output,
+  detached,
   switching,
   setOutput,
   focusOutput,
@@ -41,17 +42,17 @@ useLocalPlayerShortcuts(
   <div
     v-show="windowToken || casting.activeDevice?.kind === 'local'"
     class="local-player"
-    :class="{ standalone: windowToken, detached: output === 'window' }"
+    :class="{ standalone: windowToken, detached }"
     aria-label="本地视频播放器"
   >
     <video
-      v-show="output === 'embedded'"
+      v-show="!detached"
       ref="video"
       :controls="hasMedia && !loading"
       playsinline
       preload="metadata"
     />
-    <div v-if="output === 'window'" class="player-message">
+    <div v-if="detached" class="player-message">
       <span>正在独立窗口中播放</span>
       <button class="button secondary" @click="focusOutput">
         显示播放窗口
