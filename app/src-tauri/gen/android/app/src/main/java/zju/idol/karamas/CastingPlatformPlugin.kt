@@ -2,7 +2,6 @@ package zju.idol.karamas
 
 import android.app.Activity
 import android.content.Intent
-import android.hardware.display.DisplayManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
@@ -22,6 +21,7 @@ import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSArray
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import app.tauri.plugin.PluginManager
 import org.json.JSONObject
 
 @InvokeArg
@@ -37,6 +37,39 @@ class StartCastingArgs {
 )
 class CastingPlatformPlugin(private val activity: Activity) : Plugin(activity) {
     private val updater = AppUpdater(activity)
+    private val playback: PlaybackPresentation
+        get() = (PluginManager.activity as MainActivity).playbackPresentation
+
+    @Command
+    fun openPlaybackWindow(invoke: Invoke) = playbackCommand(invoke) { args ->
+        playback.open(args)
+        invoke.resolve()
+    }
+
+    @Command
+    fun closePlaybackWindow(invoke: Invoke) = playbackCommand(invoke) { args ->
+        invoke.resolveObject(playback.close(args.token.takeIf { it.isNotEmpty() }))
+    }
+
+    @Command
+    fun focusPlaybackWindow(invoke: Invoke) = playbackCommand(invoke) { args ->
+        playback.focus(args.token)
+        invoke.resolve()
+    }
+
+    @Command
+    fun sendPlaybackWindowMessage(invoke: Invoke) = playbackCommand(invoke) { args ->
+        playback.send(args.message)
+        invoke.resolve()
+    }
+
+    private fun playbackCommand(invoke: Invoke, action: (PlaybackWindowArgs) -> Unit) {
+        try {
+            action(invoke.parseArgs(PlaybackWindowArgs::class.java))
+        } catch (error: Exception) {
+            invoke.reject(error.message ?: "播放窗口操作失败。", "ANDROID_PRESENTATION")
+        }
+    }
 
     @Command
     fun updateVersion(invoke: Invoke) = updater.version(invoke)
@@ -47,8 +80,7 @@ class CastingPlatformPlugin(private val activity: Activity) : Plugin(activity) {
     @Command
     fun listPlaybackDisplays(invoke: Invoke) {
         try {
-            val manager = activity.getSystemService(DisplayManager::class.java)
-            val displays = manager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)
+            val displays = playback.displays()
                 .map { display ->
                     val mode = display.mode
                     JSObject().apply {

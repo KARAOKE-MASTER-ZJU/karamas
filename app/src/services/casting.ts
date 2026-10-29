@@ -1,3 +1,4 @@
+import { invokePresentation } from "@/services/presentationBridge";
 import type { LocalCommand, LocalReport } from "@/types/localPlayer";
 import type { PlaybackDisplay } from "@/types/playbackOutput";
 import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
@@ -18,6 +19,7 @@ import type {
 
 // 所有原生调用集中在此，页面不直接拼接 IPC 命令和参数。
 function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  if (window.KaramasPlayback) return invokePresentation<T>(command, args);
   if (!isTauri())
     return Promise.reject(new Error("请在 Tauri 应用中使用此功能。"));
   return invoke<T>(command, args);
@@ -41,6 +43,8 @@ function clearLocalChannel() {
 }
 
 export const castingApi = {
+  sendPlaybackWindowMessage: (message: unknown) =>
+    call<void>("send_playback_window_message", { message }),
   openPlaybackWindow: (token: string, displayId: string | null = null) =>
     call<void>("open_playback_window", { token, displayId }),
   closePlaybackWindow: (token: string) =>

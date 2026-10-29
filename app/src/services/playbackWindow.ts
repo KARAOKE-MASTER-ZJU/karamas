@@ -7,6 +7,11 @@ import type {
   LocalReport,
 } from "@/types/localPlayer";
 
+import {
+  listenPresentationCommand,
+  sendPresentationMessage,
+} from "@/services/presentationBridge";
+
 const COMMAND_EVENT = "playback-window-command";
 const MESSAGE_EVENT = "playback-window-message";
 const WINDOW_LABEL = "playback";
@@ -34,6 +39,12 @@ type WindowMessage = { token: string } & (
 
 export async function supportsPlaybackWindow() {
   return isTauri() && (await supportsMultipleWindows());
+}
+
+function sendCommand(message: CommandMessage) {
+  return window.__KARAMAS_PRESENTATION_SUPPORTED__
+    ? castingApi.sendPlaybackWindowMessage(message)
+    : emitTo(WINDOW_LABEL, COMMAND_EVENT, message);
 }
 
 function pending<T>(message: string, timeout: number) {
@@ -124,7 +135,7 @@ export function createPlaybackWindow(callbacks: {
     }
   }
   async function apply(command: LocalCommand | null) {
-    await emitTo(WINDOW_LABEL, COMMAND_EVENT, {
+    await sendCommand({
       token,
       type: "apply",
       sequence: ++sequence,
@@ -134,7 +145,7 @@ export function createPlaybackWindow(callbacks: {
   async function suspend() {
     suspended = pending("读取播放窗口状态超时。", 3000);
     try {
-      await emitTo(WINDOW_LABEL, COMMAND_EVENT, {
+      await sendCommand({
         token,
         type: "suspend",
         requestId: ++requestId,
@@ -185,32 +196,34 @@ export async function connectPlaybackWindow(
 ) {
   let sequence = 0;
   const send = (message: WindowMessage) =>
-    emitTo("main", MESSAGE_EVENT, message);
-  const unlisten = await listen<CommandMessage>(
-    COMMAND_EVENT,
-    ({ payload }) => {
-      if (payload.token !== token) return;
-      if (payload.type === "apply") {
-        if (payload.sequence <= sequence) return;
-        sequence = payload.sequence;
-        void player
-          .apply(payload.command)
-          .catch((cause) => console.warn("播放窗口处理命令失败：", cause));
-      } else {
-        void player
-          .suspend()
-          .then((command) =>
-            send({
-              token,
-              type: "suspended",
-              requestId: payload.requestId,
-              command,
-            }),
-          )
-          .catch((cause) => console.warn("播放窗口交接失败：", cause));
-      }
-    },
-  );
+    window.KaramasPlayback
+      ? sendPresentationMessage(message)
+      : emitTo("main", MESSAGE_EVENT, message);
+  const onCommand = ({ payload }: { payload: CommandMessage }) => {
+    if (payload.token !== token) return;
+    if (payload.type === "apply") {
+      if (payload.sequence <= sequence) return;
+      sequence = payload.sequence;
+      void player
+        .apply(payload.command)
+        .catch((cause) => console.warn("播放窗口处理命令失败：", cause));
+    } else {
+      void player
+        .suspend()
+        .then((command) =>
+          send({
+            token,
+            type: "suspended",
+            requestId: payload.requestId,
+            command,
+          }),
+        )
+        .catch((cause) => console.warn("播放窗口交接失败：", cause));
+    }
+  };
+  const unlisten = window.KaramasPlayback
+    ? listenPresentationCommand(onCommand)
+    : await listen<CommandMessage>(COMMAND_EVENT, onCommand);
   return {
     ready: () => send({ token, type: "ready" }),
     playback: (report: LocalReport) =>

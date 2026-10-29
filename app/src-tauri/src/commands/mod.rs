@@ -15,6 +15,7 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         crate::platform::playback_window::open_playback_window,
         crate::platform::playback_window::close_playback_window,
         crate::platform::playback_window::focus_playback_window,
+        crate::platform::playback_window::send_playback_window_message,
         updater::update_supported,
         updater::check_update,
         updater::download_update,

@@ -1,11 +1,12 @@
 use crate::error::{CommandError, CommandResult};
+#[cfg(not(target_os = "android"))]
 use std::sync::Mutex;
 #[cfg(desktop)]
 use tauri::Emitter;
 use tauri::Manager;
 
 #[derive(Default)]
-pub struct PlaybackWindowState(Mutex<Option<String>>);
+pub struct PlaybackWindowState(#[cfg(not(target_os = "android"))] Mutex<Option<String>>);
 
 fn authorize<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) -> CommandResult<()> {
     if window.label() != "main" {
@@ -18,14 +19,18 @@ fn authorize<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) -> CommandResu
 }
 
 #[tauri::command(async)]
-pub fn open_playback_window<R: tauri::Runtime>(
+pub async fn open_playback_window<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     window: tauri::WebviewWindow<R>,
     token: String,
     display_id: Option<String>,
 ) -> CommandResult<()> {
     authorize(&window)?;
-    #[cfg(not(desktop))]
+    #[cfg(target_os = "android")]
+    {
+        super::android::open_playback_window(&app, token, display_id).await
+    }
+    #[cfg(not(any(desktop, target_os = "android")))]
     {
         let _ = (app, token, display_id);
         Err(CommandError::new(
@@ -110,39 +115,60 @@ pub fn open_playback_window<R: tauri::Runtime>(
 }
 
 #[tauri::command]
-pub fn close_playback_window<R: tauri::Runtime>(
+pub async fn close_playback_window<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     window: tauri::WebviewWindow<R>,
     token: String,
 ) -> CommandResult<bool> {
     authorize(&window)?;
-    if app
-        .state::<PlaybackWindowState>()
-        .0
-        .lock()
-        .unwrap()
-        .as_deref()
-        != Some(&token)
+    #[cfg(target_os = "android")]
     {
-        return Ok(false);
+        super::android::playback_window_call(
+            &app,
+            "closePlaybackWindow",
+            serde_json::json!({"token": token}),
+        )
+        .await
     }
-    if let Some(player) = app.get_webview_window("playback") {
-        player
-            .destroy()
-            .map_err(|error| CommandError::new("WINDOW_CLOSE", error.to_string()))?;
-        return Ok(true);
+    #[cfg(not(target_os = "android"))]
+    {
+        if app
+            .state::<PlaybackWindowState>()
+            .0
+            .lock()
+            .unwrap()
+            .as_deref()
+            != Some(&token)
+        {
+            return Ok(false);
+        }
+        if let Some(player) = app.get_webview_window("playback") {
+            player
+                .destroy()
+                .map_err(|error| CommandError::new("WINDOW_CLOSE", error.to_string()))?;
+            return Ok(true);
+        }
+        Ok(false)
     }
-    Ok(false)
 }
 
 #[tauri::command]
-pub fn focus_playback_window<R: tauri::Runtime>(
+pub async fn focus_playback_window<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     window: tauri::WebviewWindow<R>,
     token: String,
 ) -> CommandResult<()> {
     authorize(&window)?;
-    #[cfg(not(desktop))]
+    #[cfg(target_os = "android")]
+    {
+        super::android::playback_window_call(
+            &app,
+            "focusPlaybackWindow",
+            serde_json::json!({"token": token}),
+        )
+        .await
+    }
+    #[cfg(not(any(desktop, target_os = "android")))]
     {
         let _ = (app, token);
         Err(CommandError::new(
@@ -185,6 +211,18 @@ pub fn on_page_load<R: tauri::Runtime>(
     payload: &tauri::webview::PageLoadPayload<'_>,
 ) {
     if webview.label() == "main" && payload.event() == tauri::webview::PageLoadEvent::Started {
+        #[cfg(target_os = "android")]
+        {
+            let app = webview.app_handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = super::android::playback_window_call::<_, bool>(
+                    &app,
+                    "closePlaybackWindow",
+                    serde_json::json!({}),
+                )
+                .await;
+            });
+        }
         if let Some(player) = webview.app_handle().get_webview_window("playback") {
             let _ = player.destroy();
         }
@@ -226,4 +264,32 @@ fn place_window<R: tauri::Runtime>(
         player.set_focus()
     };
     place().map_err(|error| CommandError::new("WINDOW_DISPLAY", error.to_string()))
+}
+
+#[tauri::command]
+pub async fn send_playback_window_message<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    window: tauri::WebviewWindow<R>,
+    message: serde_json::Value,
+) -> CommandResult<()> {
+    authorize(&window)?;
+    #[cfg(target_os = "android")]
+    {
+        super::android::playback_window_call(
+            &app,
+            "sendPlaybackWindowMessage",
+            serde_json::json!({"message": {
+                "token": message["token"], "type": "command", "payload": message,
+            }}),
+        )
+        .await
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (app, message);
+        Err(CommandError::new(
+            "WINDOW_UNSUPPORTED",
+            "当前平台使用窗口事件传递播放命令。",
+        ))
+    }
 }

@@ -11,10 +11,12 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 
 class MainActivity : TauriActivity() {
+  internal val playbackPresentation by lazy { PlaybackPresentation(this) }
   private var videoFullscreen: VideoFullscreenWebChromeClient? = null
 
   override fun onWebViewCreate(webView: WebView) {
     super.onWebViewCreate(webView)
+    playbackPresentation.attach(webView)
     // Wry 在此回调之后设置默认客户端，等初始化完成再接入全屏处理。
     webView.post {
       if (isDestroyed) return@post
@@ -28,7 +30,18 @@ class MainActivity : TauriActivity() {
     }
   }
 
+  override fun onPause() {
+    playbackPresentation.setForeground(false)
+    super.onPause()
+  }
+
+  override fun onResume() {
+    super.onResume()
+    playbackPresentation.setForeground(true)
+  }
+
   override fun onDestroy() {
+    playbackPresentation.destroy()
     videoFullscreen?.onHideCustomView()
     // 配置变化保留服务，页面最终销毁时与 Rust 的退出清理一起停止服务。
     if (!isChangingConfigurations) stopService(Intent(this, CastingService::class.java))
