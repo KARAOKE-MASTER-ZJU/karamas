@@ -295,7 +295,7 @@ mod tests {
             quality, crate::cast::MediaFormat::Dash,
         );
         let started = std::time::Instant::now();
-        let client = crate::http::client_builder().build().unwrap();
+        let client = reqwest::Client::new();
         let media = session
             .prepare(&client)
             .await

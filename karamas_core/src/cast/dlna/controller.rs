@@ -27,7 +27,7 @@ const DEVICE_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(3);
 fn soap_client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
-        crate::http::client_builder()
+        reqwest::Client::builder()
             .no_proxy()
             .timeout(crate::config::SOAP_TIMEOUT)
             .pool_idle_timeout(Duration::from_secs(30))

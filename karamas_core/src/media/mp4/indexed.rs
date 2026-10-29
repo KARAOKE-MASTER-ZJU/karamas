@@ -878,7 +878,7 @@ mod tests {
         let cache = Arc::new(
             SongCache::new(
                 &std::env::temp_dir(),
-                crate::http::client_builder().build().unwrap(),
+                reqwest::Client::new(),
                 vec![RemoteSource {
                     url: "http://127.0.0.1:1/unreachable".into(),
                     len: 209,
@@ -980,7 +980,7 @@ mod tests {
                 socket.write_all(&response).await.unwrap();
             }
         });
-        let cache = Arc::new(SongCache::new(&std::env::temp_dir(), crate::http::client_builder().build().unwrap(),
+        let cache = Arc::new(SongCache::new(&std::env::temp_dir(), reqwest::Client::new(),
             vec![RemoteSource { url, len: 209 }], BLOCK_BYTES).unwrap());
         let mut b = builder(false);
         b.add_fragment(0, 100, &fragment(0, ints(&[1, 3, 100]))).unwrap();
@@ -1033,7 +1033,7 @@ mod tests {
         let cache = Arc::new(
             SongCache::new(
                 &std::env::temp_dir(),
-                crate::http::client_builder().build().unwrap(),
+                reqwest::Client::new(),
                 vec![RemoteSource { url, len: 209 }],
                 BLOCK_BYTES,
             )

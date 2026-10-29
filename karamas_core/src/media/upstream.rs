@@ -2,7 +2,7 @@
 
 /// 媒体请求自行指定来源 Referer，CDN 重定向时继续保留该请求头。
 pub fn client() -> Result<reqwest::Client, reqwest::Error> {
-    crate::http::client_builder()
+    reqwest::Client::builder()
         .connect_timeout(crate::config::PROXY_CONNECT_TIMEOUT)
         .referer(false)
         .build()

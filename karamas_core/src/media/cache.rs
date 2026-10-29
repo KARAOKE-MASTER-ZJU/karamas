@@ -413,7 +413,7 @@ mod tests {
 
     #[test]
     fn retiring_old_streams_does_not_cancel_new_ranges_or_the_cache() {
-        let cache = SongCache::new(&std::env::temp_dir(), crate::http::client_builder().build().unwrap(), vec![
+        let cache = SongCache::new(&std::env::temp_dir(), reqwest::Client::new(), vec![
             RemoteSource { url: "http://unused.invalid/video".into(), len: 1024 },
         ], DEFAULT_CACHE_BLOCK_BYTES).unwrap();
         let (old_id, old) = cache.stream_epoch();
@@ -431,7 +431,7 @@ mod tests {
     fn warmup_deduplicates_interleaved_blocks_in_first_use_order() {
         use crate::media::mp4::indexed::ReadPart::Source;
         let block = DEFAULT_CACHE_BLOCK_BYTES;
-        let cache = SongCache::new(&std::env::temp_dir(), crate::http::client_builder().build().unwrap(), vec![
+        let cache = SongCache::new(&std::env::temp_dir(), reqwest::Client::new(), vec![
             RemoteSource { url: "http://unused.invalid/video".into(), len: block * 3 },
             RemoteSource { url: "http://unused.invalid/audio".into(), len: block + 7 },
         ], block * 8).unwrap();
@@ -520,7 +520,7 @@ mod tests {
     fn cache(server: &Origin, length: u64, blocks: u64) -> SongCache {
         SongCache::new_with_block_size(
             &std::env::temp_dir(),
-            crate::http::client_builder().build().unwrap(),
+            reqwest::Client::new(),
             vec![RemoteSource {
                 url: server.url.clone(),
                 len: length,
@@ -631,7 +631,7 @@ mod tests {
         .await;
         let cache = SongCache::new_with_block_size(
             &std::env::temp_dir(),
-            crate::http::client_builder().build().unwrap(),
+            reqwest::Client::new(),
             vec![RemoteSource {
                 url: server.url.clone(),
                 len: data.len() as u64,

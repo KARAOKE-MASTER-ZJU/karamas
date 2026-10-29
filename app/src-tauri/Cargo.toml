@@ -21,7 +21,7 @@ log = { version = "0.4.34", features = ["std"] }
 flexi_logger = { version = "0.31.10", default-features = false }
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 url = "2.5.8"
-reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider", "json"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 tauri-plugin-opener = "2.7.2"
 tauri-plugin-dialog = "2.8.3"
 tauri-plugin-fs = "2.7.1"

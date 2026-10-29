@@ -3,7 +3,6 @@ pub mod cast;
 pub mod config;
 pub mod engine;
 mod error;
-pub mod http;
 pub mod media;
 pub mod playlist;
 pub mod sources;

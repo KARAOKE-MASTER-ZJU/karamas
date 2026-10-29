@@ -340,7 +340,7 @@ mod tests {
             .unwrap()
         };
         let (video, audio) = (track("video"), track("audio"));
-        let client = crate::http::client_builder().build().unwrap();
+        let client = reqwest::Client::new();
         let proxy = Playlists::prepare(&client, &video, &audio, true)
             .await
             .unwrap();

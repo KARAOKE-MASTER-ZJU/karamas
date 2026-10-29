@@ -65,7 +65,7 @@ pub(super) fn form_body(params: &[(&str, &str)]) -> String {
 pub(super) fn bili_client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
-        crate::http::client_builder()
+        reqwest::Client::builder()
             .user_agent(UA)
             .timeout(crate::config::API_TIMEOUT)
             .build()

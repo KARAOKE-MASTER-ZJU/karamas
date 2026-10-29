@@ -12,7 +12,7 @@ pub use playback_media::ResolvedBilibiliMedia;
 fn bili_api_client() -> &'static Client {
     static CLIENT: OnceLock<Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
-        crate::http::client_builder()
+        Client::builder()
             .timeout(crate::config::API_TIMEOUT)
             .user_agent("Mozilla/5.0")
             .build()
