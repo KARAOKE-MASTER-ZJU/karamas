@@ -1,5 +1,7 @@
 use crate::error::CommandResult;
 
+pub mod displays;
+
 #[cfg(target_os = "android")]
 mod android;
 

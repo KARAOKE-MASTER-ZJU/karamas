@@ -2,6 +2,7 @@ package zju.idol.karamas
 
 import android.app.Activity
 import android.content.Intent
+import android.hardware.display.DisplayManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
@@ -42,6 +43,27 @@ class CastingPlatformPlugin(private val activity: Activity) : Plugin(activity) {
 
     @Command
     fun installUpdate(invoke: Invoke) = updater.install(invoke)
+
+    @Command
+    fun listPlaybackDisplays(invoke: Invoke) {
+        try {
+            val manager = activity.getSystemService(DisplayManager::class.java)
+            val displays = manager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)
+                .map { display ->
+                    val mode = display.mode
+                    JSObject().apply {
+                        put("id", "screen:${display.displayId}")
+                        put("name", display.name)
+                        put("width", mode.physicalWidth)
+                        put("height", mode.physicalHeight)
+                        put("builtIn", JSONObject.NULL)
+                    }
+                }
+            invoke.resolve(JSObject().put("displays", JSArray(displays)))
+        } catch (error: Exception) {
+            invoke.reject("无法读取屏幕列表：${error.message}", "DISPLAY_DISCOVERY")
+        }
+    }
 
     private data class PendingPermission(val alias: String, val invoke: Invoke)
 

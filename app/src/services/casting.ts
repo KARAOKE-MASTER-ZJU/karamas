@@ -1,4 +1,5 @@
 import type { LocalCommand, LocalReport } from "@/types/localPlayer";
+import type { PlaybackDisplay } from "@/types/playbackOutput";
 import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { ConnectionConfig, LogLevel, RoomEntryMode } from "@/types";
@@ -40,6 +41,7 @@ function clearLocalChannel() {
 }
 
 export const castingApi = {
+  listPlaybackDisplays: () => call<PlaybackDisplay[]>("list_playback_displays"),
   moveToBackground: () => call<void>("move_to_background"),
   setDlnaDirect: (enabled: boolean) =>
     call<void>("set_dlna_direct", { enabled }),

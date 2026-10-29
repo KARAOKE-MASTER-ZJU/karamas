@@ -9,6 +9,7 @@ import PlaybackProgress from "@/components/playback/PlaybackProgress.vue";
 import PlaybackTransport from "@/components/playback/PlaybackTransport.vue";
 import VolumeControl from "@/components/playback/VolumeControl.vue";
 import PlaybackOptions from "@/components/playback/PlaybackOptions.vue";
+import PlaybackOutputControl from "@/components/playback/PlaybackOutputControl.vue";
 import BilibiliPartsControl from "@/components/playback/BilibiliPartsControl.vue";
 import { useCastingStore } from "@/stores/casting";
 import { usePlaybackControls } from "@/composables/usePlaybackControls";
@@ -25,6 +26,9 @@ const { playback, volume, activeDevice, recasting, room } =
   storeToRefs(casting);
 const controls = usePlaybackControls();
 const videoContainer = ref<HTMLElement | null>(null);
+function handlePlaybackOutputChange() {
+  // 预留播放位置切换回调。
+}
 useVideoLayout(
   videoContainer,
   toRef(props, "viewport"),
@@ -73,7 +77,13 @@ useVideoLayout(
       class="content-section player-section"
       aria-labelledby="playing-title"
     >
-      <h2 id="playing-title">正在播放</h2>
+      <div class="playing-header">
+        <h2 id="playing-title">正在播放</h2>
+        <PlaybackOutputControl
+          v-if="activeDevice?.kind === 'local'"
+          @change="handlePlaybackOutputChange"
+        />
+      </div>
       <div ref="videoContainer" class="video-container">
         <LocalPlayer :active="active" />
       </div>
@@ -191,12 +201,20 @@ useVideoLayout(
   padding: 0 0 16px;
   border-bottom: 0;
 }
-.player-section > h2 {
+.playing-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin-bottom: 12px;
+}
+.playing-header > h2 {
+  flex-shrink: 0;
+  margin: 0;
 }
 
 @media (max-width: 640px) {
-  .player-section > h2 {
+  .playing-header {
     margin-bottom: 18px;
   }
 }

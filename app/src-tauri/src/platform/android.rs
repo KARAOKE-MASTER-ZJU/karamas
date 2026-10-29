@@ -5,6 +5,23 @@ use tauri::{Manager, plugin::PluginHandle};
 struct AndroidPlatform<R: tauri::Runtime>(PluginHandle<R>);
 
 #[derive(Deserialize)]
+struct PlaybackDisplays {
+    displays: Vec<super::displays::PlaybackDisplay>,
+}
+
+pub async fn list_playback_displays<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> CommandResult<Vec<super::displays::PlaybackDisplay>> {
+    let result: PlaybackDisplays = app
+        .state::<AndroidPlatform<R>>()
+        .0
+        .run_mobile_plugin_async("listPlaybackDisplays", ())
+        .await
+        .map_err(|error| CommandError::new("DISPLAY_DISCOVERY", error.to_string()))?;
+    Ok(result.displays)
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UpdateVersion {
     version_code: u64,
