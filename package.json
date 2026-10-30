@@ -1,6 +1,7 @@
 {
   "name": "karamas-workspace",
   "private": true,
+  "license": "MIT",
   "packageManager": "pnpm@11.13.1",
   "engines": {
     "node": ">=24"

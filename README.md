@@ -101,6 +101,10 @@ DLNA 的“HLS 播放”是实验性选项，需要接收端支持。开启后�
 
 KARAM@S 基于 Tauri 2、Vue 3、TypeScript 和 Rust 构建。环境准备、源码运行、测试和打包说明见[开发指南](DEVELOP.md)，各版本变化见[更新日志](CHANGELOG.md)。
 
+## 许可证
+
+本项目采用 [MIT 许可证](LICENSE)。第三方依赖保留各自的许可证，详见[第三方许可证说明](THIRD_PARTY_NOTICES.md)。
+
 ## 致谢
 
 - [KTV Song List Web](https://github.com/KARAOKE-MASTER-ZJU/ktv-song-web): 配套的网页点歌台。
