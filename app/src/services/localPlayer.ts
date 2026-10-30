@@ -122,6 +122,9 @@ export function createLocalPlayer(
 
   async function loadSource(url: string, signal: AbortSignal) {
     const isHls = new URL(url).pathname.endsWith(".m3u8");
+    // 原生 HLS 需要通过 CORS 读取本机代理上的跨域字节范围分片。
+    if (isHls) video.crossOrigin = "anonymous";
+    else video.removeAttribute("crossorigin");
     if (isHls && !video.canPlayType("application/vnd.apple.mpegurl")) {
       const { default: Hls } = await import("hls.js");
       if (signal.aborted) return;

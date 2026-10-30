@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- 本机媒体代理、用户填写的房间地址和 DLNA 设备均可能使用 HTTP。 -->
+    <!-- 应用资源覆盖 rustls-platform-verifier 的同名配置，保留系统默认的证书校验。 -->
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
