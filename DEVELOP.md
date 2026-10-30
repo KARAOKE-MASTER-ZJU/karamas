@@ -192,7 +192,7 @@ ORG_GRADLE_PROJECT_karamasCompressNativeLibs=true pnpm android build --target aa
 
 Android 图标统一维护在 `app/src-tauri/icons/android`，原生工程直接引用此目录。
 
-APK 位于 `app/src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`。可用 `adb install -r` 安装到调试设备。当前 applicationId 为 `zju.idol.karamas`，可与原 Android 项目并存，应用数据各自保存。
+APK 位于 `app/src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`。可用 `adb install -r` 安装到调试设备。debug 的 applicationId 为 `zju.idol.karamas.dev`，release 为 `zju.idol.karamas`，两者可同时安装，应用数据各自保存。在 `tauri.android.conf.json` 中设置 `bundle.android.debugApplicationIdSuffix` 为 `.dev`，Tauri 会将后缀同步到 Gradle，并用开发版标识启动应用。不要只修改 Gradle 的 `applicationIdSuffix`，该值会被 Tauri 重写。`namespace`、Kotlin 包名和 JNI 绑定保持 `zju.idol.karamas`。
 
 ### Android 网络与运行限制
 
