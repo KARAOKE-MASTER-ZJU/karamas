@@ -24,12 +24,12 @@ _投屏页预览_
 
 前往 [GitHub Releases](https://github.com/KARAOKE-MASTER-ZJU/karamas/releases/latest)，选择对应系统和处理器的安装包。
 
-| 平台               | 安装包                | 如何选择                                                                                     |
-| ------------------ | --------------------- | -------------------------------------------------------------------------------------------- |
-| Windows            | `.exe`                | 常见 Intel / AMD 电脑选 `windows_x64`；ARM 电脑选 `windows_arm64`；32 位系统选 `windows_x86` |
-| macOS              | `.dmg`                | Apple 芯片选 `darwin_aarch64`；Intel 芯片选 `darwin_x64`                                     |
-| Linux              | `.AppImage` 或 `.deb` | 按处理器选择 x64 / amd64 或 arm64 / aarch64；Debian、Ubuntu 等系统也可使用 `.deb`            |
-| Android 7.0 及以上 | `.apk`                | 常见手机选 `android-arm64-v8a`；其他架构可选 `armeabi-v7a`、`x86` 或 `x86_64`                |
+| 平台               | 安装包 | 如何选择                                                                                     |
+| ------------------ | ------ | -------------------------------------------------------------------------------------------- |
+| Windows            | `.exe` | 常见 Intel / AMD 电脑选 `windows_x64`；ARM 电脑选 `windows_arm64`；32 位系统选 `windows_x86` |
+| macOS              | `.dmg` | Apple 芯片选 `darwin_aarch64`；Intel 芯片选 `darwin_x64`                                     |
+| Linux              | `.deb` | 适用于 Debian、Ubuntu 等系统；按处理器选择 `linux_amd64` 或 `linux_arm64`                    |
+| Android 7.0 及以上 | `.apk` | 常见手机选 `android-arm64-v8a`；其他架构可选 `armeabi-v7a`、`x86` 或 `x86_64`                |
 
 ## 开始使用
 

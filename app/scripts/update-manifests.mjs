@@ -57,7 +57,6 @@ if (mode === "android") {
   const bundleNames = {
     exe: "nsis",
     "app.tar.gz": "app",
-    AppImage: "appimage",
     deb: "deb",
   };
   const assetByName = new Map(
@@ -72,7 +71,7 @@ if (mode === "android") {
     const match = name
       .slice(`karamas_${version}_`.length)
       .match(
-        /^(windows|linux|darwin|macos)_(\w+?)(?:-setup)?\.(exe|app\.tar\.gz|AppImage|deb)$/,
+        /^(windows|linux|darwin|macos)_(\w+?)(?:-setup)?\.(exe|app\.tar\.gz|deb)$/,
       );
     if (!match) throw new Error(`无法识别桌面更新包：${name}`);
     const [, platform, arch, bundle] = match;
@@ -87,9 +86,7 @@ if (mode === "android") {
   const expected = [
     ...["i686", "x86_64", "aarch64"].map((arch) => `windows-${arch}-nsis`),
     ...["x86_64", "aarch64"].map((arch) => `darwin-${arch}-app`),
-    ...["x86_64", "aarch64"].flatMap((arch) =>
-      ["appimage", "deb"].map((bundle) => `linux-${arch}-${bundle}`),
-    ),
+    ...["x86_64", "aarch64"].map((arch) => `linux-${arch}-deb`),
   ];
   for (const target of expected)
     if (!platforms[target]) throw new Error(`缺少桌面更新包：${target}`);
