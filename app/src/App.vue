@@ -94,15 +94,7 @@ const pageContent = ref<HTMLElement | null>(null);
           :viewport="workspace"
           :content="pageContent"
         />
-        <RouterView v-slot="{ Component }">
-          <KeepAlive>
-            <component
-              :is="Component"
-              v-if="route.name !== 'playback'"
-              :key="route.name"
-            />
-          </KeepAlive>
-        </RouterView>
+        <RouterView />
       </div>
     </main>
 
