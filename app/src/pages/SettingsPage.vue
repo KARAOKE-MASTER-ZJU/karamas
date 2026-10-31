@@ -205,6 +205,12 @@ async function logout() {
           }}
         </button>
       </div>
+      <RouterLink class="settings-row" :to="{ name: 'license' }">
+        <span>项目许可证</span><ChevronRight :size="18" aria-hidden="true" />
+      </RouterLink>
+      <RouterLink class="settings-row" :to="{ name: 'third-party' }">
+        <span>开源软件声明</span><ChevronRight :size="18" aria-hidden="true" />
+      </RouterLink>
     </section>
   </div>
 </template>

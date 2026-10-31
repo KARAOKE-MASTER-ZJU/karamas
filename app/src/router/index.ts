@@ -55,6 +55,26 @@ export const router = createRouter({
             back: { to: { name: "settings" }, label: "返回设置" },
           },
         },
+        {
+          path: "license",
+          name: "license",
+          component: () => import("@/pages/LegalPage.vue"),
+          props: { document: "license" },
+          meta: {
+            title: "项目许可证",
+            back: { to: { name: "settings" }, label: "返回设置" },
+          },
+        },
+        {
+          path: "third-party",
+          name: "third-party",
+          component: () => import("@/pages/LegalPage.vue"),
+          props: { document: "third-party" },
+          meta: {
+            title: "开源软件声明",
+            back: { to: { name: "settings" }, label: "返回设置" },
+          },
+        },
       ],
     },
     // 404路由，重定向到连接页面
