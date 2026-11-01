@@ -508,7 +508,8 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           gh release download "$RELEASE_TAG" --pattern '*.sig' --dir "$RUNNER_TEMP/updater"
-          gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/release.json"
+          release_id=$(gh release view "$RELEASE_TAG" --json databaseId --jq '.databaseId')
+          gh api "repos/$GH_REPO/releases/$release_id" > "$RUNNER_TEMP/release.json"
           node app/scripts/update-manifests.mjs release "$RUNNER_TEMP/updater" \
             "$RUNNER_TEMP/release.json" "$RUNNER_TEMP/release-notes.md" "${RELEASE_TAG#v}"
           gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/updater/latest.json" \
