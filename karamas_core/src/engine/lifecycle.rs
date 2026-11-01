@@ -3,7 +3,8 @@ use super::{
     playback::update_playback,
     state::{ENGINE_STATE, EngineContext},
 };
-use crate::cast::dlna::settings::reset_dlna_media_quality;
+use crate::cast::dlna::settings::{reset_dlna_media_quality, set_dlna_media_quality};
+use crate::cast::{Caster, MediaFormat, Quality};
 use crate::{
     cast::{
         self,
@@ -31,15 +32,15 @@ pub async fn start_engine_core(
     room_id: String,
     loc_str: String,
     rt: tokio::runtime::Handle,
+    initial_quality: (Quality, MediaFormat),
 ) -> Result<(), CoreError> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     info!("开始初始化核心引擎: {}, Room: {}", loc_str, room_id);
 
     reset_engine();
 
-    // 新会话默认 720P MP4，会话内保留用户选择的清晰度和取源方式。
     reset_dlna_media_quality();
-    info!(target: "DLNA1080", "DLNA 新会话默认清晰度: 720P");
+    set_dlna_media_quality(initial_quality.0, initial_quality.1)?;
 
     let handle = rt.clone();
     let (controller, device, local_ip_addr, port, cache, shared_state) =
@@ -150,6 +151,7 @@ pub async fn start_bilibili_engine_core(
     device_buvid: String,
     sender_buvid: String,
     rt: tokio::runtime::Handle,
+    initial_quality: Quality,
 ) -> Result<(), CoreError> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     info!("开始初始化Bilibili引擎, Room: {}", room_id);
@@ -157,6 +159,7 @@ pub async fn start_bilibili_engine_core(
     reset_engine();
 
     let caster = Arc::new(cast::bilibili::BilibiliCaster::new(session, device_buvid, sender_buvid));
+    caster.initialize_quality(initial_quality);
     caster.start_broadcast();
     let cache = Arc::new(Mutex::new(std::collections::HashMap::new()));
     connect_room(base_url_str, room_id, caster, "127.0.0.1".parse().unwrap(), 0, cache, rt).await
@@ -168,6 +171,7 @@ pub async fn start_local_engine_core(
     room_id: String,
     send: crate::cast::local::LocalCommandSink,
     rt: tokio::runtime::Handle,
+    initial_quality: (Quality, MediaFormat),
 ) -> Result<(), CoreError> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     reset_engine();
@@ -177,5 +181,8 @@ pub async fn start_local_engine_core(
         state.media_sessions.clone(),
         send,
     ));
+    caster
+        .set_media_quality(initial_quality.0, initial_quality.1)
+        .await?;
     connect_room(base_url, room_id, caster, ip, port, cache, rt).await
 }

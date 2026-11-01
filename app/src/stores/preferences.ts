@@ -2,6 +2,8 @@ import { acceptHMRUpdate, defineStore } from "pinia";
 import { reactive, ref } from "vue";
 import type { ConnectionConfig, LogLevel, Preferences, Theme } from "@/types";
 
+import type { PlaybackQuality } from "@/types/casting";
+
 import { isLogLevel } from "@/utils/logs";
 
 // 偏好设置的存储键
@@ -18,6 +20,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
     dlnaProxyEnabled: true,
     dlnaHlsDirectEnabled: false,
     bilibiliBuvid: "",
+    mediaQuality: { qn: 64, format: "mp4" },
+    bilibiliQuality: { qn: 80, format: null },
   });
   // 初始化存储警告状态
   const storageWarning = ref(false);
@@ -29,6 +33,20 @@ export const usePreferencesStore = defineStore("preferences", () => {
     );
     // 如果存储的偏好设置是对象类型，则将其应用到当前偏好设置中
     if (stored && typeof stored === "object") {
+      for (const key of ["mediaQuality", "bilibiliQuality"] as const) {
+        const value =
+          key in stored ? (stored as Record<string, unknown>)[key] : null;
+        if (!value || typeof value !== "object") continue;
+        const { qn, format } = value as Record<string, unknown>;
+        if (
+          typeof qn === "number" &&
+          [6, 16, 32, 64, 74, 80, 112, 116, 120, 125, 126, 127].includes(qn) &&
+          (key === "bilibiliQuality"
+            ? format === null
+            : format === "mp4" || format === "dash" || format === "hls")
+        )
+          preferences[key] = { qn, format } as PlaybackQuality;
+      }
       if ("bilibiliBuvid" in stored && typeof stored.bilibiliBuvid === "string")
         preferences.bilibiliBuvid = stored.bilibiliBuvid;
       if ("serverUrl" in stored && typeof stored.serverUrl === "string")
@@ -103,7 +121,13 @@ export const usePreferencesStore = defineStore("preferences", () => {
     return save({ dlnaHlsDirectEnabled });
   }
 
+  function savePlaybackQuality(selection: PlaybackQuality): boolean {
+    const key = selection.format === null ? "bilibiliQuality" : "mediaQuality";
+    return save({ [key]: { ...selection } });
+  }
+
   return {
+    savePlaybackQuality,
     preferences,
     storageWarning,
     ensureBilibiliBuvid,

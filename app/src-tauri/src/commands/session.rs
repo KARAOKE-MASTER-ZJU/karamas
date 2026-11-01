@@ -1,6 +1,6 @@
 use crate::{
     error::{CommandError, CommandResult},
-    models::CastTarget,
+    models::{CastTarget, PlaybackQuality},
     state::BridgeState,
 };
 use tauri::State;
@@ -30,8 +30,12 @@ pub async fn start_casting<R: tauri::Runtime>(
     server_url: String,
     room_id: String,
     target: CastTarget,
+    initial_quality: PlaybackQuality,
     on_local_command: tauri::ipc::Channel<karamas_core::cast::local::LocalCommand>,
 ) -> CommandResult<()> {
+    let quality = karamas_core::cast::Quality::from_qn(initial_quality.qn)
+        .ok_or_else(|| CommandError::new("INVALID_ARGUMENT", "不支持的清晰度"))?;
+    let media_quality = (quality, initial_quality.format.unwrap_or_default());
     let url = http_url(&server_url)?;
     if url.query().is_some() || url.fragment().is_some() || room_id.trim().is_empty() {
         return Err(CommandError::new(
@@ -63,11 +67,13 @@ pub async fn start_casting<R: tauri::Runtime>(
                     channel.send(command).map_err(|error| error.to_string())
                 }),
                 runtime,
+                media_quality,
             )
             .await
         }
         CastTarget::Dlna { location } => {
-            karamas_core::start_engine_core(server_url, room_id, location, runtime).await
+            karamas_core::start_engine_core(server_url, room_id, location, runtime, media_quality)
+                .await
         }
         CastTarget::Bilibili {
             session,
@@ -81,6 +87,7 @@ pub async fn start_casting<R: tauri::Runtime>(
                 device_buvid,
                 sender_buvid,
                 runtime,
+                quality,
             )
             .await
         }

@@ -63,6 +63,10 @@ impl BilibiliCaster {
     }
 
     /// 后台启动状态订阅，播放命令不等待订阅结果。
+    pub(crate) fn initialize_quality(&self, quality: Quality) {
+        self.quality.store(quality.as_qn(), Ordering::Relaxed);
+    }
+
     pub fn start_broadcast(&self) {
         self.broadcast.start(&self.access_token, self.mid);
     }

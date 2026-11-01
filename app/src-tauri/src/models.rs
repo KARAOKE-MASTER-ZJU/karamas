@@ -83,7 +83,7 @@ pub struct PlaybackState {
     pub capabilities: DeviceCapabilities,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct PlaybackQuality {
     pub qn: u32,
     pub format: Option<karamas_core::cast::MediaFormat>,

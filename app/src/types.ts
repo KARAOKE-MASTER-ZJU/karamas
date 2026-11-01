@@ -1,3 +1,5 @@
+import type { PlaybackQuality } from "@/types/casting";
+
 export type RoomEntryMode = "create" | "join"; // 房间进入模式类型
 export type CastMode = "dlna" | "bilibili" | "local"; // 投屏模式类型
 export type Theme = "system" | "light" | "dark"; // 主题类型
@@ -17,6 +19,8 @@ export interface Preferences extends ConnectionConfig {
   dlnaProxyEnabled: boolean;
   dlnaHlsDirectEnabled: boolean;
   bilibiliBuvid: string;
+  mediaQuality: PlaybackQuality;
+  bilibiliQuality: PlaybackQuality;
 }
 
 // 日志接口

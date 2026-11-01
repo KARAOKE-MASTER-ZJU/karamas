@@ -175,6 +175,11 @@ export const useCastingStore = defineStore("casting", () => {
                 senderBuvid: preferences.ensureBilibiliBuvid(),
                 session: session!,
               },
+        {
+          ...preferences.preferences[
+            device.kind === "bilibili" ? "bilibiliQuality" : "mediaQuality"
+          ],
+        },
         device.kind === "local"
           ? (command) => {
               ++revision;
@@ -359,10 +364,13 @@ export const useCastingStore = defineStore("casting", () => {
   async function setQuality(selection: PlaybackQuality) {
     await control(async () => {
       const quality = await castingApi.setQuality(selection);
+      const saved = preferences.savePlaybackQuality(selection);
       if (playback.value) {
         playback.value.qualityQn = quality.qn;
         playback.value.qualityFormat = quality.format;
       }
+      if (!saved)
+        throw new Error("清晰度已切换，但偏好保存失败，请检查本地存储。");
     });
   }
   async function setDanmaku(enabled: boolean) {

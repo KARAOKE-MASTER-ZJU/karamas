@@ -96,6 +96,7 @@ export const castingApi = {
           deviceBuvid: string;
           senderBuvid: string;
         },
+    initialQuality: PlaybackQuality,
     onLocalCommand?: (command: LocalCommand) => void,
   ) => {
     clearLocalChannel();
@@ -106,6 +107,7 @@ export const castingApi = {
       await call<void>("start_casting", {
         ...room,
         target,
+        initialQuality,
         onLocalCommand: channel,
       });
     } catch (error) {
