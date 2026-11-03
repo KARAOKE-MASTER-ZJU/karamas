@@ -9,4 +9,4 @@ codegen-units = 16
 strip = "symbols"
 
 [patch.crates-io]
-rupnp = { git = "https://github.com/aspromise/rupnp.git", branch = "fix/control-endpoint-leading-slash" }
+rupnp = { git = "https://github.com/KARAOKE-MASTER-ZJU/rupnp.git", branch = "main" }

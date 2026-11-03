@@ -4422,7 +4422,7 @@ dependencies = [
 [[package]]
 name = "rupnp"
 version = "3.0.0"
-source = "git+https://github.com/aspromise/rupnp.git?branch=fix%2Fcontrol-endpoint-leading-slash#3ab057b2f3ce17aeded03d574a3ebe541361ba90"
+source = "git+https://github.com/KARAOKE-MASTER-ZJU/rupnp.git?branch=main#40008760a71af94affc0d915262f47aa4f1be85a"
 dependencies = [
  "bytes",
  "futures-core",
