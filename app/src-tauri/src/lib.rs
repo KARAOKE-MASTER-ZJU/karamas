@@ -3,6 +3,7 @@ mod error;
 mod logging;
 mod models;
 mod platform;
+mod session_store;
 mod state;
 mod updater;
 

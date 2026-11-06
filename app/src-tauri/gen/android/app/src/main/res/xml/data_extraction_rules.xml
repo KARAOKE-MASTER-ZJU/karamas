@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <!-- TODO(next-major): 移除迁移后，删除 bili_session.json 的排除规则。 -->
+    <cloud-backup>
+        <exclude domain="root" path="credentials/" />
+        <exclude domain="file" path="credentials/" />
+        <exclude domain="root" path="bili_session.json" />
+        <exclude domain="file" path="bili_session.json" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="credentials/" />
+        <exclude domain="file" path="credentials/" />
+        <exclude domain="root" path="bili_session.json" />
+        <exclude domain="file" path="bili_session.json" />
+    </device-transfer>
+</data-extraction-rules>

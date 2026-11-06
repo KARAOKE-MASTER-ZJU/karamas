@@ -11,7 +11,7 @@ pub struct BridgeState {
     pub lifecycle: Mutex<()>,
     /// 当前扫码任务的取消句柄，不保存登录结果。
     pub login: Mutex<Option<AbortHandle>>,
-    /// 串行执行会话文件的读取、保存和删除。
+    /// 串行执行会话的读取、保存、迁移和删除。
     pub session_io: Mutex<()>,
     /// 初始化成功后复用；失败时允许后续调用重试。
     storage_ready: OnceCell<()>,
@@ -32,6 +32,10 @@ impl BridgeState {
         }
     }
 
+    pub fn data_dir(&self) -> &std::path::Path {
+        &self.data_dir
+    }
+
     /// 首次使用时在阻塞线程池初始化应用数据和媒体缓存目录。
     pub async fn initialize_storage(&self) -> CommandResult<()> {
         self.storage_ready
@@ -41,10 +45,6 @@ impl BridgeState {
                 tauri::async_runtime::spawn_blocking(move || {
                     std::fs::create_dir_all(&data_dir)
                         .map_err(|e| CommandError::new("STORAGE_ERROR", e.to_string()))?;
-                    let path = data_dir.to_str().ok_or_else(|| {
-                        CommandError::new("STORAGE_ERROR", "应用数据路径不是有效的 UTF-8")
-                    })?;
-                    karamas_core::cast::bilibili::init_session_dir(path);
                     let cache_path = cache_dir.to_str().ok_or_else(|| {
                         CommandError::new("STORAGE_ERROR", "媒体缓存路径不是有效的 UTF-8")
                     })?;

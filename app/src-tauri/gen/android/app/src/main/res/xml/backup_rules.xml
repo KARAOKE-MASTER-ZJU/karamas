@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- TODO(next-major): 移除迁移后，删除 bili_session.json 的排除规则。 -->
+    <exclude domain="root" path="credentials/" />
+    <exclude domain="file" path="credentials/" />
+    <exclude domain="root" path="bili_session.json" />
+    <exclude domain="file" path="bili_session.json" />
+</full-backup-content>

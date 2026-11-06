@@ -1,5 +1,6 @@
 use crate::{
     error::{CommandError, CommandResult},
+    session_store,
     state::BridgeState,
 };
 use karamas_core::cast::bilibili::{self, BilibiliSession};
@@ -57,19 +58,19 @@ pub async fn cancel_bilibili_login(state: State<'_, BridgeState>) -> CommandResu
     Ok(())
 }
 
-/// 读取调用方明确保存过的会话，不隐式登录或清理。
+/// 读取加密存储中的会话，并迁移旧明文会话。
 #[tauri::command]
 pub async fn load_bilibili_session(
     state: State<'_, BridgeState>,
 ) -> CommandResult<Option<BilibiliSession>> {
     state.initialize_storage().await?;
     let _io = state.session_io.lock().await;
-    tauri::async_runtime::spawn_blocking(bilibili::load_session)
-        .await
-        .map_err(|e| CommandError::new("TASK_FAILED", e.to_string()))
+    let session = session_store::load(state.data_dir()).await?;
+    bilibili::set_session(session.clone());
+    Ok(session)
 }
 
-/// 按调用方要求保存会话。
+/// 将登录会话保存到加密文件。
 #[tauri::command]
 pub async fn save_bilibili_session(
     state: State<'_, BridgeState>,
@@ -77,19 +78,16 @@ pub async fn save_bilibili_session(
 ) -> CommandResult<()> {
     state.initialize_storage().await?;
     let _io = state.session_io.lock().await;
-    tauri::async_runtime::spawn_blocking(move || bilibili::save_session(&session))
-        .await
-        .map_err(|e| CommandError::new("TASK_FAILED", e.to_string()))?
-        .map_err(|e| CommandError::new("STORAGE_ERROR", e))
+    bilibili::set_session(Some(session.clone()));
+    session_store::save(state.data_dir(), &session).await
 }
 
-/// 按调用方要求清除保存的会话，不修改当前投屏连接。
+/// 清除保存的会话及当前登录状态。
 #[tauri::command]
 pub async fn clear_bilibili_session(state: State<'_, BridgeState>) -> CommandResult<()> {
     state.initialize_storage().await?;
     let _io = state.session_io.lock().await;
-    tauri::async_runtime::spawn_blocking(bilibili::clear_session)
-        .await
-        .map_err(|e| CommandError::new("TASK_FAILED", e.to_string()))?
-        .map_err(|e| CommandError::new("STORAGE_ERROR", e))
+    session_store::clear(state.data_dir()).await?;
+    bilibili::set_session(None);
+    Ok(())
 }
