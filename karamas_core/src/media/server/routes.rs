@@ -13,6 +13,12 @@ pub async fn proxy_handler(
     client: web::Data<reqwest::Client>,
     shared_state: web::Data<SharedState>,
 ) -> Result<HttpResponse, actix_web::Error> {
+    // 只使用 TCP 对端地址，转发请求头不能作为设备身份。
+    if crate::cast::dlna::settings::get_proxy_device_only()
+        && req.peer_addr().map(|peer| peer.ip()) != Some(shared_state.proxy_device_ip)
+    {
+        return Ok(HttpResponse::Forbidden().finish());
+    }
     let (mut origin_url,) = path.into_inner();
     let mut duration_cache_key = None;
     // Session paths are immutable. Reject obsolete generations before resolving
@@ -384,6 +390,55 @@ mod tests {
     use actix_web::{App, HttpServer, web};
     use reqwest::Client;
 
+    // 设备访问限制必须覆盖会话和直链入口，且不能被 HTTP 转发头绕过。
+    #[actix_web::test]
+    async fn proxy_uses_connected_device_ip_instead_of_forwarded_headers() {
+        use crate::{SharedState, media::session::MediaSessions};
+        use actix_web::{
+            http::{Method, StatusCode},
+            test,
+        };
+        use std::sync::Arc;
+
+        let state = web::Data::new(SharedState {
+            proxy_device_ip: "192.0.2.10".parse().unwrap(),
+            duration_cache: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            eplus_auth: Arc::new(tokio::sync::Mutex::new(None)),
+            media_sessions: Arc::new(MediaSessions::default()),
+        });
+        let app = test::init_service(
+            App::new()
+                .app_data(state)
+                .app_data(web::Data::new(Client::new()))
+                .service(proxy_handler),
+        )
+        .await;
+        for method in [Method::GET, Method::HEAD, Method::OPTIONS] {
+            for peer in [None, Some("192.0.2.20:50000"), Some("127.0.0.1:50000")] {
+                for path in ["/__ktv_media/1.mp4", "/https://example.invalid/eplus.ts"] {
+                    let mut request = test::TestRequest::with_uri(path)
+                        .method(method.clone())
+                        .insert_header(("X-Forwarded-For", "192.0.2.10"))
+                        .insert_header(("Forwarded", "for=192.0.2.10"));
+                    if let Some(peer) = peer {
+                        request = request.peer_addr(peer.parse().unwrap());
+                    }
+                    let response = test::call_service(&app, request.to_request()).await;
+                    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+                }
+            }
+            let request = test::TestRequest::with_uri("/__ktv_media/1.mp4")
+                .method(method)
+                .peer_addr("192.0.2.10:50000".parse().unwrap())
+                .insert_header(("X-Forwarded-For", "192.0.2.20"))
+                .to_request();
+            assert_eq!(
+                test::call_service(&app, request).await.status(),
+                StatusCode::GONE
+            );
+        }
+    }
+
     #[actix_web::test]
     async fn obsolete_session_head_returns_gone_without_upstream_access() {
         use crate::{SharedState, media::session::MediaSessions, cast::Quality};
@@ -398,6 +453,7 @@ mod tests {
             Quality::P720, crate::cast::MediaFormat::Mp4,
         );
         let state = web::Data::new(SharedState {
+            proxy_device_ip: "127.0.0.1".parse().unwrap(),
             duration_cache: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             eplus_auth: Arc::new(tokio::sync::Mutex::new(None)),
             media_sessions: sessions,
@@ -405,7 +461,8 @@ mod tests {
         let app = actix_web::test::init_service(App::new().app_data(state).app_data(web::Data::new(Client::new())).service(proxy_handler)).await;
         for path in [old.path(), format!("__ktv_media/{}.mp4", old.generation), format!("__ktv_media/{}/video.mp4", old.generation), format!("__ktv_media/{}/audio.mp4", old.generation)] {
             for method in [actix_web::http::Method::GET, actix_web::http::Method::HEAD, actix_web::http::Method::OPTIONS] {
-                let request = actix_web::test::TestRequest::with_uri(&format!("/{path}")).method(method).to_request();
+                let request = actix_web::test::TestRequest::with_uri(&format!("/{path}"))
+                    .peer_addr("127.0.0.1:50000".parse().unwrap()).method(method).to_request();
                 let response = actix_web::test::call_service(&app, request).await;
                 assert_eq!(response.status(), actix_web::http::StatusCode::GONE);
             }

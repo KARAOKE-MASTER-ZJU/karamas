@@ -19,6 +19,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     logLevel: "info",
     dlnaProxyEnabled: true,
     dlnaHlsDirectEnabled: false,
+    proxyDeviceOnly: true,
     bilibiliBuvid: "",
     mediaQuality: { qn: 64, format: "mp4" },
     bilibiliQuality: { qn: 80, format: null },
@@ -65,6 +66,11 @@ export const usePreferencesStore = defineStore("preferences", () => {
         typeof stored.dlnaHlsDirectEnabled === "boolean"
       )
         preferences.dlnaHlsDirectEnabled = stored.dlnaHlsDirectEnabled;
+      if (
+        "proxyDeviceOnly" in stored &&
+        typeof stored.proxyDeviceOnly === "boolean"
+      )
+        preferences.proxyDeviceOnly = stored.proxyDeviceOnly;
       if (
         "theme" in stored &&
         (stored.theme === "system" ||
@@ -121,6 +127,10 @@ export const usePreferencesStore = defineStore("preferences", () => {
     return save({ dlnaHlsDirectEnabled });
   }
 
+  function saveProxyDeviceOnly(proxyDeviceOnly: boolean): boolean {
+    return save({ proxyDeviceOnly });
+  }
+
   function savePlaybackQuality(selection: PlaybackQuality): boolean {
     const key = selection.format === null ? "bilibiliQuality" : "mediaQuality";
     return save({ [key]: { ...selection } });
@@ -136,6 +146,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     saveLogLevel,
     saveDlnaProxyEnabled,
     saveDlnaHlsDirectEnabled,
+    saveProxyDeviceOnly,
   };
 });
 

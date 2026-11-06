@@ -125,6 +125,12 @@ pub async fn set_dlna_hls_direct(enabled: bool) {
     karamas_core::set_dlna_hls_direct(enabled);
 }
 
+/// 设置媒体代理是否仅允许当前连接设备访问。
+#[tauri::command]
+pub async fn set_proxy_device_only(enabled: bool) {
+    karamas_core::set_proxy_device_only(enabled);
+}
+
 /// 读取 DLNA 直连设置。
 #[tauri::command]
 pub async fn get_dlna_direct() -> bool {

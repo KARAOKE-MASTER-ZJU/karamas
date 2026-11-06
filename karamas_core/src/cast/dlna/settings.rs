@@ -15,6 +15,16 @@ static DLNA_QUALITY: std::sync::Mutex<DlnaQuality> = std::sync::Mutex::new(DlnaQ
 });
 static DLNA_DIRECT: AtomicBool = AtomicBool::new(false);
 static DLNA_HLS_DIRECT: AtomicBool = AtomicBool::new(false);
+static PROXY_DEVICE_ONLY: AtomicBool = AtomicBool::new(true);
+
+/// 限制媒体代理只接受当前连接设备的请求，修改后对后续请求立即生效。
+pub fn set_proxy_device_only(enabled: bool) {
+    PROXY_DEVICE_ONLY.store(enabled, Ordering::Relaxed);
+}
+
+pub fn get_proxy_device_only() -> bool {
+    PROXY_DEVICE_ONLY.load(Ordering::Relaxed)
+}
 
 /// 代理开关只影响可用点，不覆盖保存的清晰度偏好。
 pub fn set_dlna_direct(enabled: bool) {

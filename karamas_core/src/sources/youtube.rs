@@ -335,6 +335,7 @@ mod tests {
         );
         let first_media_byte = mp4.prefix.len();
         let state = web::Data::new(SharedState {
+            proxy_device_ip: "127.0.0.1".parse().unwrap(),
             duration_cache: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             eplus_auth: Arc::new(tokio::sync::Mutex::new(None)),
             media_sessions: sessions,
@@ -348,6 +349,7 @@ mod tests {
         .await;
         let path = format!("/{}", session.path());
         let head = test::TestRequest::with_uri(&path)
+            .peer_addr("127.0.0.1:50000".parse().unwrap())
             .method(Method::HEAD)
             .to_request();
         let head_response = test::call_service(&app, head).await;
@@ -358,6 +360,7 @@ mod tests {
         );
         for start in [first_media_byte as u64, mp4.len / 2, mp4.len - 65536] {
             let get = test::TestRequest::with_uri(&path)
+                .peer_addr("127.0.0.1:50000".parse().unwrap())
                 .insert_header(("Range", format!("bytes={start}-{}", start + 65535)))
                 .to_request();
             let response = test::call_service(&app, get).await;

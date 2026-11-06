@@ -66,6 +66,14 @@ async function updateDlnaHlsDirect() {
     notify(`设置 HLS 播放失败：${errorMessage(error)}`, "error");
   }
 }
+async function updateProxyDeviceOnly() {
+  try {
+    if ((await casting.setProxyDeviceOnly(!casting.proxyDeviceOnly)) === false)
+      notify("代理访问限制已生效，但无法保存本机配置。", "warning");
+  } catch (error) {
+    notify(`设置代理访问限制失败：${errorMessage(error)}`, "error");
+  }
+}
 async function logout() {
   loggingOut.value = true;
   try {
@@ -149,6 +157,17 @@ async function logout() {
         :busy="casting.changingDlnaProxy"
         :disabled="casting.busy"
         @change="updateDlnaHlsDirect"
+      />
+    </section>
+    <section class="content-section" aria-labelledby="security-title">
+      <h2 id="security-title">安全</h2>
+      <SettingSwitch
+        label="仅限连接设备访问代理"
+        description="仅允许当前连接设备的 IP 访问媒体代理，修改后立即生效。如果设备无法播放，可关闭此项后重试。"
+        :checked="casting.proxyDeviceOnly"
+        :busy="casting.changingDlnaProxy"
+        :disabled="casting.busy"
+        @change="updateProxyDeviceOnly"
       />
     </section>
     <section class="content-section" aria-labelledby="account-title">

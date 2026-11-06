@@ -18,6 +18,7 @@ export interface Preferences extends ConnectionConfig {
   logLevel: LogLevel;
   dlnaProxyEnabled: boolean;
   dlnaHlsDirectEnabled: boolean;
+  proxyDeviceOnly: boolean;
   bilibiliBuvid: string;
   mediaQuality: PlaybackQuality;
   bilibiliQuality: PlaybackQuality;

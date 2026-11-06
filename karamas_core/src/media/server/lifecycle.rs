@@ -78,8 +78,10 @@ fn start_with_binding(
     ),
     CoreError,
 > {
+    let proxy_device_ip = target_device_ip.unwrap_or("127.0.0.1").parse()?;
     let cache = Arc::new(Mutex::new(std::collections::HashMap::new()));
     let shared_state = web::Data::new(SharedState {
+        proxy_device_ip,
         duration_cache: cache.clone(),
         eplus_auth: Arc::new(tokio::sync::Mutex::new(None)),
         media_sessions: Arc::new(session::MediaSessions::default()),

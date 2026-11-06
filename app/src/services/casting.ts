@@ -57,6 +57,8 @@ export const castingApi = {
     call<void>("set_dlna_direct", { enabled }),
   setDlnaHlsDirect: (enabled: boolean) =>
     call<void>("set_dlna_hls_direct", { enabled }),
+  setProxyDeviceOnly: (enabled: boolean) =>
+    call<void>("set_proxy_device_only", { enabled }),
   setLogLevel: (level: LogLevel) => call<void>("set_log_level", { level }),
   writeLog: (message: string, level: LogLevel) =>
     call<void>("write_log", { message, level }),

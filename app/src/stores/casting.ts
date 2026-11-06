@@ -58,6 +58,7 @@ export const useCastingStore = defineStore("casting", () => {
     preferences.preferences.dlnaHlsDirectEnabled,
   );
   const changingDlnaProxy = ref(false);
+  const proxyDeviceOnly = ref(preferences.preferences.proxyDeviceOnly);
   const room = ref<ConnectionConfig | null>(null);
   const selectedDevice = ref<CastDevice | null>(null);
   const activeDevice = ref<CastDevice | null>(null);
@@ -99,6 +100,7 @@ export const useCastingStore = defineStore("casting", () => {
     proxyInitialization ??= Promise.all([
       castingApi.setDlnaDirect(!dlnaProxyEnabled.value),
       castingApi.setDlnaHlsDirect(dlnaHlsDirectEnabled.value),
+      castingApi.setProxyDeviceOnly(proxyDeviceOnly.value),
     ])
       .then(() => undefined)
       .catch((error: unknown) => {
@@ -131,6 +133,19 @@ export const useCastingStore = defineStore("casting", () => {
       if (isTauri()) await castingApi.setDlnaHlsDirect(enabled);
       dlnaHlsDirectEnabled.value = enabled;
       return preferences.saveDlnaHlsDirectEnabled(enabled);
+    } finally {
+      changingDlnaProxy.value = false;
+    }
+  }
+
+  async function setProxyDeviceOnly(enabled: boolean) {
+    if (busy.value) return;
+    changingDlnaProxy.value = true;
+    try {
+      await initializeDlnaProxy();
+      if (isTauri()) await castingApi.setProxyDeviceOnly(enabled);
+      proxyDeviceOnly.value = enabled;
+      return preferences.saveProxyDeviceOnly(enabled);
     } finally {
       changingDlnaProxy.value = false;
     }
@@ -384,10 +399,12 @@ export const useCastingStore = defineStore("casting", () => {
     localCommand,
     dlnaProxyEnabled,
     dlnaHlsDirectEnabled,
+    proxyDeviceOnly,
     changingDlnaProxy,
     initializeDlnaProxy,
     setDlnaProxyEnabled,
     setDlnaHlsDirectEnabled,
+    setProxyDeviceOnly,
     room,
     selectedDevice,
     activeDevice,

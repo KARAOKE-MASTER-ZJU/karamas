@@ -84,14 +84,17 @@ pub async fn connect_dlna_device(
         services: vec![],
     };
 
-    let target_ip = loc_str
-        .split('/')
-        .nth(2)
-        .and_then(|hp| hp.split(':').next())
-        .unwrap_or("127.0.0.1");
+    let target_url = url::Url::parse(&loc_str)?;
+    let host = target_url.host_str().ok_or("设备地址缺少主机名")?;
+    let target_ip = tokio::net::lookup_host((host, target_url.port_or_known_default().unwrap_or(80)))
+        .await?
+        .find(|address| address.is_ipv4())
+        .ok_or("设备地址未解析到 IPv4 地址")?
+        .ip()
+        .to_string();
 
     let (local_ip_addr, port, cache, shared_state) =
-        crate::media::server::start(target_ip, handle)?;
+        crate::media::server::start(&target_ip, handle)?;
 
     Ok((controller, device, local_ip_addr, port, cache, shared_state))
 }
