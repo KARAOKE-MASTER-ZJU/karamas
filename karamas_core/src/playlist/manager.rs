@@ -103,7 +103,7 @@ impl PlaylistManager {
                 let after_prefix = &url[start + "bilibili://video/".len()..];
                 after_prefix.to_string().replace("?", "-").replace("=", "") // 保持原有 bilibili 逻辑
             } else if url.starts_with("http") {
-                // 如果是直接链接（如 eplus），不做任何替换，保持完整参数
+                // 如果是直接链接，不做任何替换，保持完整参数
                 url.to_string()
             } else {
                 url.to_string().replace("?", "-").replace("=", "")

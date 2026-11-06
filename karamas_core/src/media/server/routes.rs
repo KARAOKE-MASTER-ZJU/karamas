@@ -80,28 +80,6 @@ pub async fn proxy_handler(
         origin_url.push_str(query_string);
     }
 
-    // 针对 eplus 的特殊鉴权参数保存与补全逻辑
-    if origin_url.contains("eplus") {
-        let mut session = shared_state.eplus_auth.lock().await;
-        if origin_url.contains("Policy=") && origin_url.contains("Signature=") {
-            // 如果链接带了完整鉴权参数（如 index.m3u8），保存它供后续切片使用
-            if let Some(query_start) = origin_url.find('?') {
-                *session = Some(origin_url[query_start + 1..].to_string());
-                info!("Eplus: Saved auth parameters from playlist request");
-            }
-        } else if (origin_url.ends_with(".ts") || origin_url.contains(".ts?"))
-            && !origin_url.contains("Signature=")
-        {
-            // 如果是切片请求（.ts）且缺少鉴权，将保存的参数拼接到切片 URL 后
-            if let Some(ref auth_params) = *session {
-                let connector = if origin_url.contains('?') { "&" } else { "?" };
-                origin_url.push_str(connector);
-                origin_url.push_str(auth_params);
-                info!("Eplus: Injected saved auth parameters into segment request");
-            }
-        }
-    }
-
     debug!("Received proxy request for URL: {}", origin_url);
     let range_hdr = req
         .headers()
@@ -287,26 +265,9 @@ pub async fn proxy_handler(
         _ => client.get(&target_url),
     };
 
-    if target_url.contains("eplus") {
-        upstream = upstream
-            .header("accept", "*/*")
-            .header("accept-language", "zh-CN,zh;q=0.9,en;q=0.8")
-            .header("cache-control", "no-cache")
-            .header("origin", "https://live.nulla.top")
-            .header("pragma", "no-cache")
-            .header("priority", "u=1, i")
-            .header("sec-ch-ua", "\"Not:A-Brand\";v=\"99\", \"Google Chrome\";v=\"145\", \"Chromium\";v=\"145\"")
-            .header("sec-ch-ua-mobile", "?1")
-            .header("sec-ch-ua-platform", "\"iOS\"")
-            .header("sec-fetch-dest", "empty")
-            .header("sec-fetch-mode", "cors")
-            .header("sec-fetch-site", "cross-site")
-            .header("user-agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1");
-    } else {
-        upstream = upstream
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36")
-            .header("Referer", "https://www.bilibili.com/");
-    }
+    upstream = upstream
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36")
+        .header("Referer", "https://www.bilibili.com/");
 
     // Forward Range-related headers to support seek/probe.
     if let Some(range) = req.headers().get(actix_web::http::header::RANGE) {
@@ -403,7 +364,6 @@ mod tests {
         let state = web::Data::new(SharedState {
             proxy_device_ip: "192.0.2.10".parse().unwrap(),
             duration_cache: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-            eplus_auth: Arc::new(tokio::sync::Mutex::new(None)),
             media_sessions: Arc::new(MediaSessions::default()),
         });
         let app = test::init_service(
@@ -415,7 +375,7 @@ mod tests {
         .await;
         for method in [Method::GET, Method::HEAD, Method::OPTIONS] {
             for peer in [None, Some("192.0.2.20:50000"), Some("127.0.0.1:50000")] {
-                for path in ["/__ktv_media/1.mp4", "/https://example.invalid/eplus.ts"] {
+                for path in ["/__ktv_media/1.mp4", "/https://example.invalid/segment.ts"] {
                     let mut request = test::TestRequest::with_uri(path)
                         .method(method.clone())
                         .insert_header(("X-Forwarded-For", "192.0.2.10"))
@@ -455,7 +415,6 @@ mod tests {
         let state = web::Data::new(SharedState {
             proxy_device_ip: "127.0.0.1".parse().unwrap(),
             duration_cache: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-            eplus_auth: Arc::new(tokio::sync::Mutex::new(None)),
             media_sessions: sessions,
         });
         let app = actix_web::test::init_service(App::new().app_data(state).app_data(web::Data::new(Client::new())).service(proxy_handler)).await;

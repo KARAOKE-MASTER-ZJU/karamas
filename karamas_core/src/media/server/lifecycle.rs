@@ -83,7 +83,6 @@ fn start_with_binding(
     let shared_state = web::Data::new(SharedState {
         proxy_device_ip,
         duration_cache: cache.clone(),
-        eplus_auth: Arc::new(tokio::sync::Mutex::new(None)),
         media_sessions: Arc::new(session::MediaSessions::default()),
     });
     // 通知旧服务器关闭（防止端口冲突）

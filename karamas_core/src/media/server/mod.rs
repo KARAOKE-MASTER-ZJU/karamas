@@ -13,7 +13,6 @@ use tokio::sync::Mutex;
 pub struct SharedState {
     pub proxy_device_ip: std::net::IpAddr,
     pub duration_cache: Arc<Mutex<std::collections::HashMap<String, u32>>>,
-    pub eplus_auth: Arc<tokio::sync::Mutex<Option<String>>>,
     pub media_sessions: Arc<session::MediaSessions>,
 }
 

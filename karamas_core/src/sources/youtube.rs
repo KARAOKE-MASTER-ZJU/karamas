@@ -337,7 +337,6 @@ mod tests {
         let state = web::Data::new(SharedState {
             proxy_device_ip: "127.0.0.1".parse().unwrap(),
             duration_cache: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
-            eplus_auth: Arc::new(tokio::sync::Mutex::new(None)),
             media_sessions: sessions,
         });
         let app = test::init_service(
