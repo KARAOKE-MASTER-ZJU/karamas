@@ -115,7 +115,10 @@ impl DlnaCaster {
                     crate::media::session::SessionMedia::Hls(playlists) => format!(
                         "http://{}/{}|{}",
                         std::net::SocketAddr::new(self.server_ip, self.server_port),
-                        session.path(),
+                        self.sessions
+                            .as_ref()
+                            .ok_or_else(|| CastError::Device("媒体代理尚未初始化".into()))?
+                            .proxy_path(&session.path()),
                         playlists.request_headers(),
                     ),
                     _ => return Err(CastError::Device("未生成 HLS 直链清单".into())),
@@ -167,10 +170,14 @@ impl DlnaCaster {
                 .await
                 .map_err(|error| self.failure("设置直连媒体地址", error))?;
         } else {
+            let media_path = self.sessions
+                .as_ref()
+                .ok_or_else(|| CastError::Device("媒体代理尚未初始化".into()))?
+                .proxy_path(&media_url);
             self.controller
                 .set_avtransport_uri(
                     &self.device,
-                    &media_url,
+                    &media_path,
                     "",
                     self.server_ip,
                     self.server_port,

@@ -337,7 +337,7 @@ mod tests {
         let state = web::Data::new(SharedState {
             proxy_device_ip: "127.0.0.1".parse().unwrap(),
             duration_cache: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
-            media_sessions: sessions,
+            media_sessions: sessions.clone(),
         });
         let app = test::init_service(
             App::new()
@@ -346,7 +346,7 @@ mod tests {
                 .service(proxy_handler),
         )
         .await;
-        let path = format!("/{}", session.path());
+        let path = format!("/{}", sessions.proxy_path(&session.path()));
         let head = test::TestRequest::with_uri(&path)
             .peer_addr("127.0.0.1:50000".parse().unwrap())
             .method(Method::HEAD)

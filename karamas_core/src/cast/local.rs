@@ -183,7 +183,11 @@ impl LocalCaster {
             return Err(CastError::Device(message));
         }
         self.command(LocalAction::Load {
-            url: format!("http://127.0.0.1:{}/{}", self.port, session.path()),
+            url: format!(
+                "http://127.0.0.1:{}/{}",
+                self.port,
+                self.sessions.proxy_path(&session.path()),
+            ),
             position,
             playing,
             volume,

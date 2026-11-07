@@ -299,11 +299,30 @@ impl MediaSession {
     }
 }
 
-#[derive(Default)]
 pub struct MediaSessions {
     current: Mutex<Option<Arc<MediaSession>>>,
+    proxy_token: String,
+}
+impl Default for MediaSessions {
+    fn default() -> Self {
+        Self {
+            current: Mutex::new(None),
+            proxy_token: uuid::Uuid::new_v4().simple().to_string(),
+        }
+    }
 }
 impl MediaSessions {
+    /// 为代理资源添加当前连接的访问 token，保留资源路径和查询参数。
+    pub fn proxy_path(&self, resource: &str) -> String {
+        format!("{}/{resource}", self.proxy_token)
+    }
+
+    /// 校验路径前缀，返回原来的资源路径。
+    pub(crate) fn resource_path<'a>(&self, path: &'a str) -> Option<&'a str> {
+        let (token, resource) = path.split_once('/')?;
+        (token == self.proxy_token).then_some(resource)
+    }
+
     /// 获取尚未失效的当前媒体会话。
     pub fn current(&self) -> Option<Arc<MediaSession>> {
         self.current
