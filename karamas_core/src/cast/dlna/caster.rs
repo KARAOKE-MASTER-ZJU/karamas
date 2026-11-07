@@ -429,7 +429,6 @@ impl Caster for DlnaCaster {
         self.controller
             .get_volume(&self.device)
             .await
-            .map(Some)
             .map_err(|error| self.failure("查询音量", error))
     }
 

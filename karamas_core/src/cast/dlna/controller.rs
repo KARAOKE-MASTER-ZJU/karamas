@@ -963,8 +963,8 @@ impl DlnaController {
         Ok(())
     }
 
-    // 获取渲染器音量
-    pub async fn get_volume(&self, device: &DlnaDevice) -> Result<u32, rupnp::Error> {
+    /// 获取渲染器音量；字段缺失或无法解析时返回 None。
+    pub async fn get_volume(&self, device: &DlnaDevice) -> Result<Option<u32>, rupnp::Error> {
         let rendering_control = device
             .device
             .services()
@@ -1002,12 +1002,9 @@ impl DlnaController {
 
         let response = timeout_soap(rendering_control.action(&base_url, action, args_str)).await?;
 
-        // 解析音量值
-        let default_volume = "0".to_string();
-        let volume_str = response.get("CurrentVolume").unwrap_or(&default_volume);
-        let volume: u32 = volume_str.parse().unwrap_or(0);
-
-        Ok(volume)
+        Ok(response
+            .get("CurrentVolume")
+            .and_then(|value| value.parse().ok()))
     }
 }
 #[cfg(test)]
