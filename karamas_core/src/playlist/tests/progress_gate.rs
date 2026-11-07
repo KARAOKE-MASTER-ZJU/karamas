@@ -110,7 +110,7 @@ fn missing_baseline_expires_and_invalid_samples_are_not_zero() {
     gate.update_song(Some("A".into()), Some("video-A".into()));
     assert!(gate.play_succeeded(gate.revision(), true, now));
     assert_eq!(sample(&mut gate, -1, -1, now), (-1, -1));
-    assert_eq!(sample(&mut gate, 0, 0, now), (-1, -1));
+    assert_eq!(sample(&mut gate, 0, -1, now), (-1, -1));
     assert_eq!(sample(&mut gate, 100, 300, now), (0, 300));
     assert_eq!(
         sample(&mut gate, 100, 300, now + Duration::from_secs(3)),

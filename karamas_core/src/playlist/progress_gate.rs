@@ -136,7 +136,7 @@ impl ProgressGate {
 
     /// 按指定时间判断进度保护是否结束，并过滤播放进度。
     fn filter_at(&mut self, revision: u64, current: i32, total: i32, now: Instant) -> (i32, i32) {
-        if revision != self.revision || self.song.is_none() || current < 0 || total <= 0 {
+        if revision != self.revision || self.song.is_none() || current < 0 || total < 0 {
             return (-1, -1);
         }
         match self.phase {

@@ -83,7 +83,7 @@ impl EngineContext {
             added_by: self.playlist_manager.get_song_added_by().await,
             playlist_sync_error: self.playlist_manager.get_sync_error().await,
             current_secs: u32::try_from(current).ok(),
-            total_secs: u32::try_from(total).ok(),
+            total_secs: u32::try_from(total).ok().filter(|&seconds| seconds > 0),
             is_playing: self.is_playing(),
             is_live,
             queued_count: self.playlist_manager.get_queued_count().await,
