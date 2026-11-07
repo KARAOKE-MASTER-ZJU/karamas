@@ -44,28 +44,6 @@ async fn timeout_soap<T>(fut: impl Future<Output = Result<T, rupnp::Error>>) -> 
     }
 }
 
-fn extract_xml_tag_value(xml: &str, tag: &str) -> Option<String> {
-    // 解析XML标签值，支持带命名空间属性的标签
-    let start_pattern = format!("<{}", tag);
-    let end_pattern = format!("</{}>", tag);
-
-    // 找到开始标签
-    if let Some(start_idx) = xml.find(&start_pattern) {
-        // 找到开始标签的结束位置 >
-        if let Some(tag_end_idx) = xml[start_idx..].find('>') {
-            let value_start = start_idx + tag_end_idx + 1;
-
-            // 找到对应的结束标签
-            if let Some(value_end) = xml[value_start..].find(&end_pattern) {
-                let value = &xml[value_start..value_start + value_end];
-                return Some(value.trim().to_string());
-            }
-        }
-    }
-
-    None
-}
-
 fn xml_escape(s: &str) -> String {
     // Minimal XML escaping for element text nodes.
     // (Enough to keep SOAP XML well-formed when URLs contain & and friends.)
@@ -149,25 +127,33 @@ fn log_upnp_action(service: &rupnp::Service, base_url: &Uri, action: &str, args_
     log::trace!("UPnP Action body (approx) => {}", envelope);
 }
 
-/// 从 SOAP 响应 XML 中解析本项目关心的字段。
-fn parse_soap_response_fields(text: &str) -> HashMap<String, String> {
-    let mut out = HashMap::new();
-    for k in [
-        "Track",
-        "TrackDuration",
-        "TrackMetaData",
-        "TrackURI",
-        "RelTime",
-        "AbsTime",
-        "RelCount",
-        "AbsCount",
-    ] {
-        if let Some(v) = extract_xml_tag_value(text, k) {
-            log::trace!("提取到字段 '{}' 的值: '{}'", k, v);
-            out.insert(k.to_string(), v);
-        }
-    }
-    out
+/// 按元素本地名读取对应 action 响应的直接子字段。
+fn parse_soap_response_fields(
+    text: &str,
+    action: &str,
+) -> Result<HashMap<String, String>, rupnp::Error> {
+    let document = roxmltree::Document::parse(text).map_err(rupnp::Error::invalid_response)?;
+    let body = document
+        .root_element()
+        .children()
+        .find(|node| node.has_tag_name(("http://schemas.xmlsoap.org/soap/envelope/", "Body")))
+        .ok_or(rupnp::Error::ParseError("SOAP 响应缺少 Body"))?;
+    let response_name = format!("{}Response", action);
+    let response = body
+        .children()
+        .find(|node| node.has_tag_name(response_name.as_str()))
+        .ok_or(rupnp::Error::ParseError("SOAP 响应缺少对应的 action 响应"))?;
+
+    Ok(response
+        .children()
+        .filter(|node| node.is_element())
+        .map(|node| {
+            (
+                node.tag_name().name().to_owned(),
+                node.text().unwrap_or_default().trim().to_owned(),
+            )
+        })
+        .collect())
 }
 
 fn soap_http_failure(status: reqwest::StatusCode, text: &str) -> String {
@@ -253,6 +239,9 @@ async fn send_soap_shared(
     })?;
 
     if status.as_u16() == 200 {
+        let fields = parse_soap_response_fields(&text, action).map_err(|error| {
+            soap_request_failure(action, final_url, "解析SOAP响应", format!("HTTP=200，错误={}", error))
+        })?;
         // 正常 SOAP 请求与响应明细仅在 trace 级别输出。
         log::trace!(
             "UPnP Action (shared) succeeded: action={}, url={}",
@@ -260,7 +249,7 @@ async fn send_soap_shared(
             final_url
         );
         log::trace!("UPnP Action (shared) status=200 body={}", text);
-        Ok(parse_soap_response_fields(&text))
+        Ok(fields)
     } else {
         let message = format!("[DLNA] {}失败：步骤=设备响应，端点={}，{}", action, final_url, soap_http_failure(status, &text));
         log::warn!("{}，响应体={}", message, text);
