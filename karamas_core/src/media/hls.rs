@@ -93,12 +93,11 @@ impl Playlists {
             load_playlist(client, video, if proxy { "video.mp4" } else { &video.url }),
             load_playlist(client, audio, if proxy { "audio.mp4" } else { &audio.url }),
         )?;
-        let master = format!(
-            "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"audio\",DEFAULT=YES,AUTOSELECT=YES,URI=\"audio.m3u8\"\n#EXT-X-STREAM-INF:BANDWIDTH={},CODECS=\"{},{}\",AUDIO=\"audio\"\nvideo.m3u8\n",
-            video.bandwidth.saturating_add(audio.bandwidth).max(1),
-            video.codecs,
-            audio.codecs,
-        );
+        let master = master_playlist(
+            &video.codecs,
+            &audio.codecs,
+            video.bandwidth.saturating_add(audio.bandwidth),
+        )?;
         let headers = url::form_urlencoded::Serializer::new(String::new())
             .append_pair("Referer", super::upstream::referer(&video.url))
             .append_pair("User-Agent", super::upstream::user_agent(&video.url))
@@ -265,6 +264,17 @@ fn parse_index(data: &[u8], position: u64, total: u64) -> io::Result<Vec<(Range<
         return Err(invalid("sidx 长度不匹配"));
     }
     Ok(segments)
+}
+
+/// 点播与直播共用同一份音视频主清单格式。
+pub(crate) fn master_playlist(video: &str, audio: &str, bandwidth: u64) -> io::Result<String> {
+    if [video, audio].iter().any(|codec| {
+        codec.is_empty()
+            || !codec.bytes().all(|c| c.is_ascii_alphanumeric() || b".,-".contains(&c))
+    }) {
+        return Err(invalid("HLS 编码描述无效"));
+    }
+    Ok(format!("#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"audio\",DEFAULT=YES,AUTOSELECT=YES,URI=\"audio.m3u8\"\n#EXT-X-STREAM-INF:BANDWIDTH={},CODECS=\"{},{}\",AUDIO=\"audio\"\nvideo.m3u8\n", bandwidth.max(1), video, audio))
 }
 
 #[cfg(test)]

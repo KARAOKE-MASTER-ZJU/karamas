@@ -15,6 +15,7 @@ pub struct EnginePlaybackState {
     pub current_secs: Option<u32>,
     pub total_secs: Option<u32>,
     pub is_playing: bool,
+    pub is_live: bool,
     pub queued_count: usize,
     pub sung_count: usize,
     pub quality_qn: Option<u32>,
@@ -74,6 +75,7 @@ impl EngineContext {
             gate.cached_progress()
         };
         let song = gate.song();
+        let is_live = self.caster.is_live();
         EnginePlaybackState {
             song_id: song.as_ref().and_then(|(id, _)| id.clone()),
             song_url: song.map(|(_, url)| url),
@@ -83,6 +85,7 @@ impl EngineContext {
             current_secs: u32::try_from(current).ok(),
             total_secs: u32::try_from(total).ok(),
             is_playing: self.is_playing(),
+            is_live,
             queued_count: self.playlist_manager.get_queued_count().await,
             sung_count: self.playlist_manager.get_sung_count().await,
             quality_qn: self.caster.get_quality().ok().map(|q| q.as_qn()),

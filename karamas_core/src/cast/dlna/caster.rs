@@ -16,6 +16,7 @@ pub struct DlnaCaster {
     transport: tokio::sync::Mutex<()>,
     seek_sequence: std::sync::atomic::AtomicU64,
     loaded_generation: std::sync::atomic::AtomicU64,
+    live: std::sync::atomic::AtomicBool,
 }
 
 /// Dlna投屏器实现
@@ -38,6 +39,7 @@ impl DlnaCaster {
             transport: tokio::sync::Mutex::new(()),
             seek_sequence: std::sync::atomic::AtomicU64::new(0),
             loaded_generation: std::sync::atomic::AtomicU64::new(0),
+            live: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -71,7 +73,6 @@ impl DlnaCaster {
         let session = self
             .sessions
             .as_ref()
-            .filter(|_| !direct || hls_direct)
             .map(|sessions| {
                 if hls_direct {
                     sessions.activate_hls_with_format(song, preferred.0, format)
@@ -86,6 +87,21 @@ impl DlnaCaster {
                     sessions.activate_with_format(song, preferred.0, format)
                 }
             });
+        // 先识别页面配置，直播固定走会话代理；探测结果由会话缓存，准备媒体时不重复取页。
+        let live = if let Some(session) = &session {
+            session.detect_live(&self.media_client).await
+                .map_err(|error| self.failure("识别媒体", error))?
+        } else {
+            crate::sources::live::resolve(&self.media_client, song).await
+                .map_err(|error| self.failure("识别媒体", error))?.is_some()
+        };
+        if live && session.is_none() {
+            return Err(CastError::Device("直播媒体代理尚未初始化".into()));
+        }
+        let position = if live { 0 } else { position };
+        let direct = direct && !live;
+        let hls_direct = hls_direct && !live;
+        let session = session.filter(|_| !direct || hls_direct);
         let media_url = if direct && !hls_direct {
             let (url, actual_quality) = resolve_direct_url(song, preferred.0, format).await?;
             if sequence
@@ -200,6 +216,7 @@ impl DlnaCaster {
                 .store(session.generation, std::sync::atomic::Ordering::Relaxed);
         }
 
+        self.live.store(live, std::sync::atomic::Ordering::Relaxed);
         if (direct || session.is_some() || quality == Quality::P720) && position > 0 {
             if let Err(error) = self.controller.seek(&self.device, position).await {
                 log::warn!(target: "DLNA1080", "切换媒体后恢复进度失败: quality={}, position={}s, error={}", quality.label(), position, error);
@@ -312,12 +329,24 @@ impl Caster for DlnaCaster {
         self.seek_sequence
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let _transport = self.transport.lock().await;
-        self.controller.stop(&self.device).await
-            .map_err(|error| self.failure("停止播放", error))
+        let result = self.controller.stop(&self.device).await
+            .map_err(|error| self.failure("停止播放", error));
+        if let Some(sessions) = &self.sessions {
+            // 停止接收端后取消已加载的直播会话，拒绝后续分片请求。
+            if let Some(session) = sessions.get(self.loaded_generation.load(std::sync::atomic::Ordering::Relaxed))
+                && session.is_live()
+            {
+                session.cancel();
+            }
+        }
+        result
     }
 
     /// 播放指定位置
     async fn seek(&self, secs: u32) -> Result<(), CastError> {
+        if !self.capabilities().seek {
+            return Err(CastError::Device("直播暂不支持调整进度，请使用重新投屏回到直播".into()));
+        }
         let loaded_generation = self
             .loaded_generation
             .load(std::sync::atomic::Ordering::Relaxed);
@@ -450,11 +479,15 @@ impl Caster for DlnaCaster {
         Some(crate::cast::dlna::settings::get_dlna_actual_quality().1)
     }
 
+    fn is_live(&self) -> bool {
+        self.live.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// 查询设备能力
     fn capabilities(&self) -> Capabilities {
         Capabilities {
             absolute_volume: true,
-            seek: true,
+            seek: !self.is_live(),
             hardware_progress: true,
         }
     }

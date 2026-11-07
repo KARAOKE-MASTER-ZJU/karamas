@@ -73,6 +73,7 @@ pub struct PlaybackState {
     pub total_secs: Option<u32>,
     /// 当前播放状态，B站投屏由设备回传同步。
     pub is_playing: bool,
+    pub is_live: bool,
     pub queued_count: usize,
     pub sung_count: usize,
     /// B站协议清晰度数值，查询不可用或失败时为 null。

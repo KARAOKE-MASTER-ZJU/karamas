@@ -129,6 +129,7 @@ fn start_with_binding(
     };
     let server = HttpServer::new(app_factory)
         .disable_signals()
+        .keep_alive(std::time::Duration::from_secs(30))
         .workers(1)
         .listen(listener)?
         .run();

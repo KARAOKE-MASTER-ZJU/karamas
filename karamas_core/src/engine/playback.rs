@@ -48,6 +48,7 @@ pub(super) async fn sample_progress(ctx: &EngineContext) -> (i32, i32) {
     let revision = gate.revision();
     let hash = ctx.playlist_manager.current_hash().await;
     let playing = ctx.playlist_manager.get_song_playing().await;
+    let live = ctx.caster.is_live();
     let cached_total = match playing.as_ref() {
         Some(song) => *ctx.duration_cache.lock().await.get(song).unwrap_or(&0),
         None => 0,
@@ -67,7 +68,10 @@ pub(super) async fn sample_progress(ctx: &EngineContext) -> (i32, i32) {
                 "progress: curr={} device_total={} cached_total={} playing={:?}",
                 p.current_secs, p.total_secs, cached_total, playing
             );
-            let total = if snapshot.is_some() && p.total_secs > 0 {
+            // 接收端可能把直播回看窗口报成总时长，不能据此展示结束位置或自动切歌。
+            let total = if live {
+                0
+            } else if snapshot.is_some() && p.total_secs > 0 {
                 p.total_secs
             } else if cached_total > 0 {
                 cached_total
@@ -95,7 +99,7 @@ pub(super) async fn sample_progress(ctx: &EngineContext) -> (i32, i32) {
     // Validate the sample and consume once under the same lock as song updates
     // and play confirmations. An old poll cannot trigger after a new playback.
     // 交互结束后再判断末尾，保留正常播放时提前切歌的时间余量。
-    let should_advance = if !ctx.caster.can_auto_advance() {
+    let should_advance = if live || !ctx.caster.can_auto_advance() {
         false
     } else if snapshot.is_some_and(|state| state.ended == Some(true)) {
         current >= 0 && total > 0 && gate.auto_next.observe_finished()

@@ -34,6 +34,7 @@ export interface PlaybackState {
   currentSecs: number | null;
   totalSecs: number | null;
   isPlaying: boolean;
+  isLive: boolean;
   queuedCount: number;
   sungCount: number;
   qualityQn: number | null;

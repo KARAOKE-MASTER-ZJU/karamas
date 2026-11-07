@@ -46,6 +46,10 @@ pub async fn proxy_handler(
             }
         };
         match media.as_ref() {
+            crate::media::session::SessionMedia::Live(live) => {
+                let name = origin_url.rsplit('/').next().unwrap_or_default();
+                return super::live::serve(&req, client.get_ref(), session.clone(), live, name).await;
+            }
             crate::media::session::SessionMedia::Hls(playlists) => {
                 let name = origin_url.rsplit('/').next().unwrap_or_default();
                 if let Some(url) = playlists.source(name) {

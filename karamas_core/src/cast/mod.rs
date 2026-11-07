@@ -190,6 +190,11 @@ pub trait Caster: Send + Sync {
         None
     }
 
+    /// 当前媒体是否为直播。
+    fn is_live(&self) -> bool {
+        false
+    }
+
     /// 是否允许当前进度触发自动切歌；交互期间可暂时禁止。
     fn can_auto_advance(&self) -> bool {
         true

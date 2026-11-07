@@ -32,7 +32,7 @@ pub fn init_cache_dir(path: &str) -> io::Result<()> {
     Ok(())
 }
 /// 获取当前媒体缓存根目录。
-fn cache_root() -> io::Result<PathBuf> {
+pub(super) fn cache_root() -> io::Result<PathBuf> {
     if let Some(root) = CACHE_ROOT
         .read()
         .map_err(|_| io::Error::other("cache root lock poisoned"))?
@@ -55,6 +55,7 @@ fn stopped() -> io::Error {
 pub enum SessionMedia {
     Direct(String),
     Hls(crate::media::hls::Playlists),
+    Live(crate::media::live::LiveMedia),
     Seekable {
         mp4: Arc<VirtualMp4>,
         cache: Arc<SongCache>,
@@ -71,9 +72,25 @@ pub struct MediaSession {
     resolved_quality: Mutex<Option<(Quality, MediaFormat)>>,
     stopped: watch::Sender<bool>,
     ready: OnceCell<Arc<SessionMedia>>,
+    live_source: OnceCell<Option<crate::sources::live::Resolved>>,
     warmup: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 impl MediaSession {
+    /// 返回当前会话识别出的直播属性；尚未识别时返回 false。
+    pub fn is_live(&self) -> bool {
+        self.live_source.get().is_some_and(Option::is_some)
+    }
+
+    pub(crate) async fn detect_live(&self, client: &reqwest::Client) -> io::Result<bool> {
+        tokio::select! {
+            biased;
+            _ = self.cancelled() => Err(stopped()),
+            result = self.live_source.get_or_try_init(|| crate::sources::live::resolve(client, &self.song)) => {
+                result.map(|source| source.is_some())
+            }
+        }
+    }
+
     pub fn resolved_quality(&self) -> (Quality, MediaFormat) {
         self.resolved_quality
             .lock()
@@ -104,7 +121,7 @@ impl MediaSession {
         }
     }
     /// 取消当前会话的媒体准备、预取和缓存读取。
-    fn cancel(&self) {
+    pub(crate) fn cancel(&self) {
         if let Some(task) = self.warmup.lock().unwrap().take() {
             task.abort();
         }
@@ -196,6 +213,13 @@ impl MediaSession {
 
     /// 解析歌曲媒体源，按需准备可定位的 DASH 媒体。
     async fn resolve(&self, client: &reqwest::Client) -> io::Result<SessionMedia> {
+        // 直播页先取源，再进入通用 HTTP 直链分支，避免把网页 HTML 当作 MP4 转发。
+        if self.detect_live(client).await? {
+            let source = self.live_source.get().and_then(Option::as_ref).unwrap().clone();
+            let media = crate::media::live::LiveMedia::prepare(client, source, self.quality).await?;
+            *self.resolved_quality.lock().unwrap() = Some((media.quality(), MediaFormat::Hls));
+            return Ok(SessionMedia::Live(media));
+        }
         if crate::sources::youtube::is_youtube_url(&self.song) {
             let selected = select_media_quality(
                 (self.quality, self.format),
@@ -391,6 +415,7 @@ impl MediaSessions {
             resolved_quality: Mutex::new(None),
             stopped: watch::channel(false).0,
             ready: OnceCell::new(),
+            live_source: OnceCell::new(),
             warmup: Mutex::new(None),
         });
         let previous = self.current.lock().unwrap().replace(session.clone());
@@ -427,7 +452,8 @@ impl Drop for MediaSessions {
 pub fn generation_from_path(path: &str) -> Option<u64> {
     let path = path.strip_prefix("__ktv_media/")?;
     if let Some((generation, name)) = path.split_once('/') {
-        matches!(name, "master.m3u8" | "video.m3u8" | "audio.m3u8" | "video.mp4" | "audio.mp4")
+        (matches!(name, "master.m3u8" | "video.m3u8" | "audio.m3u8" | "video.mp4" | "audio.mp4")
+            || crate::media::live::valid_resource(name))
             .then(|| generation.parse().ok())
             .flatten()
     } else {

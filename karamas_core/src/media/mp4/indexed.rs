@@ -6,90 +6,8 @@
 use bytes::Bytes;
 use std::{io, ops::Range};
 
-/// 构建 MP4 数据无效的错误。
-fn invalid(message: &str) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, message)
-}
-/// 从指定偏移读取大端 u32。
-fn u32_at(b: &[u8], p: usize) -> io::Result<u32> {
-    Ok(u32::from_be_bytes(
-        b.get(p..p + 4)
-            .ok_or_else(|| invalid("short u32"))?
-            .try_into()
-            .unwrap(),
-    ))
-}
-/// 从指定偏移读取大端 u64。
-fn u64_at(b: &[u8], p: usize) -> io::Result<u64> {
-    Ok(u64::from_be_bytes(
-        b.get(p..p + 8)
-            .ok_or_else(|| invalid("short u64"))?
-            .try_into()
-            .unwrap(),
-    ))
-}
-/// 将数据封装为指定类型的 MP4 box。
-fn atom(kind: &[u8; 4], body: &[u8]) -> io::Result<Vec<u8>> {
-    let size = u32::try_from(
-        body.len()
-            .checked_add(8)
-            .ok_or_else(|| invalid("box overflow"))?,
-    )
-    .map_err(|_| invalid("box too large"))?;
-    let mut out = Vec::with_capacity(size as usize);
-    out.extend_from_slice(&size.to_be_bytes());
-    out.extend_from_slice(kind);
-    out.extend_from_slice(body);
-    Ok(out)
-}
-/// 检查 MP4 box 头部并返回头部长度。
-fn header(b: &[u8]) -> io::Result<usize> {
-    if b.len() < 8 {
-        return Err(invalid("short box"));
-    }
-    let size = if u32_at(b, 0)? == 1 { 16 } else { 8 };
-    if b.len() < size {
-        return Err(invalid("short extended box header"));
-    }
-    Ok(size)
-}
-/// 解析并校验容器内的直接子 box。
-fn children(b: &[u8]) -> io::Result<Vec<&[u8]>> {
-    let mut p = header(b)?;
-    let declared = match u32_at(b, 0)? {
-        0 => b.len() as u64,
-        1 => u64_at(b, 8)?,
-        n => n as u64,
-    };
-    if declared != b.len() as u64 {
-        return Err(invalid("container size mismatch"));
-    }
-    let mut out = Vec::new();
-    while p < b.len() {
-        let size = match u32_at(b, p)? {
-            0 => b.len() - p,
-            1 => usize::try_from(u64_at(b, p + 8)?).map_err(|_| invalid("box overflow"))?,
-            n => n as usize,
-        };
-        let end = p.checked_add(size).ok_or_else(|| invalid("box overflow"))?;
-        let child = b
-            .get(p..end)
-            .ok_or_else(|| invalid("child exceeds parent"))?;
-        if size < header(child)? {
-            return Err(invalid("invalid child size"));
-        }
-        out.push(child);
-        p = end;
-    }
-    Ok(out)
-}
-/// 获取指定类型的直接子 box。
-fn child<'a>(b: &'a [u8], kind: &[u8; 4]) -> io::Result<&'a [u8]> {
-    children(b)?
-        .into_iter()
-        .find(|c| &c[4..8] == kind)
-        .ok_or_else(|| invalid("missing required box"))
-}
+use super::boxes::{atom, child, children, header, invalid, u32_at, u64_at};
+
 /// 替换指定类型的直接子 box，并重建容器。
 fn replace(b: &[u8], kind: &[u8; 4], replacement: &[u8]) -> io::Result<Vec<u8>> {
     let mut body = Vec::new();
@@ -138,7 +56,7 @@ fn duration(b: &[u8], value: u64, track: bool) -> io::Result<Vec<u8>> {
 }
 
 #[derive(Clone, Debug)]
-struct Sample {
+pub(crate) struct Sample {
     offset: u64,
     size: u32,
     duration: u32,
@@ -146,6 +64,12 @@ struct Sample {
     sync: bool,
     decode_time: u64,
 }
+impl Sample {
+    pub(crate) fn range(&self) -> Range<u64> {
+        self.offset..self.offset + u64::from(self.size)
+    }
+}
+
 struct Track {
     source: usize,
     id: u32,
@@ -153,6 +77,129 @@ struct Track {
     timescale: u32,
     defaults: [u32; 3],
     samples: Vec<Sample>,
+}
+
+/// 解析一个 traf 的样本位置；连续时间轴属于点播索引策略，由调用方校验。
+pub(crate) fn fragment_samples(
+    traf: &[u8],
+    moof_offset: u64,
+    defaults: [u32; 3],
+) -> io::Result<Vec<Sample>> {
+    let tfhd = child(traf, b"tfhd")?;
+    let h = header(tfhd)?;
+    let flags = u32_at(tfhd, h)? & 0xffffff;
+    let mut samples = Vec::new();
+    let mut p = h + 8;
+    let base = if flags & 1 != 0 {
+        let n = u64_at(tfhd, p)?;
+        p += 8;
+        n
+    } else {
+        // The implicit base for later trafs is the preceding traf's data end.
+        // Reject it rather than silently use a wrong source offset.
+        if flags & 0x020000 == 0 {
+            return Err(invalid("fragment requires explicit or moof-relative base"));
+        }
+        moof_offset
+    };
+    if flags & 2 != 0 {
+        if u32_at(tfhd, p)? != 1 {
+            return Err(invalid("multiple sample descriptions unsupported"));
+        }
+        p += 4;
+    }
+    let mut defaults = defaults;
+    for (i, flag) in [8, 16, 32].into_iter().enumerate() {
+        if flags & flag != 0 {
+            defaults[i] = u32_at(tfhd, p)?;
+            p += 4;
+        }
+    }
+    let tfdt = child(traf, b"tfdt")?;
+    let dh = header(tfdt)?;
+    let mut dts = match tfdt.get(dh) {
+        Some(0) => u32_at(tfdt, dh + 4)? as u64,
+        Some(1) => u64_at(tfdt, dh + 4)?,
+        _ => return Err(invalid("invalid tfdt version")),
+    };
+    let mut cursor = None;
+    for trun in children(traf)?.into_iter().filter(|c| &c[4..8] == b"trun") {
+        let rh = header(trun)?;
+        let version = *trun.get(rh).ok_or_else(|| invalid("short trun"))?;
+        if version > 1 {
+            return Err(invalid("invalid trun version"));
+        }
+        let flags = u32_at(trun, rh)? & 0xffffff;
+        let count = u32_at(trun, rh + 4)?;
+        if samples.len().saturating_add(count as usize) > 1_000_000 {
+            return Err(invalid("sample index exceeds memory budget"));
+        }
+        let mut p = rh + 8;
+        if flags & 1 != 0 {
+            cursor = Some(
+                base.checked_add_signed(u32_at(trun, p)? as i32 as i64)
+                    .ok_or_else(|| invalid("negative sample offset"))?,
+            );
+            p += 4;
+        }
+        let mut offset = cursor.ok_or_else(|| invalid("first run has no data offset"))?;
+        let first_flags = if flags & 4 != 0 {
+            let f = u32_at(trun, p)?;
+            p += 4;
+            Some(f)
+        } else {
+            None
+        };
+        if first_flags.is_some() && flags & 0x400 != 0 {
+            return Err(invalid("conflicting sample flags"));
+        }
+        for i in 0..count {
+            let mut values = defaults;
+            if i == 0 {
+                if let Some(f) = first_flags {
+                    values[2] = f;
+                }
+            }
+            for (j, flag) in [0x100, 0x200, 0x400].into_iter().enumerate() {
+                if flags & flag != 0 {
+                    values[j] = u32_at(trun, p)?;
+                    p += 4;
+                }
+            }
+            let cts = if flags & 0x800 != 0 {
+                let v = u32_at(trun, p)?;
+                p += 4;
+                if version == 0 && v > i32::MAX as u32 {
+                    return Err(invalid("composition offset overflow"));
+                }
+                v as i32
+            } else {
+                0
+            };
+            if values[0] == 0 || values[1] == 0 {
+                return Err(invalid("zero sample duration or size"));
+            }
+            samples.push(Sample {
+                offset,
+                size: values[1],
+                duration: values[0],
+                composition_offset: cts,
+                sync: values[2] & 0x10000 == 0,
+                decode_time: dts,
+            });
+            offset = offset
+                .checked_add(values[1] as u64)
+                .ok_or_else(|| invalid("sample offset overflow"))?;
+            dts = dts
+                .checked_add(values[0] as u64)
+                .ok_or_else(|| invalid("decode time overflow"))?;
+        }
+        cursor = Some(offset);
+    }
+    if samples.is_empty() {
+        return Err(invalid("fragment has no samples"));
+    }
+    Ok(samples)
 }
 
 /// Metadata-only builder. `source` identifies an immutable upstream file.
@@ -221,131 +268,31 @@ impl Mp4Builder {
         for traf in children(moof)?.into_iter().filter(|c| &c[4..8] == b"traf") {
             let tfhd = child(traf, b"tfhd")?;
             let h = header(tfhd)?;
-            let flags = u32_at(tfhd, h)? & 0xffffff;
             let id = u32_at(tfhd, h + 4)?;
             let t = self
                 .tracks
                 .iter_mut()
                 .find(|t| t.source == source && t.id == id)
                 .ok_or_else(|| invalid("unknown fragment track"))?;
-            let mut p = h + 8;
-            let base = if flags & 1 != 0 {
-                let n = u64_at(tfhd, p)?;
-                p += 8;
-                n
-            } else {
-                // The implicit base for later trafs is the preceding traf's data end.
-                // Reject it rather than silently use a wrong source offset.
-                if flags & 0x020000 == 0 {
-                    return Err(invalid("fragment requires explicit or moof-relative base"));
-                }
-                moof_offset
-            };
-            if flags & 2 != 0 {
-                if u32_at(tfhd, p)? != 1 {
-                    return Err(invalid("multiple sample descriptions unsupported"));
-                }
-                p += 4;
-            }
-            let mut defaults = t.defaults;
-            for (i, flag) in [8, 16, 32].into_iter().enumerate() {
-                if flags & flag != 0 {
-                    defaults[i] = u32_at(tfhd, p)?;
-                    p += 4;
-                }
-            }
-            let tfdt = child(traf, b"tfdt")?;
-            let dh = header(tfdt)?;
-            let mut dts = match tfdt.get(dh) {
-                Some(0) => u32_at(tfdt, dh + 4)? as u64,
-                Some(1) => u64_at(tfdt, dh + 4)?,
-                _ => return Err(invalid("invalid tfdt version")),
-            };
+            let samples = fragment_samples(traf, moof_offset, t.defaults)?;
             let expected = t
                 .samples
                 .last()
                 .map_or(0, |s| s.decode_time + u64::from(s.duration));
-            if dts != expected {
+            if samples
+                .first()
+                .is_some_and(|sample| sample.decode_time != expected)
+            {
                 return Err(invalid("discontinuous decode timeline unsupported"));
             }
-            let mut cursor = None;
-            for trun in children(traf)?.into_iter().filter(|c| &c[4..8] == b"trun") {
-                let rh = header(trun)?;
-                let version = *trun.get(rh).ok_or_else(|| invalid("short trun"))?;
-                if version > 1 {
-                    return Err(invalid("invalid trun version"));
-                }
-                let flags = u32_at(trun, rh)? & 0xffffff;
-                let count = u32_at(trun, rh + 4)?;
-                self.sample_count = self
-                    .sample_count
-                    .checked_add(count as usize)
-                    .ok_or_else(|| invalid("sample count overflow"))?;
-                if self.sample_count > 1_000_000 {
-                    return Err(invalid("sample index exceeds memory budget"));
-                }
-                let mut p = rh + 8;
-                if flags & 1 != 0 {
-                    cursor = Some(
-                        base.checked_add_signed(u32_at(trun, p)? as i32 as i64)
-                            .ok_or_else(|| invalid("negative sample offset"))?,
-                    );
-                    p += 4;
-                }
-                let mut offset = cursor.ok_or_else(|| invalid("first run has no data offset"))?;
-                let first_flags = if flags & 4 != 0 {
-                    let f = u32_at(trun, p)?;
-                    p += 4;
-                    Some(f)
-                } else {
-                    None
-                };
-                if first_flags.is_some() && flags & 0x400 != 0 {
-                    return Err(invalid("conflicting sample flags"));
-                }
-                for i in 0..count {
-                    let mut values = defaults;
-                    if i == 0 {
-                        if let Some(f) = first_flags {
-                            values[2] = f;
-                        }
-                    }
-                    for (j, flag) in [0x100, 0x200, 0x400].into_iter().enumerate() {
-                        if flags & flag != 0 {
-                            values[j] = u32_at(trun, p)?;
-                            p += 4;
-                        }
-                    }
-                    let cts = if flags & 0x800 != 0 {
-                        let v = u32_at(trun, p)?;
-                        p += 4;
-                        if version == 0 && v > i32::MAX as u32 {
-                            return Err(invalid("composition offset overflow"));
-                        }
-                        v as i32
-                    } else {
-                        0
-                    };
-                    if values[0] == 0 || values[1] == 0 {
-                        return Err(invalid("zero sample duration or size"));
-                    }
-                    t.samples.push(Sample {
-                        offset,
-                        size: values[1],
-                        duration: values[0],
-                        composition_offset: cts,
-                        sync: values[2] & 0x10000 == 0,
-                        decode_time: dts,
-                    });
-                    offset = offset
-                        .checked_add(values[1] as u64)
-                        .ok_or_else(|| invalid("sample offset overflow"))?;
-                    dts = dts
-                        .checked_add(values[0] as u64)
-                        .ok_or_else(|| invalid("decode time overflow"))?;
-                }
-                cursor = Some(offset);
+            self.sample_count = self
+                .sample_count
+                .checked_add(samples.len())
+                .ok_or_else(|| invalid("sample count overflow"))?;
+            if self.sample_count > 1_000_000 {
+                return Err(invalid("sample index exceeds memory budget"));
             }
+            t.samples.extend(samples);
         }
         Ok(())
     }
@@ -420,13 +367,26 @@ impl Mp4Builder {
         // Hints only: the receiver still uses the exact MP4 sample tables for
         // seeking. Start at a preceding video keyframe, never at an arbitrary
         // byte estimate based on average bitrate.
-        let video = self.tracks.iter().position(|t| {
-            child(&t.trak, b"mdia").and_then(|m| child(m, b"hdlr"))
-                .is_ok_and(|h| h.get(16..20) == Some(b"vide"))
-        }).unwrap_or(0);
-        let seek_points = self.tracks[video].samples.iter().enumerate()
+        let video = self
+            .tracks
+            .iter()
+            .position(|t| {
+                child(&t.trak, b"mdia")
+                    .and_then(|m| child(m, b"hdlr"))
+                    .is_ok_and(|h| h.get(16..20) == Some(b"vide"))
+            })
+            .unwrap_or(0);
+        let seek_points = self.tracks[video]
+            .samples
+            .iter()
+            .enumerate()
             .filter(|(_, s)| s.sync)
-            .map(|(i, s)| ((s.decode_time as u128 * 1000 / self.tracks[video].timescale as u128) as u64, offsets[video][i]))
+            .map(|(i, s)| {
+                (
+                    (s.decode_time as u128 * 1000 / self.tracks[video].timescale as u128) as u64,
+                    offsets[video][i],
+                )
+            })
             .collect();
         assert_eq!(moov.len(), initial_moov.len());
         let mut prefix = self.ftyp;
@@ -594,7 +554,9 @@ impl VirtualMp4 {
     pub fn seek_warmup_range(&self, seconds: u32) -> Range<u64> {
         let target = u64::from(seconds) * 1000;
         let index = self.seek_points.partition_point(|(ms, _)| *ms <= target);
-        let start = self.seek_points.get(index.saturating_sub(1))
+        let start = self
+            .seek_points
+            .get(index.saturating_sub(1))
             .map_or(self.prefix.len() as u64, |(_, offset)| *offset);
         start..start.saturating_add(2 * 1024 * 1024).min(self.len)
     }
@@ -693,7 +655,9 @@ mod tests {
     #[test]
     fn empty_track_run_returns_error_instead_of_panicking() {
         let mut builder = builder(false);
-        let error = builder.add_fragment(0, 100, &fragment(0, vec![])).unwrap_err();
+        let error = builder
+            .add_fragment(0, 100, &fragment(0, vec![]))
+            .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
     }
 
@@ -948,10 +912,16 @@ mod tests {
 
     #[actix_web::test]
     async fn seek_retires_a_blocked_response_and_new_range_retries_the_block() {
-        use crate::{media::cache::{SongCache, RemoteSource, BLOCK_BYTES}, media::mp4::http::serve};
+        use crate::{
+            media::cache::{BLOCK_BYTES, RemoteSource, SongCache},
+            media::mp4::http::serve,
+        };
         use actix_web::{body::to_bytes, test::TestRequest};
         use std::{sync::Arc, time::Duration};
-        use tokio::{net::TcpListener, io::{AsyncReadExt, AsyncWriteExt}};
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        };
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/fixture", listener.local_addr().unwrap());
         let (accepted, waiting) = tokio::sync::oneshot::channel();
@@ -970,7 +940,10 @@ mod tests {
                     // Hold the response until cancellation closes this request.
                     accepted.take().unwrap().send(()).unwrap();
                     let mut byte = [0];
-                    let closed = tokio::time::timeout(Duration::from_secs(2), socket.read(&mut byte)).await.unwrap();
+                    let closed =
+                        tokio::time::timeout(Duration::from_secs(2), socket.read(&mut byte))
+                            .await
+                            .unwrap();
                     assert!(matches!(closed, Ok(0) | Err(_)));
                     continue;
                 }
@@ -980,20 +953,43 @@ mod tests {
                 socket.write_all(&response).await.unwrap();
             }
         });
-        let cache = Arc::new(SongCache::new(&std::env::temp_dir(), reqwest::Client::new(),
-            vec![RemoteSource { url, len: 209 }], BLOCK_BYTES).unwrap());
+        let cache = Arc::new(
+            SongCache::new(
+                &std::env::temp_dir(),
+                reqwest::Client::new(),
+                vec![RemoteSource { url, len: 209 }],
+                BLOCK_BYTES,
+            )
+            .unwrap(),
+        );
         let mut b = builder(false);
-        b.add_fragment(0, 100, &fragment(0, ints(&[1, 3, 100]))).unwrap();
+        b.add_fragment(0, 100, &fragment(0, ints(&[1, 3, 100])))
+            .unwrap();
         let mp4 = Arc::new(b.finish().unwrap());
-        let request = TestRequest::default().insert_header(("Range", format!("bytes={}-", mp4.prefix.len()))).to_http_request();
+        let request = TestRequest::default()
+            .insert_header(("Range", format!("bytes={}-", mp4.prefix.len())))
+            .to_http_request();
         let old = serve(&request, mp4.clone(), cache.clone(), 99);
-        let old_read = actix_web::rt::spawn(async move { to_bytes(old.into_body()).await.unwrap() });
-        tokio::time::timeout(Duration::from_secs(2), waiting).await.unwrap().unwrap();
+        let old_read =
+            actix_web::rt::spawn(async move { to_bytes(old.into_body()).await.unwrap() });
+        tokio::time::timeout(Duration::from_secs(2), waiting)
+            .await
+            .unwrap()
+            .unwrap();
         let cutoff = cache.stream_cutoff();
         let new = serve(&request, mp4, cache.clone(), 99);
         cache.retire_streams(cutoff);
-        assert!(tokio::time::timeout(Duration::from_secs(2), old_read).await.unwrap().unwrap().is_empty());
-        let bytes = tokio::time::timeout(Duration::from_secs(2), to_bytes(new.into_body())).await.unwrap().unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_secs(2), old_read)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_empty()
+        );
+        let bytes = tokio::time::timeout(Duration::from_secs(2), to_bytes(new.into_body()))
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(&bytes[..], b"abcdefghi");
         assert_eq!(cache.stats().0, 2);
         origin.await.unwrap();

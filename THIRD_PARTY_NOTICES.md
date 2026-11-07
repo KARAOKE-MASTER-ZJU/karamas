@@ -8,22 +8,33 @@ Windows 的 WebView2 Runtime、macOS 系统框架，以及 Linux 的 GTK、WebKi
 
 ## 前端组件
 
-| 组件及版本（项目链接）                                                             | 平台 | 采用的许可                           | 版权及附带通知                         |
-| ---------------------------------------------------------------------------------- | ---- | ------------------------------------ | -------------------------------------- |
-| [@lucide/vue 1.60.0](https://github.com/lucide-icons/lucide)                       | 全部 | [ISC](#license-8), [MIT](#license-1) | [233](#notice-233), [234](#notice-234) |
-| [@tauri-apps/api 2.12.4](https://github.com/tauri-apps/tauri)                      | 全部 | [MIT](#license-1)                    | [250](#notice-250)                     |
-| [@tauri-apps/plugin-opener 2.7.2](https://github.com/tauri-apps/plugins-workspace) | 全部 | [MIT](#license-1)                    | [249](#notice-249)                     |
-| [@vue/reactivity 3.5.44](https://github.com/vuejs/core)                            | 全部 | [MIT](#license-1)                    | [237](#notice-237)                     |
-| [@vue/runtime-core 3.5.44](https://github.com/vuejs/core)                          | 全部 | [MIT](#license-1)                    | [237](#notice-237)                     |
-| [@vue/runtime-dom 3.5.44](https://github.com/vuejs/core)                           | 全部 | [MIT](#license-1)                    | [237](#notice-237)                     |
-| [@vue/shared 3.5.44](https://github.com/vuejs/core)                                | 全部 | [MIT](#license-1)                    | [237](#notice-237)                     |
-| [dijkstrajs 1.0.3](https://github.com/tcort/dijkstrajs)                            | 全部 | [MIT](#license-1)                    | [247](#notice-247)                     |
-| [hls.js 1.7.3](https://github.com/video-dev/hls.js)                                | 全部 | [Apache-2.0](#license-4)             | [248](#notice-248)                     |
-| [pinia 4.1.0](https://github.com/vuejs/pinia)                                      | 全部 | [MIT](#license-1)                    | [235](#notice-235)                     |
-| [qrcode 1.5.4](https://github.com/soldair/node-qrcode)                             | 全部 | [MIT](#license-1)                    | [236](#notice-236)                     |
-| [Vite modulepreload polyfill 8.3.5](https://github.com/vitejs/vite)                | 全部 | [MIT](#license-1)                    | [238](#notice-238)                     |
-| [vue 3.5.44](https://github.com/vuejs/core)                                        | 全部 | [MIT](#license-1)                    | [237](#notice-237)                     |
-| [vue-router 5.4.0](https://github.com/vuejs/router)                                | 全部 | [MIT](#license-1)                    | [235](#notice-235)                     |
+| 组件及版本（项目链接）                                                             | 平台                           | 采用的许可                           | 版权及附带通知                         |
+| ---------------------------------------------------------------------------------- | ------------------------------ | ------------------------------------ | -------------------------------------- |
+| [@lucide/vue 1.60.0](https://github.com/lucide-icons/lucide)                       | 全部                           | [ISC](#license-8), [MIT](#license-1) | [233](#notice-233), [234](#notice-234) |
+| [@tauri-apps/api 2.12.4](https://github.com/tauri-apps/tauri)                      | 全部                           | [MIT](#license-1)                    | [250](#notice-250)                     |
+| [@tauri-apps/plugin-opener 2.7.2](https://github.com/tauri-apps/plugins-workspace) | 全部                           | [MIT](#license-1)                    | [249](#notice-249)                     |
+| [@vue/reactivity 3.5.44](https://github.com/vuejs/core)                            | 全部                           | [MIT](#license-1)                    | [237](#notice-237)                     |
+| [@vue/runtime-core 3.5.44](https://github.com/vuejs/core)                          | 全部                           | [MIT](#license-1)                    | [237](#notice-237)                     |
+| [@vue/runtime-dom 3.5.44](https://github.com/vuejs/core)                           | 全部                           | [MIT](#license-1)                    | [237](#notice-237)                     |
+| [@vue/shared 3.5.44](https://github.com/vuejs/core)                                | 全部                           | [MIT](#license-1)                    | [237](#notice-237)                     |
+| [actix-files 0.7.4](https://github.com/actix/actix-web)                            | Android、Linux、macOS、Windows | [MIT](#license-1)                    | [1](#notice-1)                         |
+| [aes 0.9.4](https://github.com/RustCrypto/block-ciphers)                           | Android、Linux、macOS、Windows | [MIT](#license-1)                    | [255](#notice-255)                     |
+| [cipher 0.5.2](https://github.com/RustCrypto/traits)                               | Android、Linux、macOS、Windows | [MIT](#license-1)                    | [256](#notice-256)                     |
+| [cpubits 0.1.1](https://github.com/RustCrypto/utils)                               | Android、Linux、macOS、Windows | [MIT](#license-1)                    | [259](#notice-259)                     |
+| [ctr 0.10.1](https://github.com/RustCrypto/block-modes)                            | Android、Linux、macOS、Windows | [MIT](#license-1)                    | [257](#notice-257)                     |
+| [dijkstrajs 1.0.3](https://github.com/tcort/dijkstrajs)                            | 全部                           | [MIT](#license-1)                    | [247](#notice-247)                     |
+| [hls.js 1.7.3](https://github.com/video-dev/hls.js)                                | 全部                           | [Apache-2.0](#license-4)             | [248](#notice-248)                     |
+| [http-range 0.1.6](https://github.com/KaKnife/http-range)                          | Android、Linux、macOS、Windows | [MIT](#license-1)                    | [251](#notice-251)                     |
+| [inout 0.2.6](https://github.com/RustCrypto/utils)                                 | Android、Linux、macOS、Windows | [MIT](#license-1)                    | [258](#notice-258)                     |
+| [mime_guess 2.0.5](https://github.com/abonander/mime_guess)                        | Android、Linux、macOS、Windows | [MIT](#license-1)                    | [252](#notice-252)                     |
+| [pinia 4.1.0](https://github.com/vuejs/pinia)                                      | 全部                           | [MIT](#license-1)                    | [235](#notice-235)                     |
+| [qrcode 1.5.4](https://github.com/soldair/node-qrcode)                             | 全部                           | [MIT](#license-1)                    | [236](#notice-236)                     |
+| [Vite modulepreload polyfill 8.3.5](https://github.com/vitejs/vite)                | 全部                           | [MIT](#license-1)                    | [238](#notice-238)                     |
+| [unicase 2.10.0](https://github.com/seanmonstar/unicase)                           | Android、Linux、macOS、Windows | [MIT](#license-1)                    | [253](#notice-253)                     |
+| [v_escape-base 0.1.0](https://github.com/zzau13/v_escape)                          | Android、Linux、macOS、Windows | [MIT](#license-1)                    | [254](#notice-254)                     |
+| [v_htmlescape 0.17.0](https://github.com/zzau13/v_escape)                          | Android、Linux、macOS、Windows | [MIT](#license-1)                    | [254](#notice-254)                     |
+| [vue 3.5.44](https://github.com/vuejs/core)                                        | 全部                           | [MIT](#license-1)                    | [237](#notice-237)                     |
+| [vue-router 5.4.0](https://github.com/vuejs/router)                                | 全部                           | [MIT](#license-1)                    | [235](#notice-235)                     |
 
 ## Rust 组件
 
@@ -367,7 +378,7 @@ Windows 的 WebView2 Runtime、macOS 系统框架，以及 Linux 的 GTK、WebKi
 | [tauri-runtime 2.12.2](https://github.com/tauri-apps/tauri)                                    | Android、Linux、macOS、Windows | [MIT](#license-1)                                              | [195](#notice-195)                                   |
 | [tauri-runtime-wry 2.12.3](https://github.com/tauri-apps/tauri)                                | Android、Linux、macOS、Windows | [MIT](#license-1)                                              | [195](#notice-195)                                   |
 | [tauri-utils 2.10.2](https://github.com/tauri-apps/tauri)                                      | Android、Linux、macOS、Windows | [MIT](#license-1)                                              | [195](#notice-195)                                   |
-| [tempfile 3.27.0](https://github.com/Stebalien/tempfile)                                       | Linux、macOS、Windows          | [MIT](#license-1)                                              | [197](#notice-197)                                   |
+| [tempfile 3.27.0](https://github.com/Stebalien/tempfile)                                       | Android、Linux、macOS、Windows | [MIT](#license-1)                                              | [197](#notice-197)                                   |
 | [tendril 0.5.1](https://github.com/servo/html5ever)                                            | Android                        | [MIT](#license-1)                                              | [198](#notice-198)                                   |
 | [thiserror 1.0.69](https://github.com/dtolnay/thiserror)                                       | Android、Linux、macOS、Windows | [MIT](#license-1)                                              | [6](#notice-6)                                       |
 | [thiserror 2.0.21](https://github.com/dtolnay/thiserror)                                       | Android、Linux、macOS、Windows | [MIT](#license-1)                                              | [6](#notice-6)                                       |
@@ -805,6 +816,15 @@ LZMA 模块的链接例外允许与其链接的代码采用其他许可。源码
 | <a id="notice-248"></a>248 | [完整通知](#notice-248-full)                                                                                                                                                                                                                                                                                                                             |
 | <a id="notice-249"></a>249 | Copyright: 2019-2022, The Tauri Programme in the Commons Conservancy                                                                                                                                                                                                                                                                                     |
 | <a id="notice-250"></a>250 | Copyright: 2019-2025, The Tauri Programme in the Commons Conservancy                                                                                                                                                                                                                                                                                     |
+| <a id="notice-251"></a>251 | Copyright (c) 2016 Luka Zakrajšek                                                                                                                                                                                                                                                                                                                        |
+| <a id="notice-252"></a>252 | Copyright (c) 2015 Austin Bonander                                                                                                                                                                                                                                                                                                                       |
+| <a id="notice-253"></a>253 | Copyright (c) 2014-2026 Sean McArthur                                                                                                                                                                                                                                                                                                                    |
+| <a id="notice-254"></a>254 | Copyright (c) 2019 Rust-iendo Barcelona                                                                                                                                                                                                                                                                                                                  |
+| <a id="notice-255"></a>255 | Copyright (c) 2018-2024 The RustCrypto Project Developers; Copyright (c) 2018 Artyom Pavlov                                                                                                                                                                                                                                                              |
+| <a id="notice-256"></a>256 | Copyright (c) 2016-2025 RustCrypto Developers                                                                                                                                                                                                                                                                                                            |
+| <a id="notice-257"></a>257 | Copyright (c) 2018-2022 RustCrypto Developers; Copyright (c) 2018 Artyom Pavlov                                                                                                                                                                                                                                                                          |
+| <a id="notice-258"></a>258 | Copyright (c) 2022-2025 The RustCrypto Project Developers; Copyright (c) 2022 Artyom Pavlov                                                                                                                                                                                                                                                              |
+| <a id="notice-259"></a>259 | Copyright (c) 2023-2026 The RustCrypto Project Developers                                                                                                                                                                                                                                                                                                |
 
 ### notice-12-full
 

@@ -23,6 +23,7 @@ pub async fn poll_playback() -> CommandResult<Option<PlaybackState>> {
         current_secs: playback.current_secs,
         total_secs: playback.total_secs,
         is_playing: playback.is_playing,
+        is_live: playback.is_live,
         queued_count: playback.queued_count,
         sung_count: playback.sung_count,
         quality_qn: playback.quality_qn,

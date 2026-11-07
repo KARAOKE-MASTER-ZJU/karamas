@@ -1,6 +1,6 @@
 //! 代理 HLS 轨道的字节范围，由播放器按需下载初始化信息和媒体分片。
 use crate::media::{session::MediaSession, upstream};
-use actix_web::{HttpRequest, HttpResponse, HttpResponseBuilder, http::Method};
+use actix_web::{http::Method, HttpRequest, HttpResponse, HttpResponseBuilder};
 use futures_util::StreamExt;
 use std::sync::Arc;
 
@@ -21,12 +21,22 @@ pub(super) async fn serve_track(
     session: Arc<MediaSession>,
     url: &str,
 ) -> Result<HttpResponse, actix_web::Error> {
+    serve_track_with_referer(req, client, session, url, upstream::referer(url)).await
+}
+
+pub(super) async fn serve_track_with_referer(
+    req: &HttpRequest,
+    client: &reqwest::Client,
+    session: Arc<MediaSession>,
+    url: &str,
+    referer: &str,
+) -> Result<HttpResponse, actix_web::Error> {
     let mut request = if req.method() == Method::HEAD {
         client.head(url)
     } else {
         client.get(url)
     }
-    .header("Referer", upstream::referer(url))
+    .header("Referer", referer)
     .header("User-Agent", upstream::user_agent(url))
     .header("Accept-Encoding", "identity");
     for name in ["Range", "If-Range"] {
@@ -59,6 +69,18 @@ pub(super) async fn serve_track(
     }
     cors(&mut response);
     if req.method() == Method::HEAD {
+        // 空响应体会让 actix 把 Content-Length 改成 0；HEAD 仍需保留媒体长度。
+        if let Some(length) = upstream
+            .headers()
+            .get("Content-Length")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u64>().ok())
+        {
+            return Ok(response.body(actix_web::body::SizedStream::new(
+                length,
+                futures_util::stream::empty::<Result<bytes::Bytes, std::io::Error>>(),
+            )));
+        }
         return Ok(response.finish());
     }
     let stream = upstream
@@ -75,7 +97,7 @@ mod tests {
         cast::{MediaFormat, Quality},
         media::session::MediaSessions,
     };
-    use actix_web::{App, HttpServer, body::to_bytes, test::TestRequest, web};
+    use actix_web::{body::to_bytes, test::TestRequest, web, App, HttpServer};
 
     // Range 的响应字节和会话失效是播放器契约，错误转发会破坏定位或恢复旧曲目。
     #[actix_web::test]

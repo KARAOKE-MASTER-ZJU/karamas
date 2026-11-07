@@ -4,3 +4,6 @@ pub mod duration;
 pub mod fragmented;
 pub mod http;
 pub mod indexed;
+
+pub(crate) mod boxes;
+pub(crate) mod cenc;

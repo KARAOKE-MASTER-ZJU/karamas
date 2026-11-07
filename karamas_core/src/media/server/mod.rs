@@ -1,6 +1,7 @@
 //! 媒体代理的运行生命周期和 HTTP 路由。
 mod lifecycle;
 mod hls;
+mod live;
 mod routes;
 
 pub(crate) use lifecycle::{start, stop};

@@ -6,6 +6,7 @@ export interface LocalCommand {
     | {
         kind: "load";
         url: string;
+        live: boolean;
         position: number;
         playing: boolean;
         volume: number;

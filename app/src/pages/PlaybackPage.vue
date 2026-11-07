@@ -118,6 +118,7 @@ useVideoLayout(
         :key="playback?.songId ?? undefined"
         :current-secs="playback?.currentSecs ?? null"
         :total-secs="playback?.totalSecs ?? null"
+        :live="playback?.isLive ?? false"
         :disabled="!playback?.capabilities.seek || playbackBusy"
         @seek="controls.seek"
       />
@@ -140,7 +141,7 @@ useVideoLayout(
         @set-volume="controls.setVolume"
       />
       <PlaybackOptions
-        v-if="activeDevice"
+        v-if="activeDevice && !playback?.isLive"
         :mode="activeDevice.kind"
         :song-id="playback?.songId ?? null"
         :song-url="playback?.songUrl ?? null"

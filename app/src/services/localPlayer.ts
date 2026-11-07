@@ -185,7 +185,11 @@ export function createLocalPlayer(
       currentSecs: Number.isFinite(element.currentTime)
         ? element.currentTime
         : 0,
-      totalSecs: Number.isFinite(element.duration) ? element.duration : 0,
+      // 部分原生 HLS 播放器会返回有限的回看窗口长度，直播仍按无总时长回传。
+      totalSecs:
+        !source?.live && Number.isFinite(element.duration)
+          ? element.duration
+          : 0,
       paused: element.paused,
       seeking: element.seeking || activePointer !== null,
       muted: element.muted,
@@ -244,7 +248,8 @@ export function createLocalPlayer(
           notifyState();
           await loadSource(action.url, signal);
           if (signal.aborted) return;
-          await seekTo(element, action.position, signal);
+          // HLS 自行选择直播起播点，不能用点播的零秒位置覆盖。
+          if (!action.live) await seekTo(element, action.position, signal);
           if (action.playing)
             await waitFor(element, () => element.play(), signal);
           if (signal.aborted) return;

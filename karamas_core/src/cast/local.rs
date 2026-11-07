@@ -19,6 +19,7 @@ pub enum LocalAction {
     Loading,
     Load {
         url: String,
+        live: bool,
         position: u32,
         playing: bool,
         volume: u32,
@@ -72,6 +73,7 @@ struct State {
     report: Option<(LocalReport, Instant)>,
     stopped: bool,
     song: Option<String>,
+    live: bool,
     quality: Quality,
     format: MediaFormat,
     actual_quality: Option<(Quality, MediaFormat)>,
@@ -102,6 +104,7 @@ impl LocalCaster {
                 report: None,
                 stopped: false,
                 song: None,
+                live: false,
                 quality: Quality::P720,
                 format: MediaFormat::Mp4,
                 actual_quality: None,
@@ -168,6 +171,7 @@ impl LocalCaster {
         let (quality, format, volume, muted) = {
             let mut state = self.state.lock().unwrap();
             state.song = Some(song.to_owned());
+            state.live = false;
             state.report = None;
             (state.quality, state.format, state.volume, state.muted)
         };
@@ -182,12 +186,15 @@ impl LocalCaster {
                 .await;
             return Err(CastError::Device(message));
         }
+        let live = session.is_live();
+        self.state.lock().unwrap().live = live;
         self.command(LocalAction::Load {
             url: format!(
                 "http://127.0.0.1:{}/{}",
                 self.port,
                 self.sessions.proxy_path(&session.path()),
             ),
+            live,
             position,
             playing,
             volume,
@@ -311,6 +318,9 @@ impl Caster for LocalCaster {
         self.command(LocalAction::Stop).await
     }
     async fn seek(&self, seconds: u32) -> Result<(), CastError> {
+        if !self.capabilities().seek {
+            return Err(CastError::Device("直播暂不支持调整进度，请使用重新播放回到直播".into()));
+        }
         let _control = self.control.lock().await;
         self.command(LocalAction::Seek { seconds }).await
     }
@@ -368,10 +378,13 @@ impl Caster for LocalCaster {
         let state = self.state.lock().unwrap();
         Some(state.actual_quality.map_or(state.format, |actual| actual.1))
     }
+    fn is_live(&self) -> bool {
+        self.state.lock().unwrap().live
+    }
     fn capabilities(&self) -> Capabilities {
         Capabilities {
             absolute_volume: true,
-            seek: true,
+            seek: !self.is_live(),
             hardware_progress: true,
         }
     }

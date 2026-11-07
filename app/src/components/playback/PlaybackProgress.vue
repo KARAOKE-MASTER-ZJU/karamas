@@ -5,6 +5,7 @@ import { formatTime } from "@/utils/time";
 const props = defineProps<{
   currentSecs: number | null;
   totalSecs: number | null;
+  live?: boolean;
   disabled: boolean;
 }>();
 const emit = defineEmits<{ seek: [seconds: number] }>();
@@ -53,7 +54,7 @@ watch([() => props.totalSecs, unavailable], () => {
   />
   <div class="time-labels">
     <span>{{ formatTime(displaySecs) }}</span
-    ><span>{{ formatTime(totalSecs) }}</span>
+    ><span>{{ live ? "直播中" : formatTime(totalSecs) }}</span>
   </div>
 </template>
 
