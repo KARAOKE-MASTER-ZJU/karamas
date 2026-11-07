@@ -87,12 +87,12 @@ fn build_didl_lite_metadata(title: &str, media_url: &str, protocol_info: Option<
     let res_url = xml_escape(media_url);
 
     let didl = format!(
-        r#"<DIDL-Lite xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\">
-        <item id=\"0\" parentID=\"-1\" restricted=\"1\">
+        r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">
+        <item id="0" parentID="-1" restricted="1">
         <dc:title>{}</dc:title>
         <upnp:storageMedium>UNKNOWN</upnp:storageMedium>
         <upnp:writeStatus>UNKNOWN</upnp:writeStatus>
-        <res protocolInfo=\"{}\">{}</res>
+        <res protocolInfo="{}">{}</res>
         <upnp:class>object.item.videoItem</upnp:class>
         </item>
         </DIDL-Lite>"#,
