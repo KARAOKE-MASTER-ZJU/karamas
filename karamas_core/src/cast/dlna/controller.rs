@@ -1,4 +1,3 @@
-use chrono::{NaiveTime, Timelike};
 use futures::future::join_all;
 use futures::stream::StreamExt;
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
@@ -52,6 +51,41 @@ fn xml_escape(s: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&apos;")
+}
+
+/// 将设备返回的时长换算为整秒，小数部分直接舍去。
+fn parse_time_secs(value: &str) -> Option<u32> {
+    let parts: Vec<_> = value.trim().split(':').collect();
+    let (hours, minutes, seconds) = match parts.as_slice() {
+        [hours, minutes, seconds] => (*hours, *minutes, *seconds),
+        [minutes, seconds] => ("0", *minutes, *seconds),
+        [seconds] => ("0", "0", *seconds),
+        _ => return None,
+    };
+    let parse_integer = |part: &str| {
+        if part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+        part.parse::<u32>().ok()
+    };
+    let seconds = if let Some((whole, fraction)) = seconds.split_once('.') {
+        if fraction.is_empty() || !fraction.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+        whole
+    } else {
+        seconds
+    };
+    let hours = parse_integer(hours)?;
+    let minutes = parse_integer(minutes)?;
+    let seconds = parse_integer(seconds)?;
+    if minutes >= 60 || seconds >= 60 {
+        return None;
+    }
+    hours
+        .checked_mul(3600)?
+        .checked_add(minutes * 60)?
+        .checked_add(seconds)
 }
 
 fn build_didl_lite_metadata(title: &str, media_url: &str, protocol_info: Option<&str>) -> String {
@@ -827,66 +861,24 @@ impl DlnaController {
         Ok(response)
     }
 
-    // 获取当前播放进度，返回 (当前时间秒, 总时长秒)
+    /// 获取当前播放进度，返回 (当前时间秒, 总时长秒)；总时长为 0 表示未知。
     pub async fn get_secs(&self, device: &DlnaDevice) -> Result<(u32, u32), rupnp::Error> {
         let position_info = self.get_position_info(device).await?;
-
-        // 获取相对时间
-        let default_time = "00:00:00".to_string();
-        let rel_time = position_info.get("RelTime").unwrap_or(&default_time);
-        let duration = position_info
+        let current_secs = position_info
+            .get("RelTime")
+            .and_then(|value| parse_time_secs(value))
+            .ok_or(rupnp::Error::ParseError(
+                "设备未返回有效的 RelTime 播放进度",
+            ))?;
+        let total_secs = position_info
             .get("TrackDuration")
-            .or_else(|| position_info.get("AbsTime"))
-            .unwrap_or(&default_time);
+            .and_then(|value| parse_time_secs(value))
+            .unwrap_or(0);
         log::trace!(
-            "get_secs() : RelTime: {}, TrackDuration: {}",
-            rel_time,
-            duration
+            "get_secs() : current_secs={}, total_secs={}",
+            current_secs,
+            total_secs
         );
-
-        // 解析时间字符串，支持格式如 "0:00:01" 和 "00:00:01"
-        fn parse_time_str(time_str: &str) -> Result<NaiveTime, rupnp::Error> {
-            let trimmed = time_str.trim();
-
-            // 尝试多种时间格式
-            let formats = ["%H:%M:%S", "%M:%S", "%S"];
-
-            for fmt in &formats {
-                if let Ok(time) = NaiveTime::parse_from_str(trimmed, fmt) {
-                    log::trace!("成功解析时间 '{}' 格式: {}", trimmed, fmt);
-                    return Ok(time);
-                }
-            }
-
-            // 处理格式如 "0:00:01"（单个小时位）的情况
-            if trimmed.contains(':') {
-                let parts: Vec<&str> = trimmed.split(':').collect();
-                if parts.len() == 3 {
-                    // 确保每个部分都有正确的位数
-                    let formatted = format!(
-                        "{:02}:{:02}:{:02}",
-                        parts[0].parse::<u32>().unwrap_or(0),
-                        parts[1].parse::<u32>().unwrap_or(0),
-                        parts[2].parse::<u32>().unwrap_or(0)
-                    );
-                    log::trace!("格式化时间 '{}' 为 '{}'", trimmed, formatted);
-                    if let Ok(time) = NaiveTime::parse_from_str(&formatted, "%H:%M:%S") {
-                        return Ok(time);
-                    }
-                }
-            }
-
-            Err(rupnp::Error::ParseError("无法解析时间字符串"))
-        }
-
-        let current_time =
-            parse_time_str(rel_time).unwrap_or_else(|_| NaiveTime::from_hms_opt(0, 0, 0).unwrap());
-        let total_time =
-            parse_time_str(duration).unwrap_or_else(|_| NaiveTime::from_hms_opt(0, 0, 0).unwrap());
-
-        let current_secs = current_time.num_seconds_from_midnight();
-        let total_secs = total_time.num_seconds_from_midnight();
-
         Ok((current_secs, total_secs))
     }
 
