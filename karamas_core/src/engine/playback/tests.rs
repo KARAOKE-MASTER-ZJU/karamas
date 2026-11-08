@@ -16,6 +16,8 @@ struct TestCaster {
     block_progress: AtomicBool,
     progress_started: Notify,
     progress_reply: Notify,
+    refresh_started: Notify,
+    refresh_reply: Notify,
 }
 
 impl TestCaster {
@@ -32,6 +34,8 @@ impl TestCaster {
             block_progress: AtomicBool::new(false),
             progress_started: Notify::new(),
             progress_reply: Notify::new(),
+            refresh_started: Notify::new(),
+            refresh_reply: Notify::new(),
         }
     }
 }
@@ -69,6 +73,10 @@ impl Caster for TestCaster {
     }
     fn playback_snapshot(&self) -> Option<crate::cast::PlaybackSnapshot> {
         *self.snapshot.lock().unwrap()
+    }
+    async fn refresh_playback(&self) {
+        self.refresh_started.notify_one();
+        self.refresh_reply.notified().await;
     }
     async fn resume(&self) -> Result<(), CastError> {
         if let Some(state) = self.snapshot.lock().unwrap().as_mut() {
@@ -323,6 +331,61 @@ fn context(caster: Arc<dyn Caster>) -> EngineContext {
         tasks: std::sync::Mutex::new(vec![]),
         stopped: AtomicBool::new(false),
     }
+}
+
+// 设备查询迟迟不返回时，独立采样仍须更新显示并触发末尾切歌；暂停时保留切歌机会。
+#[tokio::test(start_paused = true)]
+async fn pending_device_query_does_not_block_progress_or_auto_next() {
+    let caster = Arc::new(TestCaster::new(true, false));
+    *caster.snapshot.lock().unwrap() = Some(crate::cast::PlaybackSnapshot {
+        progress: Progress {
+            current_secs: 178,
+            total_secs: 180,
+        },
+        is_playing: false,
+        ended: None,
+    });
+    let ctx = Arc::new(context(caster.clone()));
+    {
+        let mut gate = ctx.playlist_manager.progress_gate.lock().await;
+        gate.update_song(Some("A".into()), Some("A".into()));
+        let token = gate.revision();
+        gate.play_succeeded(token, false, std::time::Instant::now());
+    }
+    super::super::monitor::start_monitor(&ctx).unwrap();
+    caster.refresh_started.notified().await;
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while ctx.current_progress().await != (178, 180) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("挂起的查询不能阻塞进度显示");
+    {
+        let mut gate = ctx.playlist_manager.progress_gate.lock().await;
+        assert!(gate.auto_next.observe_finished(), "暂停时不能触发提前切歌");
+        gate.auto_next.reset_for_playback();
+    }
+    {
+        let mut snapshot = caster.snapshot.lock().unwrap();
+        let state = snapshot.as_mut().unwrap();
+        state.is_playing = true;
+        state.progress.current_secs = 179;
+    }
+    tokio::time::advance(Duration::from_secs(1)).await;
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while ctx.current_progress().await != (179, 180) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("挂起的查询不能阻塞恢复后的进度采样");
+    let mut gate = ctx.playlist_manager.progress_gate.lock().await;
+    assert!(
+        !gate.auto_next.observe_finished(),
+        "查询未返回时仍应按进度切歌"
+    );
+    gate.auto_next.cancel_pending_request();
 }
 
 async fn playing_session(current: u32) -> (Arc<TestCaster>, EngineContext) {

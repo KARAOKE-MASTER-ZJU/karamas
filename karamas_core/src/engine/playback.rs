@@ -71,7 +71,10 @@ pub(super) async fn sample_progress(ctx: &EngineContext) -> (i32, i32) {
             // 接收端可能把直播回看窗口报成总时长，不能据此展示结束位置或自动切歌。
             let total = if live {
                 0
-            } else if snapshot.is_some() && p.total_secs > 0 {
+            } else if snapshot.is_some()
+                && ctx.caster.kind() != cast::CasterKind::Dlna
+                && p.total_secs > 0
+            {
                 p.total_secs
             } else if cached_total > 0 {
                 cached_total
@@ -103,9 +106,7 @@ pub(super) async fn sample_progress(ctx: &EngineContext) -> (i32, i32) {
         false
     } else if snapshot.is_some_and(|state| state.ended == Some(true)) {
         current >= 0 && total > 0 && gate.auto_next.observe_finished()
-    } else if ctx.caster.kind() == cast::CasterKind::Local
-        && !snapshot.is_some_and(|state| state.is_playing)
-    {
+    } else if snapshot.is_some_and(|state| !state.is_playing) {
         false
     } else {
         gate.auto_next.observe(current, total)

@@ -1,8 +1,7 @@
 //! 小电视广播接收与当前播放状态同步。
-mod playback;
 mod proto;
 
-use playback::PlaybackTimeline;
+use crate::cast::timeline::PlaybackTimeline;
 
 use crate::cast::CastError;
 use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD};
@@ -403,7 +402,18 @@ async fn receive(
                     let mut session = active.write().unwrap_or_else(|e| e.into_inner());
                     let event = decode_event(frame.body, session.as_ref());
                     if let (Ok(Some(event)), Some(session)) = (&event, session.as_mut()) {
-                        session.timeline.apply(event);
+                        let position = event
+                            .position_secs
+                            .and_then(|secs| u32::try_from(secs).ok());
+                        let total = event
+                            .duration_ms
+                            .and_then(|ms| u32::try_from(ms / 1000).ok());
+                        let playing = match event.command {
+                            5 | 7 => Some(false),
+                            6 => Some(true),
+                            _ => None,
+                        };
+                        session.timeline.report(position, total, playing);
                     }
                     event
                 };

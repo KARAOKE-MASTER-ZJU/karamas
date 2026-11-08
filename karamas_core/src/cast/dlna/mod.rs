@@ -1,6 +1,7 @@
 //! DLNA 设备发现、协议控制和投屏实现。
 mod caster;
 mod controller;
+mod playback;
 pub mod settings;
 
 pub use caster::DlnaCaster;

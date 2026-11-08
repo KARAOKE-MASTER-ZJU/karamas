@@ -2,7 +2,10 @@ use async_trait::async_trait;
 use std::net::IpAddr;
 
 use crate::cast::dlna::controller::{DlnaController, DlnaDevice};
-use crate::cast::{Capabilities, CastError, Caster, MediaFormat, Progress, Quality, SongRef};
+use crate::cast::dlna::playback::DlnaPlayback;
+use crate::cast::{
+    Capabilities, CastError, Caster, MediaFormat, PlaybackSnapshot, Progress, Quality, SongRef,
+};
 
 /// Dlna投屏器
 pub struct DlnaCaster {
@@ -17,6 +20,7 @@ pub struct DlnaCaster {
     seek_sequence: std::sync::atomic::AtomicU64,
     loaded_generation: std::sync::atomic::AtomicU64,
     live: std::sync::atomic::AtomicBool,
+    playback: std::sync::Mutex<DlnaPlayback>,
 }
 
 /// Dlna投屏器实现
@@ -40,6 +44,7 @@ impl DlnaCaster {
             seek_sequence: std::sync::atomic::AtomicU64::new(0),
             loaded_generation: std::sync::atomic::AtomicU64::new(0),
             live: std::sync::atomic::AtomicBool::new(false),
+            playback: std::sync::Mutex::new(DlnaPlayback::default()),
         }
     }
 
@@ -226,6 +231,7 @@ impl DlnaCaster {
         if let Some(actual) = selected {
             crate::cast::dlna::settings::set_dlna_actual_quality(actual);
         }
+        self.playback().start(position);
         log::info!(
             target: "DLNA1080",
             "DLNA 已重载媒体: reason={}, quality={}, start={}s, total_ms={}, preparation_ms={}, transport_wait_ms={}, stop_ms={}, set_uri_ms={}, play_ms={}",
@@ -247,6 +253,12 @@ impl DlnaCaster {
             step, self.device.friendly_name, self.device.location, error);
         log::warn!("{}", message);
         CastError::Device(message)
+    }
+
+    fn playback(&self) -> std::sync::MutexGuard<'_, DlnaPlayback> {
+        self.playback
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
     }
 }
 
@@ -302,6 +314,7 @@ impl Caster for DlnaCaster {
 
     /// 播放曲目
     async fn play_song(&self, song: &SongRef) -> Result<(), CastError> {
+        self.playback().begin_song();
         if let Ok(mut current) = self.current_song.lock() {
             *current = Some(song.0.clone());
         }
@@ -314,14 +327,18 @@ impl Caster for DlnaCaster {
     async fn resume(&self) -> Result<(), CastError> {
         let _transport = self.transport.lock().await;
         self.controller.play(&self.device).await
-            .map_err(|error| self.failure("继续播放", error))
+            .map_err(|error| self.failure("继续播放", error))?;
+        self.playback().update(None, Some(true));
+        Ok(())
     }
 
     /// 暂停播放
     async fn pause(&self) -> Result<(), CastError> {
         let _transport = self.transport.lock().await;
         self.controller.pause(&self.device).await
-            .map_err(|error| self.failure("暂停", error))
+            .map_err(|error| self.failure("暂停", error))?;
+        self.playback().update(None, Some(false));
+        Ok(())
     }
 
     /// 停止播放
@@ -331,6 +348,9 @@ impl Caster for DlnaCaster {
         let _transport = self.transport.lock().await;
         let result = self.controller.stop(&self.device).await
             .map_err(|error| self.failure("停止播放", error));
+        if result.is_ok() {
+            self.playback().update(None, Some(false));
+        }
         if let Some(sessions) = &self.sessions {
             // 停止接收端后取消已加载的直播会话，拒绝后续分片请求。
             if let Some(session) = sessions.get(self.loaded_generation.load(std::sync::atomic::Ordering::Relaxed))
@@ -394,6 +414,7 @@ impl Caster for DlnaCaster {
             .await
             .map_err(|error| self.failure("定位", error));
         if result.is_ok() {
+            self.playback().update(Some(secs), None);
             if let Some((cache, cutoff)) = old_streams {
                 // Cancel only streams present before the accepted command.
                 // A fast renderer may already have opened its new Range GET.
@@ -404,16 +425,41 @@ impl Caster for DlnaCaster {
         result
     }
 
-    /// 查询播放进度
+    /// 读取本地计时进度，设备查询由独立任务执行。
     async fn get_progress(&self) -> Result<Progress, CastError> {
-        self.controller
-            .get_secs(&self.device)
-            .await
-            .map(|(curr, total)| Progress {
-                current_secs: curr,
-                total_secs: total,
-            })
-            .map_err(|error| self.failure("查询进度", error))
+        Ok(self
+            .playback_snapshot()
+            .map(|state| state.progress)
+            .unwrap_or_default())
+    }
+
+    fn playback_snapshot(&self) -> Option<PlaybackSnapshot> {
+        self.playback().snapshot()
+    }
+
+    async fn refresh_playback(&self) {
+        let revision = {
+            let Ok(_transport) = self.transport.try_lock() else {
+                return;
+            };
+            let Some(revision) = self.playback().query_revision() else {
+                return;
+            };
+            revision
+        };
+        match self.controller.get_progress_update(&self.device).await {
+            Ok((current, total)) => {
+                let Ok(_transport) = self.transport.try_lock() else {
+                    return;
+                };
+                if !self.is_live() {
+                    self.playback().report(revision, current, total);
+                }
+            }
+            Err(error) => {
+                self.failure("查询进度", error);
+            }
+        }
     }
 
     /// 设置音量
@@ -443,11 +489,8 @@ impl Caster for DlnaCaster {
         }
         log::info!(target: "DLNA1080", "切换 DLNA 清晰度偏好: {:?} -> {:?}", previous, (quality, format));
         let position = self
-            .controller
-            .get_secs(&self.device)
-            .await
-            .ok()
-            .map(|progress| progress.0)
+            .playback_snapshot()
+            .map(|state| state.progress.current_secs)
             .unwrap_or(0);
         crate::cast::dlna::settings::set_dlna_media_quality(quality, format).map_err(|error| CastError::Device(error.to_string()))?;
 
@@ -487,7 +530,7 @@ impl Caster for DlnaCaster {
         Capabilities {
             absolute_volume: true,
             seek: !self.is_live(),
-            hardware_progress: true,
+            hardware_progress: false,
         }
     }
 }

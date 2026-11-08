@@ -1,15 +1,15 @@
-use super::DeviceEvent;
 use crate::cast::{PlaybackSnapshot, Progress};
 use tokio::time::Instant;
 
 /// 当前播放会话的计时基准；回传校正位置，消息间隔内继续本地计时。
 #[derive(Clone)]
-pub(super) struct PlaybackTimeline {
+pub(crate) struct PlaybackTimeline {
     position: Option<u32>,
     total: Option<u32>,
     playing: Option<bool>,
     measured_at: Instant,
     confirmed: bool,
+    last_reported: Option<u32>,
 }
 
 impl Default for PlaybackTimeline {
@@ -20,6 +20,7 @@ impl Default for PlaybackTimeline {
             playing: None,
             measured_at: Instant::now(),
             confirmed: false,
+            last_reported: None,
         }
     }
 }
@@ -64,24 +65,19 @@ impl PlaybackTimeline {
         }
     }
 
-    pub fn apply(&mut self, event: &DeviceEvent) {
-        if let Some(total) = event
-            .duration_ms
-            .and_then(|ms| u32::try_from(ms / 1000).ok())
-            .filter(|total| *total > 0)
-        {
+    /// 接收设备校正；重复的位置表示没有新进度，继续沿用本地计时。
+    pub fn report(&mut self, position: Option<u32>, total: Option<u32>, playing: Option<bool>) {
+        if let Some(total) = total.filter(|total| *total > 0) {
             self.total = Some(total);
         }
-        let position = event
-            .position_secs
-            .and_then(|secs| u32::try_from(secs).ok());
-        let playing = match event.command {
-            5 | 7 => Some(false),
-            6 => Some(true),
-            _ => None,
-        };
-        if position.is_some() || playing.is_some() {
-            self.update(position, playing);
+        let changed_position = position.filter(|position| Some(*position) != self.last_reported);
+        if position.is_some() {
+            self.last_reported = position;
+        }
+        if changed_position.is_some()
+            || playing.is_some_and(|playing| Some(playing) != self.playing)
+        {
+            self.update(changed_position, playing);
         }
     }
 }

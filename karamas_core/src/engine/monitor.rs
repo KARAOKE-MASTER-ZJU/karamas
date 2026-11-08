@@ -108,6 +108,19 @@ pub(super) fn start_monitor(ctx: &Arc<EngineContext>) -> Result<(), CoreError> {
             if ctx.stopped.load(Ordering::SeqCst) {
                 break;
             }
+            ctx.caster.refresh_playback().await;
+        }
+    })?;
+    let session = Arc::downgrade(ctx);
+    ctx.spawn_task(async move {
+        let mut timer = tokio::time::interval(Duration::from_secs(1));
+        timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            timer.tick().await;
+            let Some(ctx) = session.upgrade() else { break };
+            if ctx.stopped.load(Ordering::SeqCst) {
+                break;
+            }
             sample_progress(&ctx).await;
         }
     })?;

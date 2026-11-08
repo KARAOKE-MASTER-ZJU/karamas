@@ -863,19 +863,28 @@ impl DlnaController {
 
     /// 获取当前播放进度，返回 (当前时间秒, 总时长秒)；总时长为 0 表示未知。
     pub async fn get_secs(&self, device: &DlnaDevice) -> Result<(u32, u32), rupnp::Error> {
+        let (current, total) = self.get_progress_update(device).await?;
+        let current = current.ok_or(rupnp::Error::ParseError(
+            "设备未返回有效的 RelTime 播放进度",
+        ))?;
+        Ok((current, total))
+    }
+
+    /// 分别解析位置和时长，缺少当前位置时仍保留可用的总时长。
+    pub(crate) async fn get_progress_update(
+        &self,
+        device: &DlnaDevice,
+    ) -> Result<(Option<u32>, u32), rupnp::Error> {
         let position_info = self.get_position_info(device).await?;
         let current_secs = position_info
             .get("RelTime")
-            .and_then(|value| parse_time_secs(value))
-            .ok_or(rupnp::Error::ParseError(
-                "设备未返回有效的 RelTime 播放进度",
-            ))?;
+            .and_then(|value| parse_time_secs(value));
         let total_secs = position_info
             .get("TrackDuration")
             .and_then(|value| parse_time_secs(value))
             .unwrap_or(0);
         log::trace!(
-            "get_secs() : current_secs={}, total_secs={}",
+            "get_progress_update() : current_secs={:?}, total_secs={}",
             current_secs,
             total_secs
         );

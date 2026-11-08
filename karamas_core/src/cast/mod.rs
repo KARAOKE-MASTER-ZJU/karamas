@@ -4,6 +4,7 @@ pub mod dlna;
 pub mod local;
 pub mod progress;
 mod request;
+mod timeline;
 
 use async_trait::async_trait;
 use std::fmt;
@@ -185,7 +186,10 @@ pub trait Caster: Send + Sync {
     async fn seek(&self, secs: u32) -> Result<(), CastError>;
     async fn get_progress(&self) -> Result<Progress, CastError>;
 
-    /// 有状态回传的投屏器提供同步快照，其余协议沿用原有查询方式。
+    /// 在独立任务中查询设备并校正状态，耗时请求不阻塞进度采样。
+    async fn refresh_playback(&self) {}
+
+    /// 返回本地维护的播放快照；没有快照时沿用进度查询接口。
     fn playback_snapshot(&self) -> Option<PlaybackSnapshot> {
         None
     }
