@@ -8,7 +8,7 @@ mod macos;
 #[cfg(target_os = "windows")]
 mod windows;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlaybackDisplay {
     pub id: String,

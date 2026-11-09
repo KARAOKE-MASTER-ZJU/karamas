@@ -1,4 +1,6 @@
-use super::{PlaybackOutputState, prepare, publish, wait_ready, window_error};
+use super::{
+    OutputTarget, OutputView, PlaybackOutputState, prepare, publish, wait_ready, window_error,
+};
 use crate::error::{CommandError, CommandResult};
 use tauri::{Manager, PhysicalPosition};
 
@@ -97,21 +99,28 @@ fn display<R: tauri::Runtime>(
 
 pub(super) async fn set_output<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
-    target: &str,
+    target: &OutputTarget,
 ) -> CommandResult<()> {
-    let monitor = if target.starts_with("screen:") {
-        Some(display(app, target)?)
-    } else {
-        None
+    let monitor = match target {
+        OutputTarget::Screen {
+            display: screen, ..
+        } => Some(display(app, &screen.id)?),
+        _ => None,
     };
     let main = app
         .get_window("main")
         .ok_or_else(|| CommandError::new("WINDOW_CLOSED", "主窗口已关闭。"))?;
-    if target == "embedded" {
+    if matches!(target, OutputTarget::Embedded) {
         if let Some(output) = app.get_window("playback") {
             move_document(app, &main).await?;
             // 主界面只在文档已归位后恢复；控制文档盖住这一步的纯视频布局。
-            publish(app, target.into(), true);
+            publish(
+                app,
+                OutputView {
+                    target: OutputTarget::Embedded,
+                    switching: true,
+                },
+            );
             if let Some(controller) = app.get_webview("playback-controller") {
                 controller.close().map_err(window_error)?;
             }
@@ -129,7 +138,13 @@ pub(super) async fn set_output<R: tauri::Runtime>(
         prepare(app).await?;
         move_document(app, &output).await?;
         // 播放文档随宿主迁移，媒体实例持续保留。
-        publish(app, "window".into(), true);
+        publish(
+            app,
+            OutputView {
+                target: OutputTarget::Window,
+                switching: true,
+            },
+        );
         if let Some(controller) = app.get_webview("playback-controller") {
             controller.show().map_err(window_error)?;
         }
@@ -170,8 +185,14 @@ pub(super) fn on_window_event<R: tauri::Runtime>(
                     let app = window.app_handle();
                     let state = app.state::<PlaybackOutputState>();
                     let current = state.view.lock().unwrap().clone();
-                    if current.output.starts_with("screen:") && !current.switching {
-                        publish(app, "window".into(), false);
+                    if matches!(current.target, OutputTarget::Screen { .. }) && !current.switching {
+                        publish(
+                            app,
+                            OutputView {
+                                target: OutputTarget::Window,
+                                ..current
+                            },
+                        );
                     }
                 }
             }
@@ -193,12 +214,14 @@ pub(super) fn recover<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
         let current = super::view(app);
         publish(
             app,
-            if current.output == "embedded" {
-                "window".into()
-            } else {
-                current.output
+            OutputView {
+                target: if matches!(current.target, OutputTarget::Embedded) {
+                    OutputTarget::Window
+                } else {
+                    current.target.clone()
+                },
+                switching: false,
             },
-            false,
         );
         if let Some(controller) = app.get_webview("playback-controller") {
             let _ = controller.show();
@@ -213,6 +236,12 @@ pub(super) fn recover<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
         if let Some(output) = app.get_window("playback") {
             let _ = output.destroy();
         }
-        publish(app, "embedded".into(), false);
+        publish(
+            app,
+            OutputView {
+                target: OutputTarget::Embedded,
+                switching: false,
+            },
+        );
     }
 }

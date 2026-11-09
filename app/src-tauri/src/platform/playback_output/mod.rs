@@ -11,8 +11,20 @@ use tokio::sync::oneshot;
 mod desktop;
 
 #[derive(Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum OutputTarget {
+    Embedded,
+    Window,
+    Screen {
+        display: super::displays::PlaybackDisplay,
+        index: usize,
+    },
+}
+
+// 初始化查询和变更通知共用完整的输出快照。
+#[derive(Clone, Serialize)]
 pub struct OutputView {
-    pub output: String,
+    pub target: OutputTarget,
     pub switching: bool,
 }
 
@@ -41,7 +53,7 @@ impl Default for PlaybackOutputState {
     fn default() -> Self {
         Self {
             view: Mutex::new(OutputView {
-                output: "embedded".into(),
+                target: OutputTarget::Embedded,
                 switching: false,
             }),
             operation: tokio::sync::Mutex::new(()),
@@ -60,10 +72,11 @@ pub fn view<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> OutputView {
         .clone()
 }
 
-fn publish<R: tauri::Runtime>(app: &tauri::AppHandle<R>, output: String, switching: bool) {
-    let next = OutputView { output, switching };
+fn publish<R: tauri::Runtime>(app: &tauri::AppHandle<R>, next: OutputView) {
     *app.state::<PlaybackOutputState>().view.lock().unwrap() = next.clone();
-    let _ = app.emit("playback-output-changed", next);
+    if let Err(error) = app.emit("playback-output-changed", next) {
+        log::error!("广播播放输出状态失败：{error}");
+    }
 }
 
 pub fn prepared<R: tauri::Runtime>(app: &tauri::AppHandle<R>, request_id: u32) {
@@ -151,27 +164,52 @@ pub async fn set_output<R: tauri::Runtime>(
     }
     let state = app.state::<PlaybackOutputState>();
     let _operation = state.operation.lock().await;
-    publish(app, view(app).output, true);
-    #[cfg(desktop)]
-    let result = desktop::set_output(app, &output).await;
-    #[cfg(target_os = "android")]
-    let result = super::android::set_playback_output(app, &output).await;
-    #[cfg(not(any(desktop, target_os = "android")))]
-    let result = Err(CommandError::new(
-        "WINDOW_UNSUPPORTED",
-        "当前平台不支持独立播放窗口。",
-    ));
+    publish(
+        app,
+        OutputView {
+            switching: true,
+            ..view(app)
+        },
+    );
+    let result = async {
+        let target = match output.as_str() {
+            "embedded" => OutputTarget::Embedded,
+            "window" => OutputTarget::Window,
+            _ => {
+                let (index, display) = super::displays::list_playback_displays(app.clone())
+                    .await?
+                    .into_iter()
+                    .enumerate()
+                    .find(|(_, display)| display.id == output)
+                    .ok_or_else(|| {
+                        CommandError::new("DISPLAY_UNAVAILABLE", "所选屏幕已变化，请刷新屏幕列表。")
+                    })?;
+                OutputTarget::Screen { display, index }
+            }
+        };
+        #[cfg(desktop)]
+        let result = desktop::set_output(app, &target).await;
+        #[cfg(target_os = "android")]
+        let result = super::android::set_playback_output(app, &output).await;
+        #[cfg(not(any(desktop, target_os = "android")))]
+        let result = Err(CommandError::new(
+            "WINDOW_UNSUPPORTED",
+            "当前平台不支持独立播放窗口。",
+        ));
+        result.map(|_| target)
+    }
+    .await;
     #[cfg(desktop)]
     if result.is_err() {
         desktop::recover(app);
     }
-    let actual = if result.is_ok() {
-        output
-    } else {
-        view(app).output
-    };
-    publish(app, actual, false);
-    result
+    let mut next = view(app);
+    if let Ok(target) = &result {
+        next.target = target.clone();
+    }
+    next.switching = false;
+    publish(app, next);
+    result.map(|_| ())
 }
 
 pub fn focus<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> CommandResult<()> {
@@ -198,5 +236,11 @@ pub fn on_window_event<R: tauri::Runtime>(window: &tauri::Window<R>, event: &tau
 }
 
 pub fn returned<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
-    publish(app, "embedded".into(), false);
+    publish(
+        app,
+        OutputView {
+            target: OutputTarget::Embedded,
+            switching: false,
+        },
+    );
 }

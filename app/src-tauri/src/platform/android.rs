@@ -156,7 +156,10 @@ pub async fn set_playback_output<R: tauri::Runtime>(
         )
         .await;
     }
-    let already_open = super::playback_output::view(app).output != "embedded";
+    let already_open = !matches!(
+        super::playback_output::view(app).target,
+        super::playback_output::OutputTarget::Embedded
+    );
     if !already_open {
         let (ready, receive) = tokio::sync::oneshot::channel();
         *app.state::<super::playback_output::PlaybackOutputState>()

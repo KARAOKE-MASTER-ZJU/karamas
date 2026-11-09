@@ -16,8 +16,14 @@ export function usePlaybackOutput() {
     if (!isTauri()) return () => {};
     const listeners: Array<() => void> = [];
     const dispose = () => listeners.forEach((stop) => stop());
+    let receivedUpdate = false;
     try {
-      listeners.push(await listenPlaybackOutput(output.apply));
+      listeners.push(
+        await listenPlaybackOutput((snapshot) => {
+          receivedUpdate = true;
+          output.apply(snapshot);
+        }),
+      );
       listeners.push(
         await listenPlaybackOutputPrepare(async (requestId) => {
           if (isPlaybackController) return;
@@ -26,7 +32,9 @@ export function usePlaybackOutput() {
           await notifyPlaybackOutputReady(requestId);
         }),
       );
-      output.apply(await getPlaybackOutput());
+      const snapshot = await getPlaybackOutput();
+      // 查询返回前若已收到变更，保留事件中的新快照。
+      if (!receivedUpdate) output.apply(snapshot);
       return dispose;
     } catch (error) {
       dispose();

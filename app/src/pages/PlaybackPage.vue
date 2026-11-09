@@ -35,7 +35,7 @@ const { playback, volume, activeDevice, recasting, room } =
 const controls = usePlaybackControls();
 const videoContainer = ref<HTMLElement | null>(null);
 const playbackBusy = computed(
-  () => casting.sessionBusy || playbackOutput.switching,
+  () => casting.sessionBusy || playbackOutput.state.switching,
 );
 function handlePlaybackOutputChange(outputId: string) {
   void controls.run(async () => {
@@ -94,7 +94,7 @@ useVideoLayout(
         <h2 id="playing-title">正在播放</h2>
         <PlaybackOutputControl
           v-if="activeDevice?.kind === 'local'"
-          :selected="playbackOutput.output"
+          :selected="playbackOutput.state.target"
           :disabled="casting.busy || playbackBusy"
           @change="handlePlaybackOutputChange"
         />

@@ -37,7 +37,7 @@ export function useCastingRuntime() {
           kind !== "local" &&
           !connecting &&
           !enteringRoom &&
-          playbackOutput.output !== "embedded"
+          playbackOutput.state.target.kind !== "embedded"
         ) {
           void setPlaybackOutput("embedded").catch((error: unknown) => {
             notify(errorMessage(error), "error");

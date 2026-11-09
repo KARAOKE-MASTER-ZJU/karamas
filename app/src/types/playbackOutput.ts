@@ -6,8 +6,13 @@ export interface PlaybackDisplay {
   builtIn: boolean | null;
 }
 
+export type PlaybackOutputTarget =
+  | { kind: "embedded" }
+  | { kind: "window" }
+  | { kind: "screen"; display: PlaybackDisplay; index: number };
+
 export interface PlaybackOutputState {
-  output: string;
+  target: PlaybackOutputTarget;
   switching: boolean;
 }
 

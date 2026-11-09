@@ -6,11 +6,15 @@ import { castingApi, errorMessage } from "@/services/casting";
 import type {
   PlaybackDisplay,
   PlaybackOutputCapabilities,
+  PlaybackOutputTarget,
 } from "@/types/playbackOutput";
 import { getPlaybackOutputCapabilities } from "@/services/playbackWindow";
 import { useLogsStore } from "@/stores/logs";
 
-const props = defineProps<{ selected: string; disabled: boolean }>();
+const props = defineProps<{
+  selected: PlaybackOutputTarget;
+  disabled: boolean;
+}>();
 const emit = defineEmits<{ change: [outputId: string] }>();
 const logs = useLogsStore();
 const showDialog = ref(false);
@@ -19,18 +23,22 @@ const displays = ref<PlaybackDisplay[]>([]);
 const loading = ref(false);
 const error = ref("");
 const refreshed = ref(false);
+const localLabels = { embedded: "本地内嵌播放", window: "独立窗口" };
+function displayLabel(display: PlaybackDisplay, index: number) {
+  return `屏幕 ${index + 1}${display.name ? ` · ${display.name}` : ""}`;
+}
 const options = computed(() => [
-  { id: "embedded", label: "本地内嵌播放", detail: "" },
+  { id: "embedded", label: localLabels.embedded, detail: "" },
   {
     id: "window",
-    label: "独立窗口",
+    label: localLabels.window,
     detail: "",
     disabled: !capabilities.value?.window,
   },
   ...displays.value.map((display, index) => ({
     id: display.id,
     disabled: !capabilities.value?.screen,
-    label: `屏幕 ${index + 1}${display.name ? ` · ${display.name}` : ""}`,
+    label: displayLabel(display, index),
     description: [
       `${display.width} × ${display.height}`,
       display.builtIn ? "内置" : "",
@@ -39,8 +47,15 @@ const options = computed(() => [
       .join(" · "),
   })),
 ]);
-const selectedLabel = computed(
-  () => options.value.find((option) => option.id === props.selected)?.label,
+const selectedId = computed(() =>
+  props.selected.kind === "screen"
+    ? props.selected.display.id
+    : props.selected.kind,
+);
+const selectedLabel = computed(() =>
+  props.selected.kind === "screen"
+    ? displayLabel(props.selected.display, props.selected.index)
+    : localLabels[props.selected.kind],
 );
 
 function selectOutput(outputId: string) {
@@ -75,9 +90,8 @@ async function refresh() {
     displays.value = displayResult.value;
     refreshed.value = true;
     if (
-      props.selected !== "embedded" &&
-      props.selected !== "window" &&
-      !displays.value.some((display) => display.id === props.selected)
+      props.selected.kind === "screen" &&
+      !displays.value.some((display) => display.id === selectedId.value)
     ) {
       emit("change", "embedded");
     }
@@ -112,7 +126,7 @@ async function refresh() {
       list-label="播放位置列表"
       loading-message="正在检测屏幕…"
       :options="options"
-      :selected-id="selected"
+      :selected-id="selectedId"
       :loading="loading"
       :disabled="disabled"
       :error="error"
