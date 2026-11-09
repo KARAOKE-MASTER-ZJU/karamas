@@ -2,6 +2,7 @@ use crate::error::CommandResult;
 
 pub mod displays;
 pub mod playback_window;
+pub mod share;
 
 #[cfg(target_os = "android")]
 mod android;

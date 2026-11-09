@@ -1,14 +1,13 @@
 use crate::{
     error::{CommandError, CommandResult},
-    models::{ShareEdge, SharePosition},
+    models::SharePosition,
 };
 use std::{fs, path::Path, time::Duration};
 use tauri::{Manager, Runtime};
-use tauri_plugin_sharekit::{RectEdge, ShareExt, ShareFileOptions};
 
 pub(super) fn export_logs<R: Runtime>(
     app: tauri::AppHandle<R>,
-    window: tauri::WebviewWindow<R>,
+    webview: tauri::Webview<R>,
     text: String,
     filename: String,
     position: Option<SharePosition>,
@@ -25,36 +24,12 @@ pub(super) fn export_logs<R: Runtime>(
     remove_old_exports(&cache);
     let path = directory.join(filename);
     fs::write(&path, text).map_err(|error| CommandError::new("LOG_SHARE", error.to_string()))?;
-    match app.share().share_file(
-        window,
+    crate::platform::share::share_file(
+        &app,
+        &webview,
         path.to_string_lossy().into_owned(),
-        ShareFileOptions {
-            mime_type: Some("text/plain".into()),
-            title: Some("分享日志文件".into()),
-            position: position.map(|position| tauri_plugin_sharekit::SharePosition {
-                x: position.x,
-                y: position.y,
-                preferred_edge: position.preferred_edge.map(|edge| match edge {
-                    ShareEdge::Top => RectEdge::Top,
-                    ShareEdge::Bottom => RectEdge::Bottom,
-                    ShareEdge::Left => RectEdge::Left,
-                    ShareEdge::Right => RectEdge::Right,
-                }),
-            }),
-        },
-    ) {
-        Ok(()) => Ok(true),
-        // ShareKit 0.3 用错误字符串表示用户取消。
-        Err(error)
-            if matches!(
-                error.to_string().as_str(),
-                "Share cancelled" | "Windows API error: Share cancelled"
-            ) =>
-        {
-            Ok(false)
-        }
-        Err(error) => Err(CommandError::new("LOG_SHARE", error.to_string())),
-    }
+        position,
+    )
 }
 
 fn remove_old_exports(directory: &Path) {

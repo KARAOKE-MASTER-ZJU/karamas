@@ -35,7 +35,7 @@ pub fn can_share_logs() -> bool {
 
 pub async fn export_logs<R: Runtime>(
     app: tauri::AppHandle<R>,
-    window: tauri::WebviewWindow<R>,
+    webview: tauri::Webview<R>,
     buffer: Arc<LogBuffer>,
     action: ExportAction,
     position: Option<SharePosition>,
@@ -70,7 +70,7 @@ pub async fn export_logs<R: Runtime>(
                     .set_file_name(&filename)
                     .add_filter("日志文件", &["txt"]);
                 #[cfg(desktop)]
-                let dialog = dialog.set_parent(&window);
+                let dialog = dialog.set_parent(&webview.window());
                 let Some(path) = dialog.blocking_save_file() else {
                     return Ok(false);
                 };
@@ -85,7 +85,7 @@ pub async fn export_logs<R: Runtime>(
             ExportAction::Share => {
                 #[cfg(any(target_os = "android", target_os = "ios", target_os = "macos"))]
                 {
-                    share::export_logs(app, window, text, filename, position)
+                    share::export_logs(app, webview, text, filename, position)
                 }
                 #[cfg(not(any(target_os = "android", target_os = "ios", target_os = "macos")))]
                 {

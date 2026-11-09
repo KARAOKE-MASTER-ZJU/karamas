@@ -44,10 +44,10 @@ pub fn can_share_logs() -> bool {
 #[tauri::command]
 pub async fn export_logs<R: Runtime>(
     app: tauri::AppHandle<R>,
-    window: tauri::WebviewWindow<R>,
+    webview: tauri::Webview<R>,
     buffer: State<'_, Arc<LogBuffer>>,
     action: ExportAction,
     position: Option<SharePosition>,
 ) -> CommandResult<bool> {
-    crate::logging::export_logs(app, window, buffer.inner().clone(), action, position).await
+    crate::logging::export_logs(app, webview, buffer.inner().clone(), action, position).await
 }
