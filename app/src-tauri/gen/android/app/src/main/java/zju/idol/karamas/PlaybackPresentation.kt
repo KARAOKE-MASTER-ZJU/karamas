@@ -27,7 +27,7 @@ class PlaybackOutputArgs {
     var message: Map<String, Any?> = emptyMap()
 }
 
-// 原 RustWebView 随 Presentation 迁移；Activity 的控制页面不创建视频播放器。
+// 将承载播放器的 RustWebView 迁到外接屏，Activity 中显示控制页面。
 class PlaybackPresentation(private val activity: Activity) {
     private var host: RustWebView? = null
     private var parent: ViewGroup? = null
@@ -44,6 +44,7 @@ class PlaybackPresentation(private val activity: Activity) {
         .getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)
         .filter { it.isValid && it.displayId != activity.windowManager.defaultDisplay.displayId }
 
+    // 先加载隐藏的控制页面，Rust 收到前端就绪通知后再调用 attachOutput。
     @SuppressLint("SetJavaScriptEnabled")
     fun prepare(output: String) {
         check(output.startsWith("screen:")) { "Android 请选择外接屏幕。" }
@@ -54,6 +55,7 @@ class PlaybackPresentation(private val activity: Activity) {
         }
         val host = checkNotNull(host) { "主页面尚未加载。" }
         val parent = host.parent as ViewGroup
+        // 保存原视图位置和布局，返回内嵌时放回 Activity 中的同一位置。
         this.parent = parent
         parentIndex = parent.indexOfChild(host)
         hostLayout = host.layoutParams
@@ -72,6 +74,7 @@ class PlaybackPresentation(private val activity: Activity) {
             allowFileAccess = false
             allowContentAccess = false
         }
+        // 控制页面经原 RustWebView 调用 Tauri，回复按本次页面的 token 匹配。
         WebViewCompat.addWebMessageListener(view, "KaramasController", setOf(origin)) {
             _, message, source, mainFrame, _ ->
             if (!mainFrame || source.toString() != origin || controller !== view ||
@@ -81,6 +84,7 @@ class PlaybackPresentation(private val activity: Activity) {
             data.put("token", session)
             host.evaluateJavascript("window.dispatchEvent(new CustomEvent('android-controller-call',{detail:$data}))", null)
         }
+        // 控制页面复用 Tauri 的资源请求处理，加载同源的前端资源。
         val assets = RustWebViewClient(host, activity)
         view.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
@@ -105,6 +109,7 @@ class PlaybackPresentation(private val activity: Activity) {
         val display = displays().firstOrNull { "screen:${it.displayId}" == output }
             ?: error("所选屏幕已变化，请刷新屏幕列表。")
         val old = presentation
+        // 归位回调随当前 Presentation 绑定，切换屏幕时先解除旧绑定。
         old?.setOnDismissListener(null)
         (host.parent as? ViewGroup)?.removeView(host)
         val next = Presentation(activity, display, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
@@ -132,6 +137,7 @@ class PlaybackPresentation(private val activity: Activity) {
         previous?.setOnDismissListener(null)
         presentation = null
         val host = host
+        // 先将播放视图放回 Activity，再销毁控制页面和外屏容器。
         if (host != null && parent != null && host.parent !== parent) {
             (host.parent as? ViewGroup)?.removeView(host)
             parent?.addView(host, parentIndex, hostLayout)
@@ -145,6 +151,7 @@ class PlaybackPresentation(private val activity: Activity) {
         previous?.dismiss()
         parent = null
         hostLayout = null
+        // 通知播放文档清理桥接资源，并回报已返回内嵌。
         host?.evaluateJavascript("window.dispatchEvent(new Event('android-controller-reset'));window.dispatchEvent(new Event('android-playback-returned'))", null)
         return true
     }
