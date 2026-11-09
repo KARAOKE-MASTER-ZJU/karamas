@@ -10,3 +10,8 @@ export interface PlaybackOutputState {
   output: string;
   switching: boolean;
 }
+
+export interface PlaybackOutputCapabilities {
+  window: boolean;
+  screen: boolean;
+}

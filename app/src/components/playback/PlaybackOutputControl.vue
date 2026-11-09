@@ -3,17 +3,23 @@ import { computed, onMounted, ref } from "vue";
 import { ChevronDown } from "@lucide/vue";
 import SelectionDialog from "@/components/base/SelectionDialog.vue";
 import { castingApi, errorMessage } from "@/services/casting";
-import type { PlaybackDisplay } from "@/types/playbackOutput";
-import { supportsPlaybackWindow } from "@/services/playbackWindow";
+import type {
+  PlaybackDisplay,
+  PlaybackOutputCapabilities,
+} from "@/types/playbackOutput";
+import { getPlaybackOutputCapabilities } from "@/services/playbackWindow";
 
 const props = defineProps<{ selected: string; disabled: boolean }>();
 const emit = defineEmits<{ change: [outputId: string] }>();
 const showDialog = ref(false);
-const windowSupported = ref(false);
+const capabilities = ref<PlaybackOutputCapabilities>({
+  window: false,
+  screen: false,
+});
 onMounted(() => {
-  void supportsPlaybackWindow()
+  void getPlaybackOutputCapabilities()
     .then((value) => {
-      windowSupported.value = value;
+      capabilities.value = value;
     })
     .catch(() => {});
 });
@@ -27,12 +33,11 @@ const options = computed(() => [
     id: "window",
     label: "独立窗口",
     detail: "",
-    disabled: !windowSupported.value,
+    disabled: !capabilities.value.window,
   },
   ...displays.value.map((display, index) => ({
     id: display.id,
-    disabled:
-      !windowSupported.value && !window.__KARAMAS_PRESENTATION_SUPPORTED__,
+    disabled: !capabilities.value.screen,
     label: `屏幕 ${index + 1}${display.name ? ` · ${display.name}` : ""}`,
     description: [
       `${display.width} × ${display.height}`,

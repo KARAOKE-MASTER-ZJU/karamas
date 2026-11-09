@@ -49,8 +49,7 @@ class PlaybackPresentation(private val activity: Activity) {
         check(output.startsWith("screen:")) { "Android 请选择外接屏幕。" }
         check(displays().any { "screen:${it.displayId}" == output }) { "所选屏幕已变化，请刷新屏幕列表。" }
         if (controller != null) return
-        check(WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) &&
-            WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+        check(WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
             "请更新 Android System WebView 后使用外屏播放。"
         }
         val host = checkNotNull(host) { "主页面尚未加载。" }
@@ -73,8 +72,6 @@ class PlaybackPresentation(private val activity: Activity) {
             allowFileAccess = false
             allowContentAccess = false
         }
-        WebViewCompat.addDocumentStartJavaScript(view,
-            "window.__KARAMAS_PRESENTATION_SUPPORTED__ = true;", setOf(origin))
         WebViewCompat.addWebMessageListener(view, "KaramasController", setOf(origin)) {
             _, message, source, mainFrame, _ ->
             if (!mainFrame || source.toString() != origin || controller !== view ||

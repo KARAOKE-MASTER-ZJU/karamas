@@ -12,6 +12,14 @@ fn authorize<R: tauri::Runtime>(webview: &tauri::Webview<R>) -> CommandResult<()
 }
 
 #[tauri::command]
+pub fn get_playback_output_capabilities<R: tauri::Runtime>(
+    webview: tauri::Webview<R>,
+) -> CommandResult<playback_output::OutputCapabilities> {
+    authorize(&webview)?;
+    Ok(playback_output::capabilities())
+}
+
+#[tauri::command]
 pub fn get_playback_output<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     webview: tauri::Webview<R>,

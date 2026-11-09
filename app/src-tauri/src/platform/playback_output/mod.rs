@@ -16,6 +16,19 @@ pub struct OutputView {
     pub switching: bool,
 }
 
+#[derive(Serialize)]
+pub struct OutputCapabilities {
+    pub window: bool,
+    pub screen: bool,
+}
+
+pub fn capabilities() -> OutputCapabilities {
+    OutputCapabilities {
+        window: cfg!(desktop),
+        screen: cfg!(any(desktop, target_os = "android")),
+    }
+}
+
 pub struct PlaybackOutputState {
     view: Mutex<OutputView>,
     operation: tokio::sync::Mutex<()>,
@@ -126,6 +139,15 @@ pub async fn set_output<R: tauri::Runtime>(
 ) -> CommandResult<()> {
     if output != "embedded" && output != "window" && !output.starts_with("screen:") {
         return Err(CommandError::new("WINDOW_OUTPUT", "播放位置无效。"));
+    }
+    let supported = capabilities();
+    if (output == "window" && !supported.window)
+        || (output.starts_with("screen:") && !supported.screen)
+    {
+        return Err(CommandError::new(
+            "WINDOW_UNSUPPORTED",
+            "当前平台不支持所选播放位置。",
+        ));
     }
     let state = app.state::<PlaybackOutputState>();
     let _operation = state.operation.lock().await;

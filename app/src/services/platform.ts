@@ -11,13 +11,11 @@ import {
 import {
   getVersion as tauriVersion,
   onBackButtonPress as tauriBack,
-  supportsMultipleWindows as tauriMultipleWindows,
 } from "@tauri-apps/api/app";
 import { openUrl as tauriOpenUrl } from "@tauri-apps/plugin-opener";
 
 declare global {
   interface Window {
-    __KARAMAS_PRESENTATION_SUPPORTED__?: boolean;
     KaramasController?: { postMessage: (message: string) => void };
   }
 }
@@ -227,12 +225,6 @@ export function openUrl(url: string): Promise<void> {
     ? request({ type: "openUrl", url })
     : tauriOpenUrl(url);
 }
-export function supportsMultipleWindows(): Promise<boolean> {
-  return window.KaramasController
-    ? Promise.resolve(false)
-    : tauriMultipleWindows();
-}
-
 window.addEventListener("android-playback-returned", () => {
   void tauriInvoke("android_playback_returned");
 });

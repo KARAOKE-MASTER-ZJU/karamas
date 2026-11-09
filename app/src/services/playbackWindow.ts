@@ -1,16 +1,16 @@
-import {
-  invoke,
-  listen,
-  supportsMultipleWindows,
-  isTauri,
-} from "@/services/platform";
-import type { PlaybackOutputState } from "@/types/playbackOutput";
+import { invoke, listen, isTauri } from "@/services/platform";
+import type {
+  PlaybackOutputCapabilities,
+  PlaybackOutputState,
+} from "@/types/playbackOutput";
 
 export const isPlaybackController = new URLSearchParams(location.search).has(
   "playback-controller",
 );
-export async function supportsPlaybackWindow() {
-  return isTauri() && (await supportsMultipleWindows());
+export function getPlaybackOutputCapabilities(): Promise<PlaybackOutputCapabilities> {
+  return isTauri()
+    ? invoke<PlaybackOutputCapabilities>("get_playback_output_capabilities")
+    : Promise.resolve({ window: false, screen: false });
 }
 
 export function getPlaybackOutput() {

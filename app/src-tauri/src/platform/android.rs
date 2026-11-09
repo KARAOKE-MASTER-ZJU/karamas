@@ -70,7 +70,6 @@ pub async fn move_to_background<R: tauri::Runtime>(app: &tauri::AppHandle<R>) ->
 
 pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
     tauri::plugin::Builder::new("casting-platform")
-        .js_init_script("window.__KARAMAS_PRESENTATION_SUPPORTED__ = true;".to_string())
         .setup(|app, api| {
             let handle =
                 api.register_android_plugin("zju.idol.karamas", "CastingPlatformPlugin")?;

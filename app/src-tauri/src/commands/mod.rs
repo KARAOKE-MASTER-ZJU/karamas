@@ -13,6 +13,7 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
     tauri::generate_handler![
         crate::platform::move_to_background,
         crate::platform::displays::list_playback_displays,
+        playback_output::get_playback_output_capabilities,
         playback_output::get_playback_output,
         playback_output::send_android_controller_message,
         playback_output::android_playback_returned,
