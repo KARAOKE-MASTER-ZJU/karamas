@@ -1,10 +1,9 @@
 use crate::error::{CommandError, CommandResult};
 use serde::{Deserialize, Serialize};
-use tauri::{Emitter, Manager, plugin::PluginHandle};
+use tauri::{Manager, plugin::PluginHandle};
 
 struct AndroidPlatform<R: tauri::Runtime> {
     handle: PluginHandle<R>,
-    playback_channel: tauri::ipc::Channel<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -75,10 +74,7 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
         .setup(|app, api| {
             let handle =
                 api.register_android_plugin("zju.idol.karamas", "CastingPlatformPlugin")?;
-            app.manage(AndroidPlatform {
-                handle,
-                playback_channel: playback_channel(app),
-            });
+            app.manage(AndroidPlatform { handle });
             Ok(())
         })
         .build()
@@ -147,69 +143,6 @@ pub async fn playback_window_call<R: tauri::Runtime, T: serde::de::DeserializeOw
         .run_mobile_plugin_async(command, args)
         .await
         .map_err(|error| CommandError::new("ANDROID_PRESENTATION", error.to_string()))
-}
-
-pub async fn open_playback_window<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-    token: String,
-    display_id: Option<String>,
-) -> CommandResult<()> {
-    playback_window_call(
-        app,
-        "openPlaybackWindow",
-        serde_json::json!({
-            "token": token, "displayId": display_id,
-            "onMessage": app.state::<AndroidPlatform<R>>().playback_channel,
-        }),
-    )
-    .await
-}
-
-fn playback_channel<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-) -> tauri::ipc::Channel<serde_json::Value> {
-    let handle = app.clone();
-    tauri::ipc::Channel::new(move |body| {
-        let tauri::ipc::InvokeResponseBody::Json(json) = body else {
-            return Ok(());
-        };
-        let data: serde_json::Value = serde_json::from_str(&json)?;
-        if data["type"] == "message" {
-            let mut message = data["message"].clone();
-            message["token"] = data["token"].clone();
-            handle.emit_to("main", "playback-window-message", message)?;
-        } else if data["type"] == "invoke" {
-            let app = handle.clone();
-            tauri::async_runtime::spawn(async move {
-                let result = invoke_playback(&data).await;
-                let reply = match result {
-                    Ok(value) => serde_json::json!({"id": data["id"], "value": value}),
-                    Err(error) => serde_json::json!({"id": data["id"], "error": error}),
-                };
-                let _ = playback_window_call::<_, ()>(
-                    &app,
-                    "sendPlaybackWindowMessage",
-                    serde_json::json!({"message": {
-                        "token": data["token"], "type": "reply", "payload": reply,
-                    }}),
-                )
-                .await;
-            });
-        }
-        Ok(())
-    })
-}
-
-async fn invoke_playback(data: &serde_json::Value) -> CommandResult<bool> {
-    match data["command"].as_str() {
-        Some("report_local_playback") => {
-            let report = serde_json::from_value(data["args"]["report"].clone())
-                .map_err(|error| CommandError::new("LOCAL_REPORT", error.to_string()))?;
-            crate::commands::playback::report_local_playback(report).await
-        }
-        Some("play") => crate::commands::playback::play().await,
-        _ => Err(CommandError::new("WINDOW_ACCESS", "播放窗口命令无效。")),
-    }
 }
 
 pub async fn set_playback_output<R: tauri::Runtime>(

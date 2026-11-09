@@ -32,7 +32,6 @@ pub fn run() {
         .setup(|app| {
             logging::initialize(app.handle().clone())?;
             app.manage(updater::UpdateState::default());
-            app.manage(platform::playback_window::PlaybackWindowState::default());
             app.manage(platform::playback_output::PlaybackOutputState::default());
             platform::playback_output::create_main(app)?;
             // 接入层只保存资源和调用协调状态，播放状态由核心库维护。
