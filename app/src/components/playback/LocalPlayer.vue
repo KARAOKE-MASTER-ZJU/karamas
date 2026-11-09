@@ -5,31 +5,17 @@ import { useCastingStore } from "@/stores/casting";
 import { useLocalPlayer } from "@/composables/useLocalPlayer";
 import { useLocalPlayerShortcuts } from "@/composables/useLocalPlayerShortcuts";
 
-const props = defineProps<{ active: boolean; windowToken?: string }>();
+const props = defineProps<{ active: boolean; standalone: boolean }>();
 const casting = useCastingStore();
 const video = ref<HTMLVideoElement | null>(null);
-const {
-  hasMedia,
-  loading,
-  error,
-  needsGesture,
-  output,
-  detached,
-  switching,
-  setOutput,
-  focusOutput,
-  startWithGesture,
-  retry,
-} = useLocalPlayer(video, props.windowToken);
-defineExpose({ output, switching, setOutput });
+const { hasMedia, loading, error, needsGesture, startWithGesture, retry } =
+  useLocalPlayer(video);
 useLocalPlayerShortcuts(
   video,
   computed(
     () =>
       props.active &&
-      (Boolean(props.windowToken) || casting.activeDevice?.kind === "local") &&
-      output.value === "embedded" &&
-      !switching.value &&
+      casting.activeDevice?.kind === "local" &&
       !casting.sessionBusy &&
       hasMedia.value &&
       !loading.value &&
@@ -40,26 +26,19 @@ useLocalPlayerShortcuts(
 
 <template>
   <div
-    v-show="windowToken || casting.activeDevice?.kind === 'local'"
+    v-show="standalone || casting.activeDevice?.kind === 'local'"
     class="local-player"
-    :class="{ standalone: windowToken, detached }"
+    :class="{ standalone }"
     aria-label="本地视频播放器"
   >
     <video
-      v-show="!detached"
       ref="video"
       :controls="hasMedia && !loading"
       playsinline
       preload="metadata"
     />
-    <div v-if="detached" class="player-message">
-      <span>正在独立窗口中播放</span>
-      <button class="button secondary" @click="focusOutput">
-        显示播放窗口
-      </button>
-    </div>
     <div
-      v-else-if="error || loading || !hasMedia"
+      v-if="error || loading || !hasMedia"
       class="player-message"
       :role="error ? 'alert' : 'status'"
     >
@@ -128,10 +107,5 @@ useLocalPlayerShortcuts(
   height: 100dvh;
   margin: 0;
   border-radius: 0;
-}
-.local-player.detached {
-  width: 100%;
-  height: 96px;
-  aspect-ratio: auto;
 }
 </style>

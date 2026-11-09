@@ -26,6 +26,7 @@ export const useBilibiliStore = defineStore("bilibili", () => {
       (saved.expires_at === null || saved.expires_at > Date.now() / 1000)
     )
       session.value = saved;
+    else session.value = null;
   }
   async function login() {
     if (loggingIn.value) return;

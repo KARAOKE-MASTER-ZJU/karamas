@@ -1,17 +1,19 @@
-import { createApp } from "vue";
+import { invoke } from "@/services/platform";
+import { createApp, nextTick } from "vue";
 import { createPinia, disposePinia } from "pinia";
 import { ScrollRestoration } from "vue-router/experimental";
 import App from "@/App.vue";
-import LocalPlayer from "@/components/playback/LocalPlayer.vue";
+import {
+  initializePlaybackOutput,
+  isPlaybackController,
+} from "@/services/playbackWindow";
 import { router } from "@/router";
 import "@/style.css";
 
-const windowToken = window.__KARAMAS_PLAYBACK_WINDOW__;
-const root = windowToken ? LocalPlayer : App;
-const app = createApp(root, windowToken ? { active: true, windowToken } : {});
+const app = createApp(App);
 const pinia = createPinia();
 app.use(pinia);
-if (!windowToken) {
+{
   const scrollStoragePrefix = "karamas:scroll:";
   app.use(ScrollRestoration, {
     router,
@@ -47,6 +49,29 @@ if (!windowToken) {
   });
   app.use(router);
 }
-app.onUnmount(() => disposePinia(pinia));
-if (windowToken) app.mount("#app");
-else void router.isReady().then(() => app.mount("#app"));
+let disposed = false;
+let stopPlaybackOutput: (() => void) | undefined;
+function disposePlaybackOutput() {
+  disposed = true;
+  stopPlaybackOutput?.();
+  stopPlaybackOutput = undefined;
+}
+app.onUnmount(() => {
+  disposePlaybackOutput();
+  disposePinia(pinia);
+});
+if (import.meta.hot) import.meta.hot.dispose(disposePlaybackOutput);
+void initializePlaybackOutput().then(async (stop) => {
+  if (disposed) {
+    stop();
+    return;
+  }
+  stopPlaybackOutput = stop;
+  if (isPlaybackController) await router.replace({ name: "playback" });
+  await router.isReady();
+  if (disposed) return;
+  app.mount("#app");
+  await nextTick();
+  if (!disposed && isPlaybackController)
+    await invoke("playback_controller_ready");
+});

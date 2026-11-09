@@ -1,4 +1,5 @@
 import { onBackButtonPress } from "@/services/platform";
+import { playbackOutput } from "@/services/playbackWindow";
 import { onMounted, onScopeDispose, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { castingApi, errorMessage, isTauri } from "@/services/casting";
@@ -54,8 +55,13 @@ export function useAndroidBack() {
   }
 
   watch(() => route.fullPath, reset);
-  onMounted(async () => {
-    if (!isTauri() || !/Android/i.test(navigator.userAgent)) return;
+  async function registerBack() {
+    if (
+      !isTauri() ||
+      !/Android/i.test(navigator.userAgent) ||
+      playbackOutput.videoOnly
+    )
+      return;
     document.addEventListener("visibilitychange", reset);
     document.addEventListener("fullscreenchange", reset);
     try {
@@ -64,12 +70,21 @@ export function useAndroidBack() {
           notifications.show(errorMessage(error), "error"),
         );
       });
-      if (disposed) await registered.unregister();
+      if (disposed || playbackOutput.videoOnly) await registered.unregister();
       else listener = registered;
     } catch (error) {
       notifications.show(`无法接管返回手势：${errorMessage(error)}`, "error");
     }
-  });
+  }
+  onMounted(registerBack);
+  watch(
+    () => playbackOutput.videoOnly,
+    async (videoOnly) => {
+      await listener?.unregister();
+      listener = undefined;
+      if (!videoOnly) await registerBack();
+    },
+  );
   onScopeDispose(() => {
     disposed = true;
     document.removeEventListener("visibilitychange", reset);

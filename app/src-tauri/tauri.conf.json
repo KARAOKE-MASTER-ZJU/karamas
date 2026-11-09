@@ -13,6 +13,7 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "KARAM@S",
         "width": 960,
         "height": 640

@@ -1,299 +1,88 @@
 import {
-  computed,
   onMounted,
   onScopeDispose,
   reactive,
-  ref,
   toRefs,
   watch,
   type Ref,
 } from "vue";
 import { useCastingStore } from "@/stores/casting";
 import { castingApi, errorMessage } from "@/services/casting";
-import {
-  createLocalPlayer,
-  updatePlaybackSnapshot,
-} from "@/services/localPlayer";
-import {
-  connectPlaybackWindow,
-  createPlaybackWindow,
-} from "@/services/playbackWindow";
+import { playbackOutput, setPlaybackOutput } from "@/services/playbackWindow";
 import { usePlaybackControls } from "@/composables/usePlaybackControls";
-import type {
-  LocalCommand,
-  LocalPlayerState,
-  LocalReport,
-} from "@/types/localPlayer";
+import { createLocalPlayer } from "@/services/localPlayer";
 
-export function useLocalPlayer(
-  video: Ref<HTMLVideoElement | null>,
-  windowToken?: string,
-) {
+// 只有常驻播放文档创建播放器，窗口切换不参与媒体生命周期。
+export function useLocalPlayer(video: Ref<HTMLVideoElement | null>) {
   const casting = useCastingStore();
   const { run } = usePlaybackControls();
-  const output = ref("embedded");
-  const detached = computed(() => output.value !== "embedded");
-  const switching = ref(false);
-  const state = reactive<LocalPlayerState>({
+  const state = reactive({
     hasMedia: false,
     loading: false,
     error: "",
     needsGesture: false,
   });
   let player: ReturnType<typeof createLocalPlayer> | undefined;
-  let remote: ReturnType<typeof createPlaybackWindow> | undefined;
-  let connection: Awaited<ReturnType<typeof connectPlaybackWindow>> | undefined;
-  let snapshot: LocalCommand | null = null;
-  let routingPaused = false;
-  let closeRequested = false;
   let disposed = false;
-  function acceptPlayback(report: LocalReport) {
-    const current = casting.localCommand;
-    if (
-      disposed ||
-      current?.sessionId !== report.sessionId ||
-      current.commandId !== report.commandId
-    )
-      return;
-    if (
-      snapshot?.action.kind === "load" &&
-      snapshot.sessionId === report.sessionId &&
-      snapshot.commandId === report.commandId
-    ) {
-      snapshot = {
-        ...snapshot,
-        action: {
-          ...snapshot.action,
-          position: report.currentSecs,
-          playing: !report.paused && !report.ended,
-          volume: report.volume,
-          muted: report.muted,
-        },
-      };
-    }
-    casting.applyLocalReport(report);
-  }
-
-  function restoreAfterClose() {
-    remote = undefined;
-    if (disposed || !detached.value) return;
-    output.value = "embedded";
-    routingPaused = false;
-    void player?.apply(snapshot);
-  }
-
-  async function setOutput(target: string) {
-    if (
-      windowToken ||
-      !player ||
-      disposed ||
-      switching.value ||
-      !(
-        target === "embedded" ||
-        target === "window" ||
-        target.startsWith("screen:")
-      )
-    )
-      return;
-    if (target === output.value) {
-      if (detached.value) await remote?.focus();
-      return;
-    }
-    switching.value = true;
-    const displayId = target.startsWith("screen:") ? target : null;
-    let restoreEmbedded = false;
-    try {
-      if (detached.value) {
-        restoreEmbedded = true;
-        routingPaused = true;
-        const current = casting.localCommand;
-        const opened = remote;
-        try {
-          const captured = await opened?.suspend();
-          if (
-            current &&
-            casting.localCommand === current &&
-            captured?.sessionId === current.sessionId &&
-            captured.commandId === current.commandId
-          )
-            snapshot = captured;
-        } catch {
-          // 窗口提前销毁时，使用最近回传的播放状态恢复。
-        }
-        await opened?.close();
-        remote = undefined;
-        output.value = "embedded";
-        routingPaused = target !== "embedded";
-      }
-      if (target !== "embedded") {
-        const opened = createPlaybackWindow({
-          onReady: () => {
-            if (detached.value) {
-              void run(async () => remote?.apply(snapshot));
-            }
-          },
-          onPlayback: (report) => {
-            if (detached.value && !routingPaused) acceptPlayback(report);
-          },
-          onState: (value) => {
-            if (detached.value) Object.assign(state, value);
-          },
-          onClosing: () => {
-            if (switching.value) closeRequested = true;
-            else void run(() => setOutput("embedded"));
-          },
-          onClosed: restoreAfterClose,
-          onRetry: () => {
-            void retry();
-          },
-        });
-        remote = opened;
-        await opened.open(displayId);
-        if (
-          disposed ||
-          closeRequested ||
-          casting.activeDevice?.kind !== "local"
-        ) {
-          await opened.close();
-          remote = undefined;
-          routingPaused = false;
-          if (restoreEmbedded) await player.apply(snapshot);
-          return;
-        }
-        routingPaused = true;
-        restoreEmbedded = true;
-        const current = casting.localCommand;
-        const captured = await player.suspend();
-        if (
-          current &&
-          casting.localCommand === current &&
-          captured?.sessionId === current.sessionId &&
-          captured.commandId === current.commandId
-        )
-          snapshot = captured;
-        output.value = target;
-        routingPaused = false;
-        await opened.apply(snapshot);
-      } else {
-        await player.apply(snapshot);
-      }
-    } catch (cause) {
-      try {
-        await remote?.close();
-      } catch (closeCause) {
-        routingPaused = false;
-        if (detached.value) await remote?.apply(snapshot);
-        throw Object.assign(
-          new Error(`${errorMessage(cause)}；${errorMessage(closeCause)}`),
-          { cause: closeCause },
-        );
-      }
-      remote = undefined;
-      const restore = restoreEmbedded || detached.value;
-      output.value = "embedded";
-      routingPaused = false;
-      if (restore && !disposed) await player.apply(snapshot);
-      throw cause;
-    } finally {
-      switching.value = false;
-      if (closeRequested) {
-        closeRequested = false;
-        void run(() => setOutput("embedded"));
-      }
-    }
-  }
-
-  onMounted(async () => {
+  onMounted(() => {
     if (!video.value) return;
     player = createLocalPlayer(video.value, {
-      onState: (value) => {
-        Object.assign(state, value);
-        void connection?.state(value).catch(() => {});
-      },
-      onPlayback: (report) => {
-        if (windowToken) void connection?.playback(report).catch(() => {});
-        else if (output.value === "embedded" && !routingPaused)
-          acceptPlayback(report);
-      },
+      onState: (value) => Object.assign(state, value),
+      onPlayback: casting.applyLocalReport,
       onReport: async (report) => {
-        if (
-          disposed ||
-          (!windowToken && (output.value !== "embedded" || routingPaused))
-        )
-          return;
         try {
           await castingApi.reportLocalPlayback(report);
         } catch {
-          // 后续媒体事件和心跳继续回传。
+          /* 会话切换时忽略旧报告，后续事件继续回传。 */
         }
       },
     });
-    if (windowToken) {
-      try {
-        connection = await connectPlaybackWindow(windowToken, player);
-        if (disposed) {
-          connection.dispose();
-          return;
-        }
-        await connection.ready();
-      } catch (cause) {
-        state.error = errorMessage(cause);
-      }
-    } else {
-      snapshot = updatePlaybackSnapshot(snapshot, casting.localCommand);
-      void player.apply(casting.localCommand);
-    }
+    void player.apply(casting.localCommand);
   });
   watch(
     () => casting.localCommand,
     (command) => {
-      if (windowToken || disposed) return;
-      snapshot = updatePlaybackSnapshot(snapshot, command);
-      if (routingPaused) return;
-      if (detached.value) {
-        void run(async () => remote?.apply(command));
-        if (!command) void run(() => setOutput("embedded"));
-      } else void player?.apply(command);
+      if (!disposed) void player?.apply(command);
     },
-    { flush: "post" },
+  );
+  watch(
+    () =>
+      [
+        casting.activeDevice?.kind,
+        casting.connecting,
+        casting.enteringRoom,
+      ] as const,
+    ([kind, connecting, enteringRoom]) => {
+      if (
+        kind !== "local" &&
+        !connecting &&
+        !enteringRoom &&
+        playbackOutput.output !== "embedded"
+      ) {
+        void run(() => setPlaybackOutput("embedded"));
+      }
+    },
   );
   onScopeDispose(() => {
     disposed = true;
-    connection?.dispose();
-    void remote?.close().catch(() => {});
-    void player?.dispose()?.catch((cause: unknown) => {
-      console.warn("清理本地播放器失败：", cause);
-    });
+    void player
+      ?.dispose()
+      ?.catch((cause: unknown) => console.warn("清理本地播放器失败：", cause));
   });
-
   async function startWithGesture() {
-    if (!player) return;
     try {
-      // 在点击事件内解锁媒体播放，再通过核心确认恢复状态。
-      await player.startWithGesture();
-      if (windowToken) await castingApi.play();
-      else await casting.play();
+      await player?.startWithGesture();
+      await casting.play();
     } catch (cause) {
       state.error = errorMessage(cause);
     }
   }
   async function retry() {
     try {
-      if (windowToken) await connection?.retry();
-      else await casting.recast();
+      await casting.recast();
     } catch (cause) {
       state.error = errorMessage(cause);
     }
   }
-
-  return {
-    ...toRefs(state),
-    output,
-    detached,
-    switching,
-    setOutput,
-    focusOutput: () => run(async () => remote?.focus()),
-    startWithGesture,
-    retry,
-  };
+  return { ...toRefs(state), startWithGesture, retry };
 }

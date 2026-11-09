@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ArrowLeft, CircleQuestionMark } from "@lucide/vue";
-import { onMounted, ref } from "vue";
+import { onMounted, ref, watch } from "vue";
 import { RouterLink, RouterView, useRoute } from "vue-router";
 import PlaybackPage from "@/pages/PlaybackPage.vue";
 import AppNavigation from "@/components/AppNavigation.vue";
@@ -17,6 +17,8 @@ import { useTheme } from "@/composables/useTheme";
 import { useAndroidBack } from "@/composables/useAndroidBack";
 import { useUpdaterStore } from "@/stores/updater";
 import UpdateDialog from "@/components/UpdateDialog.vue";
+import { errorMessage } from "@/services/casting";
+import { playbackOutput } from "@/services/playbackWindow";
 import UpdateStatusButton from "@/components/UpdateStatusButton.vue";
 
 // 使用路由、偏好设置、日志和通知存储
@@ -32,6 +34,18 @@ const { notify } = useOperationNotice();
 useTheme();
 useCastingRuntime();
 useAndroidBack();
+watch(
+  () => playbackOutput.videoOnly,
+  (videoOnly) => {
+    if (videoOnly) return;
+    preferences.reload();
+    void auth
+      .restore()
+      .catch((error: unknown) =>
+        notify(`读取登录状态失败：${errorMessage(error)}`, "warning"),
+      );
+  },
+);
 onMounted(() => {
   void updater.initialize();
   if (preferences.storageWarning)
@@ -45,9 +59,9 @@ const pageContent = ref<HTMLElement | null>(null);
 
 <template>
   <!-- 应用主界面结构，包括导航、主要内容区域、页眉、路由视图、通知和帮助对话框 -->
-  <div class="app-shell">
+  <div class="app-shell" :class="{ 'video-only': playbackOutput.videoOnly }">
     <!-- 应用导航组件 -->
-    <AppNavigation />
+    <AppNavigation v-if="!playbackOutput.videoOnly" />
 
     <main id="main-content" ref="workspace" class="workspace">
       <div
@@ -59,7 +73,7 @@ const pageContent = ref<HTMLElement | null>(null);
         }"
       >
         <!-- 页眉部分，显示页面标题和操作按钮 -->
-        <header class="page-header">
+        <header v-if="!playbackOutput.videoOnly" class="page-header">
           <!-- 页面标题部分，包含返回按钮和标题文本 -->
           <div class="page-title">
             <RouterLink
@@ -89,26 +103,29 @@ const pageContent = ref<HTMLElement | null>(null);
 
         <!-- 播放页只切换可见性，视频元素保持在文档中；其他页面沿用缓存。 -->
         <PlaybackPage
-          v-show="route.name === 'playback'"
+          v-show="playbackOutput.videoOnly || route.name === 'playback'"
           :active="route.name === 'playback'"
           :viewport="workspace"
           :content="pageContent"
+          :video-only="playbackOutput.videoOnly"
         />
-        <RouterView />
+        <RouterView v-if="!playbackOutput.videoOnly" />
       </div>
     </main>
 
     <!-- 应用通知组件，显示通知消息和级别 -->
-    <AppToast
-      :message="notifications.message"
-      :level="notifications.level"
-      @dismiss="notifications.dismiss"
-    />
+    <template v-if="!playbackOutput.videoOnly">
+      <AppToast
+        :message="notifications.message"
+        :level="notifications.level"
+        @dismiss="notifications.dismiss"
+      />
 
-    <!-- 帮助对话框组件，根据 showHelp 状态显示 -->
-    <HelpDialog v-if="showHelp" @close="showHelp = false" />
-    <BilibiliLoginDialog v-if="auth.showLogin" />
-    <UpdateDialog v-if="updater.showDialog" />
+      <!-- 帮助对话框组件，根据 showHelp 状态显示 -->
+      <HelpDialog v-if="showHelp" @close="showHelp = false" />
+      <BilibiliLoginDialog v-if="auth.showLogin" />
+      <UpdateDialog v-if="updater.showDialog" />
+    </template>
   </div>
 </template>
 
@@ -117,6 +134,20 @@ const pageContent = ref<HTMLElement | null>(null);
   height: 100dvh;
   overflow: hidden;
   padding-left: var(--navigation-rail-width);
+}
+.app-shell.video-only {
+  padding: 0;
+  background: #000;
+}
+.video-only .workspace {
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+.video-only .page-content {
+  width: 100%;
+  max-width: none;
+  padding: 0;
+  margin: 0;
 }
 .workspace {
   height: 100%;

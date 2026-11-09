@@ -14,25 +14,31 @@ import BilibiliPartsControl from "@/components/playback/BilibiliPartsControl.vue
 import { useCastingStore } from "@/stores/casting";
 import { usePlaybackControls } from "@/composables/usePlaybackControls";
 import { useVideoLayout } from "@/composables/useVideoLayout";
+import {
+  isPlaybackController,
+  playbackOutput,
+  setPlaybackOutput,
+  focusPlaybackOutput,
+} from "@/services/playbackWindow";
 import { openSongRoom } from "@/services/songRoom";
 
 const props = defineProps<{
   active: boolean;
   viewport: HTMLElement | null;
   content: HTMLElement | null;
+  videoOnly: boolean;
 }>();
 const casting = useCastingStore();
 const { playback, volume, activeDevice, recasting, room } =
   storeToRefs(casting);
 const controls = usePlaybackControls();
 const videoContainer = ref<HTMLElement | null>(null);
-const localPlayer = ref<InstanceType<typeof LocalPlayer> | null>(null);
 const playbackBusy = computed(
-  () => casting.sessionBusy || Boolean(localPlayer.value?.switching),
+  () => casting.sessionBusy || playbackOutput.switching,
 );
 function handlePlaybackOutputChange(outputId: string) {
   void controls.run(async () => {
-    await localPlayer.value?.setOutput(outputId);
+    await setPlaybackOutput(outputId);
   });
 }
 useVideoLayout(
@@ -44,8 +50,8 @@ useVideoLayout(
 </script>
 
 <template>
-  <div class="playback-page">
-    <div class="session-header" aria-label="当前投屏连接">
+  <div class="playback-page" :class="{ 'video-only': videoOnly }">
+    <div v-if="!videoOnly" class="session-header" aria-label="当前投屏连接">
       <div class="session-chips">
         <RouterLink
           :to="{ name: 'connection' }"
@@ -83,86 +89,116 @@ useVideoLayout(
       class="content-section player-section"
       aria-labelledby="playing-title"
     >
-      <div class="playing-header">
+      <div v-if="!videoOnly" class="playing-header">
         <h2 id="playing-title">正在播放</h2>
         <PlaybackOutputControl
           v-if="activeDevice?.kind === 'local'"
-          :selected="localPlayer?.output ?? 'embedded'"
+          :selected="playbackOutput.output"
           :disabled="casting.busy || playbackBusy"
           @change="handlePlaybackOutputChange"
         />
       </div>
       <div ref="videoContainer" class="video-container">
-        <LocalPlayer ref="localPlayer" :active="active" />
+        <LocalPlayer
+          v-if="!isPlaybackController"
+          :active="active || videoOnly"
+          :standalone="videoOnly"
+        />
+        <div v-else class="output-message">
+          <span>正在独立窗口中播放</span>
+          <button
+            class="button secondary"
+            @click="controls.run(focusPlaybackOutput)"
+          >
+            显示播放窗口
+          </button>
+        </div>
       </div>
-      <NowPlaying
-        :local="activeDevice?.kind === 'local'"
-        :title="playback?.title ?? null"
-        :added-by="playback?.addedBy ?? null"
-        :song-id="playback?.songId ?? null"
-        :song-url="playback?.songUrl ?? null"
-        :queued-count="playback?.queuedCount ?? null"
-        :sung-count="playback?.sungCount ?? null"
-        :disabled="!casting.connected || playbackBusy"
-        :recasting="recasting"
-        @recast="controls.recast"
-      />
-      <BilibiliPartsControl
-        v-if="playback?.songId"
-        :key="playback.songId"
-        :song-id="playback.songId"
-        :song-url="playback.songUrl"
-        :disabled="playbackBusy"
-      />
-      <PlaybackProgress
-        :key="playback?.songId ?? undefined"
-        :current-secs="playback?.currentSecs ?? null"
-        :total-secs="playback?.totalSecs ?? null"
-        :live="playback?.isLive ?? false"
-        :disabled="!playback?.capabilities.seek || playbackBusy"
-        @seek="controls.seek"
-      />
-      <PlaybackTransport
-        :disabled="!casting.connected || playbackBusy"
-        :is-playing="playback?.isPlaying ?? false"
-        :has-song="!!playback?.songId"
-        :queued-count="playback?.queuedCount ?? 0"
-        :sung-count="playback?.sungCount ?? 0"
-        @previous="controls.previousSong"
-        @next="controls.nextSong"
-        @play="controls.play"
-        @pause="controls.pause"
-      />
-      <VolumeControl
-        :volume="volume"
-        :disabled="!casting.connected || playbackBusy"
-        :absolute="!!playback?.capabilities.absoluteVolume"
-        @change="controls.changeVolume"
-        @set-volume="controls.setVolume"
-      />
-      <PlaybackOptions
-        v-if="activeDevice && !playback?.isLive"
-        :mode="activeDevice.kind"
-        :song-id="playback?.songId ?? null"
-        :song-url="playback?.songUrl ?? null"
-        :dlna-proxy-enabled="casting.dlnaProxyEnabled"
-        :dlna-hls-direct-enabled="casting.dlnaHlsDirectEnabled"
-        :quality-qn="playback?.qualityQn ?? null"
-        :quality-format="playback?.qualityFormat ?? null"
-        :media-qualities="casting.mediaQualities"
-        :media-qualities-loading="casting.mediaQualitiesLoading"
-        :media-qualities-error="casting.mediaQualitiesError"
-        :danmaku="playback?.danmaku ?? null"
-        :disabled="casting.busy || playbackBusy"
-        @quality="controls.setQuality"
-        @refresh-media-qualities="casting.refreshMediaQualities"
-        @danmaku="controls.setDanmaku"
-      />
+      <template v-if="!videoOnly">
+        <NowPlaying
+          :local="activeDevice?.kind === 'local'"
+          :title="playback?.title ?? null"
+          :added-by="playback?.addedBy ?? null"
+          :song-id="playback?.songId ?? null"
+          :song-url="playback?.songUrl ?? null"
+          :queued-count="playback?.queuedCount ?? null"
+          :sung-count="playback?.sungCount ?? null"
+          :disabled="!casting.connected || playbackBusy"
+          :recasting="recasting"
+          @recast="controls.recast"
+        />
+        <BilibiliPartsControl
+          v-if="playback?.songId"
+          :key="playback.songId"
+          :song-id="playback.songId"
+          :song-url="playback.songUrl"
+          :disabled="playbackBusy"
+        />
+        <PlaybackProgress
+          :key="playback?.songId ?? undefined"
+          :current-secs="playback?.currentSecs ?? null"
+          :total-secs="playback?.totalSecs ?? null"
+          :live="playback?.isLive ?? false"
+          :disabled="!playback?.capabilities.seek || playbackBusy"
+          @seek="controls.seek"
+        />
+        <PlaybackTransport
+          :disabled="!casting.connected || playbackBusy"
+          :is-playing="playback?.isPlaying ?? false"
+          :has-song="!!playback?.songId"
+          :queued-count="playback?.queuedCount ?? 0"
+          :sung-count="playback?.sungCount ?? 0"
+          @previous="controls.previousSong"
+          @next="controls.nextSong"
+          @play="controls.play"
+          @pause="controls.pause"
+        />
+        <VolumeControl
+          :volume="volume"
+          :disabled="!casting.connected || playbackBusy"
+          :absolute="!!playback?.capabilities.absoluteVolume"
+          @change="controls.changeVolume"
+          @set-volume="controls.setVolume"
+        />
+        <PlaybackOptions
+          v-if="activeDevice && !playback?.isLive"
+          :mode="activeDevice.kind"
+          :song-id="playback?.songId ?? null"
+          :song-url="playback?.songUrl ?? null"
+          :dlna-proxy-enabled="casting.dlnaProxyEnabled"
+          :dlna-hls-direct-enabled="casting.dlnaHlsDirectEnabled"
+          :quality-qn="playback?.qualityQn ?? null"
+          :quality-format="playback?.qualityFormat ?? null"
+          :media-qualities="casting.mediaQualities"
+          :media-qualities-loading="casting.mediaQualitiesLoading"
+          :media-qualities-error="casting.mediaQualitiesError"
+          :danmaku="playback?.danmaku ?? null"
+          :disabled="casting.busy || playbackBusy"
+          @quality="controls.setQuality"
+          @refresh-media-qualities="casting.refreshMediaQualities"
+          @danmaku="controls.setDanmaku"
+        />
+      </template>
     </section>
   </div>
 </template>
 
 <style scoped>
+.playback-page.video-only .player-section {
+  margin: 0;
+  padding: 0;
+}
+.output-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+  background: var(--subtle);
+  border-radius: 8px;
+  color: var(--muted);
+}
 .video-container {
   display: flow-root;
 }

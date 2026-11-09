@@ -34,6 +34,7 @@ pub fn run() {
             app.manage(updater::UpdateState::default());
             app.manage(platform::playback_window::PlaybackWindowState::default());
             app.manage(platform::playback_output::PlaybackOutputState::default());
+            platform::playback_output::create_main(app)?;
             // 接入层只保存资源和调用协调状态，播放状态由核心库维护。
             app.manage(BridgeState::new(
                 app.path().app_data_dir()?,
@@ -41,8 +42,7 @@ pub fn run() {
             ));
             Ok(())
         })
-        .on_window_event(platform::playback_window::close_with_main)
-        .on_page_load(platform::playback_window::on_page_load)
+        .on_window_event(platform::playback_output::on_window_event)
         .invoke_handler(commands::handler())
         .build(tauri::generate_context!())
         .expect("failed to build KARAM@S")

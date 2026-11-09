@@ -41,34 +41,26 @@ class CastingPlatformPlugin(private val activity: Activity) : Plugin(activity) {
         get() = (PluginManager.activity as MainActivity).playbackPresentation
 
     @Command
-    fun openPlaybackWindow(invoke: Invoke) = playbackCommand(invoke) { args ->
-        playback.open(args)
+    fun preparePlaybackOutput(invoke: Invoke) = playbackCommand(invoke) { args ->
+        playback.prepare(args.output)
         invoke.resolve()
     }
 
     @Command
-    fun closePlaybackWindow(invoke: Invoke) = playbackCommand(invoke) { args ->
-        invoke.resolveObject(playback.close(args.token.takeIf { it.isNotEmpty() }))
-    }
-
-    @Command
-    fun focusPlaybackWindow(invoke: Invoke) = playbackCommand(invoke) { args ->
-        playback.focus(args.token)
+    fun attachPlaybackOutput(invoke: Invoke) = playbackCommand(invoke) { args ->
+        playback.attachOutput(args.output)
         invoke.resolve()
     }
 
     @Command
-    fun sendPlaybackWindowMessage(invoke: Invoke) = playbackCommand(invoke) { args ->
-        playback.send(args.message)
+    fun sendControllerMessage(invoke: Invoke) = playbackCommand(invoke) { args ->
+        playback.send(args.token, args.message)
         invoke.resolve()
     }
 
-    private fun playbackCommand(invoke: Invoke, action: (PlaybackWindowArgs) -> Unit) {
-        try {
-            action(invoke.parseArgs(PlaybackWindowArgs::class.java))
-        } catch (error: Exception) {
-            invoke.reject(error.message ?: "播放窗口操作失败。", "ANDROID_PRESENTATION")
-        }
+    private fun playbackCommand(invoke: Invoke, action: (PlaybackOutputArgs) -> Unit) {
+        try { action(invoke.parseArgs(PlaybackOutputArgs::class.java)) }
+        catch (error: Exception) { invoke.reject(error.message ?: "播放窗口操作失败。", "ANDROID_PRESENTATION") }
     }
 
     @Command

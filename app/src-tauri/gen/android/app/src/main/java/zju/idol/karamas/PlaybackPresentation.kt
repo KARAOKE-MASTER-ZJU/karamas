@@ -7,6 +7,8 @@ import android.graphics.Color
 import android.hardware.display.DisplayManager
 import android.net.Uri
 import android.view.Display
+import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.*
 import androidx.core.view.WindowCompat
@@ -15,29 +17,27 @@ import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import app.tauri.annotation.InvokeArg
-import app.tauri.plugin.Channel
-import app.tauri.plugin.JSObject
 import org.json.JSONObject
+import java.util.UUID
 
 @InvokeArg
-class PlaybackWindowArgs {
+class PlaybackOutputArgs {
+    var output: String = "embedded"
     var token: String = ""
-    var displayId: String? = null
-    var onMessage: Channel? = null
     var message: Map<String, Any?> = emptyMap()
 }
 
+// 原 RustWebView 随 Presentation 迁移；Activity 的控制页面不创建视频播放器。
 class PlaybackPresentation(private val activity: Activity) {
     private var host: RustWebView? = null
-    private var dialog: Presentation? = null
-    private var output: WebView? = null
+    private var parent: ViewGroup? = null
+    private var parentIndex = 0
+    private var hostLayout: ViewGroup.LayoutParams? = null
+    private var presentation: Presentation? = null
+    private var controller: WebView? = null
     private var token: String? = null
-    private var onMessage: Channel? = null
 
-    fun attach(webView: WebView) {
-        close()
-        host = webView as RustWebView
-    }
+    fun attach(webView: WebView) { close(); host = webView as RustWebView }
 
     @Suppress("DEPRECATION")
     fun displays(): List<Display> = activity.getSystemService(DisplayManager::class.java)
@@ -45,111 +45,116 @@ class PlaybackPresentation(private val activity: Activity) {
         .filter { it.isValid && it.displayId != activity.windowManager.defaultDisplay.displayId }
 
     @SuppressLint("SetJavaScriptEnabled")
-    fun open(args: PlaybackWindowArgs) {
-        check(dialog == null) { "播放窗口已打开。" }
+    fun prepare(output: String) {
+        check(output.startsWith("screen:")) { "Android 请选择外接屏幕。" }
+        check(displays().any { "screen:${it.displayId}" == output }) { "所选屏幕已变化，请刷新屏幕列表。" }
+        if (controller != null) return
         check(WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) &&
             WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             "请更新 Android System WebView 后使用外屏播放。"
         }
         val host = checkNotNull(host) { "主页面尚未加载。" }
-        val display = displays().firstOrNull { "screen:${it.displayId}" == args.displayId }
-            ?: error("所选屏幕已变化，请刷新屏幕列表。")
+        val parent = host.parent as ViewGroup
+        this.parent = parent
+        parentIndex = parent.indexOfChild(host)
+        hostLayout = host.layoutParams
         val page = Uri.parse(checkNotNull(host.url)).buildUpon().path("/").clearQuery()
-            .fragment(null).build()
+            .appendQueryParameter("playback-controller", "").fragment(null).build()
         val origin = "${page.scheme}://${page.encodedAuthority}"
-        val presentation = Presentation(activity, display, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
-        val view = WebView(presentation.context)
-        token = args.token
-        onMessage = checkNotNull(args.onMessage)
-        dialog = presentation
-        output = view
-        try {
-            view.setBackgroundColor(Color.BLACK)
-            view.settings.apply {
-                javaScriptEnabled = true
-                domStorageEnabled = true
-                mediaPlaybackRequiresUserGesture = false
-                allowFileAccess = false
-                allowContentAccess = false
-            }
-            WebViewCompat.addDocumentStartJavaScript(view,
-                "window.__KARAMAS_PLAYBACK_WINDOW__ = ${JSONObject.quote(args.token)};", setOf(origin))
-            WebViewCompat.addWebMessageListener(view, "KaramasPlayback", setOf(origin)) {
-                _, message, source, mainFrame, _ ->
-                if (!mainFrame || source.toString() != origin || output !== view ||
-                    Uri.parse(view.url ?: "").buildUpon().fragment(null).build() != page || message.type != WebMessageCompat.TYPE_STRING) return@addWebMessageListener
-                val data = try { JSObject(message.data ?: return@addWebMessageListener) }
-                    catch (_: Exception) { return@addWebMessageListener }
-                onMessage?.send(data.put("token", args.token))
-            }
-            // 复用 Tauri 的资源请求处理，加载打包资源和媒体代理。
-            val assets = RustWebViewClient(host, activity)
-            view.webViewClient = object : WebViewClient() {
-                override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
-                    assets.shouldInterceptRequest(host, request)
-
-                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
-                    request.url != page
-
-                override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-                    if (request.isForMainFrame && output === view) close()
-                }
-
-                override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
-                    if (output === view) close()
-                    return true
-                }
-            }
-            presentation.setContentView(view)
-            presentation.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
-                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
-            presentation.setOnDismissListener { if (dialog === presentation) close() }
-            presentation.show()
-            presentation.window?.let {
-                WindowCompat.getInsetsController(it, it.decorView).hide(WindowInsetsCompat.Type.systemBars())
-            }
-            view.loadUrl(page.toString())
-        } catch (error: Exception) {
-            close()
-            throw error
+        val session = UUID.randomUUID().toString()
+        token = session
+        val view = WebView(activity)
+        controller = view
+        view.visibility = View.INVISIBLE
+        view.setBackgroundColor(Color.BLACK)
+        view.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            allowFileAccess = false
+            allowContentAccess = false
         }
+        WebViewCompat.addDocumentStartJavaScript(view,
+            "window.__KARAMAS_PRESENTATION_SUPPORTED__ = true;", setOf(origin))
+        WebViewCompat.addWebMessageListener(view, "KaramasController", setOf(origin)) {
+            _, message, source, mainFrame, _ ->
+            if (!mainFrame || source.toString() != origin || controller !== view ||
+                message.type != WebMessageCompat.TYPE_STRING) return@addWebMessageListener
+            val data = try { JSONObject(message.data ?: return@addWebMessageListener) }
+                catch (_: Exception) { return@addWebMessageListener }
+            data.put("token", session)
+            host.evaluateJavascript("window.dispatchEvent(new CustomEvent('android-controller-call',{detail:$data}))", null)
+        }
+        val assets = RustWebViewClient(host, activity)
+        view.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
+                assets.shouldInterceptRequest(host, request)
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+                request.url.scheme != page.scheme || request.url.encodedAuthority != page.encodedAuthority
+            override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                if (request.isForMainFrame && controller === view) close()
+            }
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                if (controller === view) close()
+                return true
+            }
+        }
+        parent.addView(view, hostLayout)
+        view.loadUrl(page.toString())
     }
 
-    fun send(message: Map<String, Any?>) {
-        check(token != null && message["token"] == token) { "播放窗口已关闭。" }
-        output?.evaluateJavascript(
-            "window.dispatchEvent(new CustomEvent('playback-window-message',{detail:${JSONObject(message)}}))", null)
+    fun attachOutput(output: String) {
+        if (output == "embedded") { close(); return }
+        val host = checkNotNull(host)
+        val display = displays().firstOrNull { "screen:${it.displayId}" == output }
+            ?: error("所选屏幕已变化，请刷新屏幕列表。")
+        val old = presentation
+        old?.setOnDismissListener(null)
+        (host.parent as? ViewGroup)?.removeView(host)
+        val next = Presentation(activity, display, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+        presentation = next
+        next.setContentView(host, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        next.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+        next.setOnDismissListener { if (presentation === next) close() }
+        try {
+            next.show()
+            next.window?.let { WindowCompat.getInsetsController(it, it.decorView).hide(WindowInsetsCompat.Type.systemBars()) }
+            controller?.visibility = View.VISIBLE
+            old?.dismiss()
+        } catch (error: Exception) { close(); throw error }
     }
 
-    fun focus(expectedToken: String) {
-        check(token == expectedToken && dialog != null) { "播放窗口已关闭。" }
-        dialog?.show()
+    fun send(expectedToken: String, message: Map<String, Any?>) {
+        if (token != expectedToken) return
+        controller?.evaluateJavascript("window.dispatchEvent(new CustomEvent('android-controller-message',{detail:${JSONObject(message)}}))", null)
     }
 
-    fun close(expectedToken: String? = null): Boolean {
-        if (token == null || (expectedToken != null && token != expectedToken)) return false
-        val previous = dialog
-        val view = output
-        val message = JSObject().put("type", "message").put("token", token).put("message",
-            JSObject().put("token", token).put("type", "closed"))
-        token = null
-        dialog = null
-        output = null
+    fun close(): Boolean {
+        if (controller == null && presentation == null) return false
+        val previous = presentation
         previous?.setOnDismissListener(null)
-        previous?.dismiss()
+        presentation = null
+        val host = host
+        if (host != null && parent != null && host.parent !== parent) {
+            (host.parent as? ViewGroup)?.removeView(host)
+            parent?.addView(host, parentIndex, hostLayout)
+        }
+        val view = controller
+        controller = null
+        token = null
+        (view?.parent as? ViewGroup)?.removeView(view)
         view?.stopLoading()
         view?.destroy()
-        onMessage?.send(message)
-        onMessage = null
+        previous?.dismiss()
+        parent = null
+        hostLayout = null
+        host?.evaluateJavascript("window.dispatchEvent(new Event('android-controller-reset'));window.dispatchEvent(new Event('android-playback-returned'))", null)
         return true
     }
 
     fun setForeground(foreground: Boolean) {
-        if (foreground) output?.onResume() else output?.onPause()
+        // 外屏输出期间保留媒体文档的运行状态。
+        if (presentation != null || foreground) host?.onResume()
     }
-
-    fun destroy() {
-        close()
-        host = null
-    }
+    fun destroy() { close(); host = null }
 }
