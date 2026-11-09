@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ArrowLeft, CircleQuestionMark } from "@lucide/vue";
-import { onMounted, ref, watch } from "vue";
+import { onMounted, ref } from "vue";
 import { RouterLink, RouterView, useRoute } from "vue-router";
 import PlaybackPage from "@/pages/PlaybackPage.vue";
 import AppNavigation from "@/components/AppNavigation.vue";
@@ -17,7 +17,6 @@ import { useTheme } from "@/composables/useTheme";
 import { useAndroidBack } from "@/composables/useAndroidBack";
 import { useUpdaterStore } from "@/stores/updater";
 import UpdateDialog from "@/components/UpdateDialog.vue";
-import { errorMessage } from "@/services/casting";
 import { usePlaybackOutputStore } from "@/stores/playbackOutput";
 import UpdateStatusButton from "@/components/UpdateStatusButton.vue";
 
@@ -35,18 +34,6 @@ const { notify } = useOperationNotice();
 useTheme();
 useCastingRuntime();
 useAndroidBack();
-watch(
-  () => playbackOutput.videoOnly,
-  (videoOnly) => {
-    if (videoOnly) return;
-    preferences.reload();
-    void auth
-      .restore()
-      .catch((error: unknown) =>
-        notify(`读取登录状态失败：${errorMessage(error)}`, "warning"),
-      );
-  },
-);
 onMounted(() => {
   void updater.initialize();
   if (preferences.storageWarning)

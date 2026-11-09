@@ -3,14 +3,57 @@ import { castingApi, errorMessage, isTauri } from "@/services/casting";
 import { useCastingStore } from "@/stores/casting";
 import { useBilibiliStore } from "@/stores/bilibili";
 import { useLogsStore } from "@/stores/logs";
+import { usePlaybackOutputStore } from "@/stores/playbackOutput";
+import { usePreferencesStore } from "@/stores/preferences";
 import { useOperationNotice } from "@/composables/useOperationNotice";
+import {
+  isPlaybackController,
+  setPlaybackOutput,
+} from "@/services/playbackWindow";
 
-// 定期读取核心库状态，刷新界面；自动切歌由核心会话任务驱动。
+// 协调投屏状态轮询、播放输出切换和界面恢复。
 export function useCastingRuntime() {
   const casting = useCastingStore();
   const auth = useBilibiliStore();
   const logs = useLogsStore();
+  const playbackOutput = usePlaybackOutputStore();
+  const preferences = usePreferencesStore();
   const { notify } = useOperationNotice();
+  function restoreLogin() {
+    return auth.restore().catch((error: unknown) => {
+      notify(`读取登录状态失败：${errorMessage(error)}`, "warning");
+    });
+  }
+  if (!isPlaybackController) {
+    watch(
+      () =>
+        [
+          casting.activeDevice?.kind,
+          casting.connecting,
+          casting.enteringRoom,
+        ] as const,
+      ([kind, connecting, enteringRoom]) => {
+        if (
+          kind !== "local" &&
+          !connecting &&
+          !enteringRoom &&
+          playbackOutput.output !== "embedded"
+        ) {
+          void setPlaybackOutput("embedded").catch((error: unknown) => {
+            notify(errorMessage(error), "error");
+          });
+        }
+      },
+    );
+    watch(
+      () => playbackOutput.videoOnly,
+      (videoOnly) => {
+        if (videoOnly) return;
+        preferences.reload();
+        void restoreLogin();
+      },
+    );
+  }
   watch(
     () => casting.playback?.playlistSyncError,
     (message) => {
@@ -50,11 +93,7 @@ export function useCastingRuntime() {
       notify(`设置日志记录级别失败：${errorMessage(error)}`, "error");
     }
     if (disposed) return;
-    void auth
-      .restore()
-      .catch((error: unknown) =>
-        notify(`读取登录状态失败：${errorMessage(error)}`, "warning"),
-      );
+    void restoreLogin();
     void poll();
   });
   function dispose() {
