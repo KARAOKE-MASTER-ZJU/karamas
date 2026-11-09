@@ -81,7 +81,7 @@ if (mode === "android") {
     const signature = readFileSync(join(directory, file), "utf8").trim();
     if (!asset || !signature || platforms[key])
       throw new Error(`更新包缺失、重复或签名为空：${name}`);
-    platforms[key] = { url: asset.browser_download_url, signature };
+    platforms[key] = { url: asset.url, signature };
   }
   const expected = [
     ...["i686", "x86_64", "aarch64"].map((arch) => `windows-${arch}-nsis`),
@@ -109,7 +109,7 @@ if (mode === "android") {
       throw new Error(`Android 更新包信息不一致：${abi}`);
     versionCode = metadata.versionCode;
     androidPlatforms[abi] = {
-      url: asset.browser_download_url,
+      url: asset.url,
       size: metadata.size,
       sha256: metadata.sha256,
     };

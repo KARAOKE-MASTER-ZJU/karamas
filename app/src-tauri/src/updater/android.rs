@@ -138,10 +138,12 @@ pub async fn download<R: Runtime>(
     let result: CommandResult<()> = async {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(15 * 60))
+            .user_agent(concat!("karamas/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(failure)?;
         let mut response = client
             .get(pending.artifact.url.clone())
+            .header(reqwest::header::ACCEPT, "application/octet-stream")
             .send()
             .await
             .map_err(failure)?
