@@ -211,3 +211,52 @@ async fn invoke_playback(data: &serde_json::Value) -> CommandResult<bool> {
         _ => Err(CommandError::new("WINDOW_ACCESS", "播放窗口命令无效。")),
     }
 }
+
+pub async fn set_playback_output<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    output: &str,
+) -> CommandResult<()> {
+    if output == "embedded" {
+        return playback_window_call(
+            app,
+            "attachPlaybackOutput",
+            serde_json::json!({ "output": output }),
+        )
+        .await;
+    }
+    let already_open = super::playback_output::view(app).output != "embedded";
+    if !already_open {
+        let (ready, receive) = tokio::sync::oneshot::channel();
+        *app.state::<super::playback_output::PlaybackOutputState>()
+            .controller_ready
+            .lock()
+            .unwrap() = Some(ready);
+        playback_window_call::<_, ()>(
+            app,
+            "preparePlaybackOutput",
+            serde_json::json!({ "output": output }),
+        )
+        .await?;
+        super::playback_output::wait_ready(receive).await?;
+        super::playback_output::prepare(app).await?;
+    }
+    playback_window_call(
+        app,
+        "attachPlaybackOutput",
+        serde_json::json!({ "output": output }),
+    )
+    .await
+}
+
+pub async fn send_controller_message<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    token: String,
+    message: serde_json::Value,
+) -> CommandResult<()> {
+    playback_window_call(
+        app,
+        "sendControllerMessage",
+        serde_json::json!({ "token": token, "message": message }),
+    )
+    .await
+}

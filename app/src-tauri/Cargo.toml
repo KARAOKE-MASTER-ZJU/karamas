@@ -13,7 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.7.4", features = [] }
 
 [dependencies]
-tauri = { version = "2.12.5", features = [] }
+tauri = { version = "2.12.5", features = ["unstable"] }
 karamas_core = { path = "../../karamas_core" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1"

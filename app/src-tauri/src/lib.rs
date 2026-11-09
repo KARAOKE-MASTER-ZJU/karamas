@@ -33,6 +33,7 @@ pub fn run() {
             logging::initialize(app.handle().clone())?;
             app.manage(updater::UpdateState::default());
             app.manage(platform::playback_window::PlaybackWindowState::default());
+            app.manage(platform::playback_output::PlaybackOutputState::default());
             // 接入层只保存资源和调用协调状态，播放状态由核心库维护。
             app.manage(BridgeState::new(
                 app.path().app_data_dir()?,

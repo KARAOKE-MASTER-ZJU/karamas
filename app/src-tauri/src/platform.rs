@@ -1,11 +1,12 @@
 use crate::error::CommandResult;
 
 pub mod displays;
+pub mod playback_output;
 pub mod playback_window;
 pub mod share;
 
 #[cfg(target_os = "android")]
-mod android;
+pub(crate) mod android;
 #[cfg(target_os = "android")]
 mod android_tls;
 

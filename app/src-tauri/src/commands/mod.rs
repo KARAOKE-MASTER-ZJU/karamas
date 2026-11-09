@@ -2,6 +2,7 @@ pub mod bilibili;
 pub mod devices;
 pub mod logging;
 pub mod playback;
+pub mod playback_output;
 pub mod room;
 pub mod session;
 pub mod updater;
@@ -16,6 +17,13 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         crate::platform::playback_window::close_playback_window,
         crate::platform::playback_window::focus_playback_window,
         crate::platform::playback_window::send_playback_window_message,
+        playback_output::get_playback_output,
+        playback_output::send_android_controller_message,
+        playback_output::android_playback_returned,
+        playback_output::set_playback_output,
+        playback_output::focus_playback_output,
+        playback_output::playback_output_ready,
+        playback_output::playback_controller_ready,
         updater::update_supported,
         updater::check_update,
         updater::download_update,
