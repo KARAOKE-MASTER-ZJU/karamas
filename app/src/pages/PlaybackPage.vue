@@ -106,7 +106,11 @@ useVideoLayout(
           :standalone="videoOnly"
         />
         <div v-else class="output-message">
-          <span>正在独立窗口中播放</span>
+          <span>{{
+            playbackOutput.state.target.kind === "screen"
+              ? "正在投屏到显示器"
+              : "正在独立窗口中播放"
+          }}</span>
           <button
             class="button secondary"
             @click="controls.run(focusPlaybackOutput)"
