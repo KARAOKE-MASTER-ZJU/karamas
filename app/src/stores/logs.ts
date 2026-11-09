@@ -20,13 +20,27 @@ export const useLogsStore = defineStore("logs", () => {
     return castingApi.writeLog(message, level);
   }
 
+  function recordFailure(
+    operation: string,
+    cause: unknown,
+    level: LogLevel = "error",
+  ) {
+    const detail =
+      cause instanceof Error
+        ? (cause.stack ?? cause.message)
+        : typeof cause === "string"
+          ? cause
+          : JSON.stringify(cause);
+    return record(`${operation}：${detail}`, level);
+  }
+
   async function setRecordingLevel(level: LogLevel): Promise<boolean> {
     if (isTauri()) await castingApi.setLogLevel(level);
     recordingLevel.value = level;
     return preferences.saveLogLevel(level);
   }
 
-  return { recordingLevel, setRecordingLevel, record };
+  return { recordingLevel, setRecordingLevel, record, recordFailure };
 });
 
 if (import.meta.hot) {

@@ -2,6 +2,7 @@
 import { Music2, RotateCcw } from "@lucide/vue";
 import { ref, watch } from "vue";
 import { castingApi } from "@/services/casting";
+import { useLogsStore } from "@/stores/logs";
 
 const props = defineProps<{
   local?: boolean;
@@ -15,6 +16,7 @@ const props = defineProps<{
   sungCount: number | null;
 }>();
 const emit = defineEmits<{ recast: [] }>();
+const logs = useLogsStore();
 const coverUrl = ref<string | null>(null);
 
 watch(
@@ -31,20 +33,35 @@ watch(
       image.onload = () => {
         if (songUrl === props.songUrl) coverUrl.value = url;
       };
+      image.onerror = (event) => {
+        if (songUrl === props.songUrl) reportImageError(url, event);
+      };
       image.src = url;
-    } catch {
-      // 封面获取失败时保留音符图标。
+    } catch (cause) {
+      if (songUrl !== props.songUrl) return;
+      void logs.recordFailure(
+        `获取歌曲封面失败（歌曲：${songUrl}）`,
+        cause,
+        "warning",
+      );
     }
   },
   { immediate: true, flush: "sync" },
 );
 
+function reportImageError(url: string, event: Event | string) {
+  void logs.recordFailure(
+    `封面图片加载失败（歌曲：${props.songUrl}，图片：${url}）`,
+    typeof event === "string" ? event : event.type,
+    "warning",
+  );
+}
+
 function onCoverError(event: Event) {
-  if (
-    (event.currentTarget as HTMLImageElement).getAttribute("src") ===
-    coverUrl.value
-  )
-    coverUrl.value = null;
+  const url = (event.currentTarget as HTMLImageElement).getAttribute("src");
+  if (!url || url !== coverUrl.value) return;
+  coverUrl.value = null;
+  reportImageError(url, event);
 }
 </script>
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, ref } from "vue";
 import { ChevronDown } from "@lucide/vue";
 import SelectionDialog from "@/components/base/SelectionDialog.vue";
 import { castingApi, errorMessage } from "@/services/casting";
@@ -8,21 +8,13 @@ import type {
   PlaybackOutputCapabilities,
 } from "@/types/playbackOutput";
 import { getPlaybackOutputCapabilities } from "@/services/playbackWindow";
+import { useLogsStore } from "@/stores/logs";
 
 const props = defineProps<{ selected: string; disabled: boolean }>();
 const emit = defineEmits<{ change: [outputId: string] }>();
+const logs = useLogsStore();
 const showDialog = ref(false);
-const capabilities = ref<PlaybackOutputCapabilities>({
-  window: false,
-  screen: false,
-});
-onMounted(() => {
-  void getPlaybackOutputCapabilities()
-    .then((value) => {
-      capabilities.value = value;
-    })
-    .catch(() => {});
-});
+const capabilities = ref<PlaybackOutputCapabilities | null>(null);
 const displays = ref<PlaybackDisplay[]>([]);
 const loading = ref(false);
 const error = ref("");
@@ -33,11 +25,11 @@ const options = computed(() => [
     id: "window",
     label: "独立窗口",
     detail: "",
-    disabled: !capabilities.value.window,
+    disabled: !capabilities.value?.window,
   },
   ...displays.value.map((display, index) => ({
     id: display.id,
-    disabled: !capabilities.value.screen,
+    disabled: !capabilities.value?.screen,
     label: `屏幕 ${index + 1}${display.name ? ` · ${display.name}` : ""}`,
     description: [
       `${display.width} × ${display.height}`,
@@ -65,8 +57,22 @@ async function refresh() {
   if (loading.value) return;
   loading.value = true;
   error.value = "";
-  try {
-    displays.value = await castingApi.listPlaybackDisplays();
+  const [capabilityResult, displayResult] = await Promise.allSettled([
+    getPlaybackOutputCapabilities(),
+    castingApi.listPlaybackDisplays(),
+  ]);
+  const errors: string[] = [];
+  if (capabilityResult.status === "fulfilled") {
+    capabilities.value = capabilityResult.value;
+  } else {
+    capabilities.value = null;
+    errors.push(
+      `读取播放输出能力失败：${errorMessage(capabilityResult.reason)}`,
+    );
+    void logs.recordFailure("读取播放输出能力失败", capabilityResult.reason);
+  }
+  if (displayResult.status === "fulfilled") {
+    displays.value = displayResult.value;
     refreshed.value = true;
     if (
       props.selected !== "embedded" &&
@@ -75,11 +81,12 @@ async function refresh() {
     ) {
       emit("change", "embedded");
     }
-  } catch (cause) {
-    error.value = `检测屏幕失败：${errorMessage(cause)}`;
-  } finally {
-    loading.value = false;
+  } else {
+    errors.push(`检测屏幕失败：${errorMessage(displayResult.reason)}`);
+    void logs.recordFailure("检测屏幕失败", displayResult.reason);
   }
+  error.value = errors.join("；");
+  loading.value = false;
 }
 </script>
 
