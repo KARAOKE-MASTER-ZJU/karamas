@@ -18,7 +18,7 @@ import { useAndroidBack } from "@/composables/useAndroidBack";
 import { useUpdaterStore } from "@/stores/updater";
 import UpdateDialog from "@/components/UpdateDialog.vue";
 import { errorMessage } from "@/services/casting";
-import { playbackOutput } from "@/services/playbackWindow";
+import { usePlaybackOutputStore } from "@/stores/playbackOutput";
 import UpdateStatusButton from "@/components/UpdateStatusButton.vue";
 
 // 使用路由、偏好设置、日志和通知存储
@@ -26,6 +26,7 @@ const route = useRoute();
 const preferences = usePreferencesStore();
 const auth = useBilibiliStore();
 const casting = useCastingStore();
+const playbackOutput = usePlaybackOutputStore();
 const notifications = useNotificationsStore();
 const updater = useUpdaterStore();
 

@@ -12,11 +12,11 @@ import PlaybackOptions from "@/components/playback/PlaybackOptions.vue";
 import PlaybackOutputControl from "@/components/playback/PlaybackOutputControl.vue";
 import BilibiliPartsControl from "@/components/playback/BilibiliPartsControl.vue";
 import { useCastingStore } from "@/stores/casting";
+import { usePlaybackOutputStore } from "@/stores/playbackOutput";
 import { usePlaybackControls } from "@/composables/usePlaybackControls";
 import { useVideoLayout } from "@/composables/useVideoLayout";
 import {
   isPlaybackController,
-  playbackOutput,
   setPlaybackOutput,
   focusPlaybackOutput,
 } from "@/services/playbackWindow";
@@ -29,6 +29,7 @@ const props = defineProps<{
   videoOnly: boolean;
 }>();
 const casting = useCastingStore();
+const playbackOutput = usePlaybackOutputStore();
 const { playback, volume, activeDevice, recasting, room } =
   storeToRefs(casting);
 const controls = usePlaybackControls();

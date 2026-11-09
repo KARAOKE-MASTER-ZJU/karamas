@@ -7,14 +7,16 @@ import {
   type Ref,
 } from "vue";
 import { useCastingStore } from "@/stores/casting";
+import { usePlaybackOutputStore } from "@/stores/playbackOutput";
 import { castingApi, errorMessage } from "@/services/casting";
-import { playbackOutput, setPlaybackOutput } from "@/services/playbackWindow";
+import { setPlaybackOutput } from "@/services/playbackWindow";
 import { usePlaybackControls } from "@/composables/usePlaybackControls";
 import { createLocalPlayer } from "@/services/localPlayer";
 
 // 只有常驻播放文档创建播放器，窗口切换不参与媒体生命周期。
 export function useLocalPlayer(video: Ref<HTMLVideoElement | null>) {
   const casting = useCastingStore();
+  const playbackOutput = usePlaybackOutputStore();
   const { run } = usePlaybackControls();
   const state = reactive({
     hasMedia: false,

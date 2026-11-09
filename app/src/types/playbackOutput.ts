@@ -5,3 +5,8 @@ export interface PlaybackDisplay {
   height: number;
   builtIn: boolean | null;
 }
+
+export interface PlaybackOutputState {
+  output: string;
+  switching: boolean;
+}

@@ -1,5 +1,5 @@
 import { onBackButtonPress } from "@/services/platform";
-import { playbackOutput } from "@/services/playbackWindow";
+import { usePlaybackOutputStore } from "@/stores/playbackOutput";
 import { onMounted, onScopeDispose, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { castingApi, errorMessage, isTauri } from "@/services/casting";
@@ -12,6 +12,7 @@ export function useAndroidBack() {
   const route = useRoute();
   const router = useRouter();
   const notifications = useNotificationsStore();
+  const playbackOutput = usePlaybackOutputStore();
   let lastBackAt = 0;
   let exitingFullscreen = false;
   let listener: { unregister: () => Promise<void> } | undefined;

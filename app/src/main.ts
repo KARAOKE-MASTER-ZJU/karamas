@@ -3,16 +3,15 @@ import { createApp, nextTick } from "vue";
 import { createPinia, disposePinia } from "pinia";
 import { ScrollRestoration } from "vue-router/experimental";
 import App from "@/App.vue";
-import {
-  initializePlaybackOutput,
-  isPlaybackController,
-} from "@/services/playbackWindow";
+import { isPlaybackController } from "@/services/playbackWindow";
+import { usePlaybackOutput } from "@/composables/usePlaybackOutput";
 import { router } from "@/router";
 import "@/style.css";
 
 const app = createApp(App);
 const pinia = createPinia();
 app.use(pinia);
+const { initialize: initializePlaybackOutput } = usePlaybackOutput();
 {
   const scrollStoragePrefix = "karamas:scroll:";
   app.use(ScrollRestoration, {
