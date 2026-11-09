@@ -1,8 +1,7 @@
 import { invokePresentation } from "@/services/presentationBridge";
 import type { LocalCommand, LocalReport } from "@/types/localPlayer";
 import type { PlaybackDisplay } from "@/types/playbackOutput";
-import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { Channel, invoke, isTauri, listen } from "@/services/platform";
 import type { ConnectionConfig, LogLevel, RoomEntryMode } from "@/types";
 import type {
   BilibiliDevice,
@@ -80,7 +79,7 @@ export const castingApi = {
       });
     } finally {
       // 完整列表返回后，忽略通道中可能迟到的消息。
-      channel.onmessage = () => {};
+      channel.dispose();
     }
   },
   discoverDlnaDevice: (url: string) =>
@@ -160,7 +159,7 @@ export const castingApi = {
     return call<BilibiliSession>("login_bilibili", {
       onQr: channel,
       senderBuvid,
-    });
+    }).finally(() => channel.dispose());
   },
   cancelLogin: () => call<void>("cancel_bilibili_login"),
   listenLogs: (callback: () => void) =>

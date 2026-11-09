@@ -1,5 +1,4 @@
-import { Channel, invoke } from "@tauri-apps/api/core";
-import { getVersion } from "@tauri-apps/api/app";
+import { Channel, invoke, getVersion } from "@/services/platform";
 
 export interface UpdateInfo {
   version: string;
@@ -22,7 +21,7 @@ export const updaterApi = {
     try {
       await invoke<void>("download_update", { onProgress: channel });
     } finally {
-      channel.onmessage = () => {};
+      channel.dispose();
     }
   },
   install: () => invoke<void>("install_update"),

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrl } from "@/services/platform";
 import { ArrowUp } from "@lucide/vue";
 import { onActivated, onDeactivated, ref } from "vue";
 import { projectLicense, thirdPartyNotices } from "virtual:legal-documents";

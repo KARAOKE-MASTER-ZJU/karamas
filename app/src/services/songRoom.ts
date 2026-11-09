@@ -1,5 +1,4 @@
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { isTauri } from "@tauri-apps/api/core";
+import { openUrl, isTauri } from "@/services/platform";
 import type { ConnectionConfig } from "@/types";
 
 export async function openSongRoom(room: ConnectionConfig) {

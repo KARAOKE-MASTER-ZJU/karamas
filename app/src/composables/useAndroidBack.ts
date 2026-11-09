@@ -1,5 +1,4 @@
-import { onBackButtonPress } from "@tauri-apps/api/app";
-import type { PluginListener } from "@tauri-apps/api/core";
+import { onBackButtonPress } from "@/services/platform";
 import { onMounted, onScopeDispose, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { castingApi, errorMessage, isTauri } from "@/services/casting";
@@ -14,7 +13,7 @@ export function useAndroidBack() {
   const notifications = useNotificationsStore();
   let lastBackAt = 0;
   let exitingFullscreen = false;
-  let listener: PluginListener | undefined;
+  let listener: { unregister: () => Promise<void> } | undefined;
   let disposed = false;
 
   function reset() {
