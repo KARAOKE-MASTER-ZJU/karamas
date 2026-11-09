@@ -1,5 +1,5 @@
 import { acceptHMRUpdate, defineStore } from "pinia";
-import { computed, ref, shallowRef } from "vue";
+import { computed, ref, shallowRef, watch } from "vue";
 import { castingApi, errorMessage, isTauri } from "@/services/casting";
 import { useBilibiliMediaQualities } from "@/composables/useBilibiliMediaQualities";
 import { useBilibiliStore } from "@/stores/bilibili";
@@ -394,6 +394,24 @@ export const useCastingStore = defineStore("casting", () => {
       if (playback.value) playback.value.danmaku = danmaku;
     });
   }
+  watch(
+    () => preferences.preferences.dlnaProxyEnabled,
+    (value) => {
+      dlnaProxyEnabled.value = value;
+    },
+  );
+  watch(
+    () => preferences.preferences.dlnaHlsDirectEnabled,
+    (value) => {
+      dlnaHlsDirectEnabled.value = value;
+    },
+  );
+  watch(
+    () => preferences.preferences.proxyDeviceOnly,
+    (value) => {
+      proxyDeviceOnly.value = value;
+    },
+  );
   return {
     applyLocalReport,
     localCommand,

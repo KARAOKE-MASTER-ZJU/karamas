@@ -27,63 +27,71 @@ export const usePreferencesStore = defineStore("preferences", () => {
   // 初始化存储警告状态
   const storageWarning = ref(false);
 
-  try {
-    // 尝试从 localStorage 中加载偏好设置
-    const stored: unknown = JSON.parse(
-      localStorage.getItem(storageKey) ?? "null",
-    );
-    // 如果存储的偏好设置是对象类型，则将其应用到当前偏好设置中
-    if (stored && typeof stored === "object") {
-      for (const key of ["mediaQuality", "bilibiliQuality"] as const) {
-        const value =
-          key in stored ? (stored as Record<string, unknown>)[key] : null;
-        if (!value || typeof value !== "object") continue;
-        const { qn, format } = value as Record<string, unknown>;
+  function reload() {
+    try {
+      // 尝试从 localStorage 中加载偏好设置
+      const stored: unknown = JSON.parse(
+        localStorage.getItem(storageKey) ?? "null",
+      );
+      // 如果存储的偏好设置是对象类型，则将其应用到当前偏好设置中
+      if (stored && typeof stored === "object") {
+        for (const key of ["mediaQuality", "bilibiliQuality"] as const) {
+          const value =
+            key in stored ? (stored as Record<string, unknown>)[key] : null;
+          if (!value || typeof value !== "object") continue;
+          const { qn, format } = value as Record<string, unknown>;
+          if (
+            typeof qn === "number" &&
+            [6, 16, 32, 64, 74, 80, 112, 116, 120, 125, 126, 127].includes(
+              qn,
+            ) &&
+            (key === "bilibiliQuality"
+              ? format === null
+              : format === "mp4" || format === "dash" || format === "hls")
+          )
+            preferences[key] = { qn, format } as PlaybackQuality;
+        }
         if (
-          typeof qn === "number" &&
-          [6, 16, 32, 64, 74, 80, 112, 116, 120, 125, 126, 127].includes(qn) &&
-          (key === "bilibiliQuality"
-            ? format === null
-            : format === "mp4" || format === "dash" || format === "hls")
+          "bilibiliBuvid" in stored &&
+          typeof stored.bilibiliBuvid === "string"
         )
-          preferences[key] = { qn, format } as PlaybackQuality;
+          preferences.bilibiliBuvid = stored.bilibiliBuvid;
+        if ("serverUrl" in stored && typeof stored.serverUrl === "string")
+          preferences.serverUrl = stored.serverUrl;
+        if ("roomId" in stored && typeof stored.roomId === "string")
+          preferences.roomId = stored.roomId;
+        if ("logLevel" in stored && isLogLevel(stored.logLevel))
+          preferences.logLevel = stored.logLevel;
+        if (
+          "dlnaProxyEnabled" in stored &&
+          typeof stored.dlnaProxyEnabled === "boolean"
+        )
+          preferences.dlnaProxyEnabled = stored.dlnaProxyEnabled;
+        if (
+          "dlnaHlsDirectEnabled" in stored &&
+          typeof stored.dlnaHlsDirectEnabled === "boolean"
+        )
+          preferences.dlnaHlsDirectEnabled = stored.dlnaHlsDirectEnabled;
+        if (
+          "proxyDeviceOnly" in stored &&
+          typeof stored.proxyDeviceOnly === "boolean"
+        )
+          preferences.proxyDeviceOnly = stored.proxyDeviceOnly;
+        if (
+          "theme" in stored &&
+          (stored.theme === "system" ||
+            stored.theme === "light" ||
+            stored.theme === "dark")
+        ) {
+          preferences.theme = stored.theme;
+        }
       }
-      if ("bilibiliBuvid" in stored && typeof stored.bilibiliBuvid === "string")
-        preferences.bilibiliBuvid = stored.bilibiliBuvid;
-      if ("serverUrl" in stored && typeof stored.serverUrl === "string")
-        preferences.serverUrl = stored.serverUrl;
-      if ("roomId" in stored && typeof stored.roomId === "string")
-        preferences.roomId = stored.roomId;
-      if ("logLevel" in stored && isLogLevel(stored.logLevel))
-        preferences.logLevel = stored.logLevel;
-      if (
-        "dlnaProxyEnabled" in stored &&
-        typeof stored.dlnaProxyEnabled === "boolean"
-      )
-        preferences.dlnaProxyEnabled = stored.dlnaProxyEnabled;
-      if (
-        "dlnaHlsDirectEnabled" in stored &&
-        typeof stored.dlnaHlsDirectEnabled === "boolean"
-      )
-        preferences.dlnaHlsDirectEnabled = stored.dlnaHlsDirectEnabled;
-      if (
-        "proxyDeviceOnly" in stored &&
-        typeof stored.proxyDeviceOnly === "boolean"
-      )
-        preferences.proxyDeviceOnly = stored.proxyDeviceOnly;
-      if (
-        "theme" in stored &&
-        (stored.theme === "system" ||
-          stored.theme === "light" ||
-          stored.theme === "dark")
-      ) {
-        preferences.theme = stored.theme;
-      }
+    } catch {
+      // 如果从 localStorage 中加载偏好设置失败，则设置存储警告状态为 true
+      storageWarning.value = true;
     }
-  } catch {
-    // 如果从 localStorage 中加载偏好设置失败，则设置存储警告状态为 true
-    storageWarning.value = true;
   }
+  reload();
 
   // 保存偏好设置
   function save(patch: Partial<Preferences>): boolean {
@@ -137,6 +145,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
   }
 
   return {
+    reload,
     savePlaybackQuality,
     preferences,
     storageWarning,

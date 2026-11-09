@@ -1,5 +1,5 @@
 import { acceptHMRUpdate, defineStore } from "pinia";
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import type { LogLevel } from "@/types";
 import { usePreferencesStore } from "@/stores/preferences";
 import { castingApi, isTauri } from "@/services/casting";
@@ -8,6 +8,13 @@ import { castingApi, isTauri } from "@/services/casting";
 export const useLogsStore = defineStore("logs", () => {
   const preferences = usePreferencesStore();
   const recordingLevel = ref<LogLevel>(preferences.preferences.logLevel);
+
+  watch(
+    () => preferences.preferences.logLevel,
+    (level) => {
+      recordingLevel.value = level;
+    },
+  );
 
   function record(message: string, level: LogLevel = "info") {
     return castingApi.writeLog(message, level);
