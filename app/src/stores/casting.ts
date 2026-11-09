@@ -1,5 +1,10 @@
 import { acceptHMRUpdate, defineStore } from "pinia";
-import { computed, ref, shallowRef, watch } from "vue";
+import { computed, ref, shallowRef, onScopeDispose, watch } from "vue";
+import {
+  connectCastingView,
+  publishLocalReport,
+} from "@/services/castingConnection";
+import { isPlaybackController } from "@/services/playbackWindow";
 import { castingApi, errorMessage, isTauri } from "@/services/casting";
 import { useBilibiliMediaQualities } from "@/composables/useBilibiliMediaQualities";
 import { useBilibiliStore } from "@/stores/bilibili";
@@ -15,11 +20,18 @@ import type { LocalCommand, LocalReport } from "@/types/localPlayer";
 export const useCastingStore = defineStore("casting", () => {
   const preferences = usePreferencesStore();
   const localCommand = shallowRef<LocalCommand | null>(null);
+  const controllerPlayback = shallowRef<Pick<
+    LocalCommand,
+    "sessionId" | "commandId"
+  > | null>(null);
+  const playbackIdentity = computed(() =>
+    isPlaybackController ? controllerPlayback.value : localCommand.value,
+  );
   let localReport: LocalReport | null = null;
   let localReportReceivedAt = 0;
 
   function syncLocalState() {
-    const command = localCommand.value;
+    const command = playbackIdentity.value;
     if (
       activeDevice.value?.kind !== "local" ||
       !command ||
@@ -42,7 +54,7 @@ export const useCastingStore = defineStore("casting", () => {
 
   // 原生控件和页面控件共用播放器回传，更新界面时不再次发送控制命令。
   function applyLocalReport(report: LocalReport) {
-    const command = localCommand.value;
+    const command = playbackIdentity.value;
     if (
       !command ||
       report.sessionId !== command.sessionId ||
@@ -52,6 +64,7 @@ export const useCastingStore = defineStore("casting", () => {
     localReport = report;
     localReportReceivedAt = Date.now();
     syncLocalState();
+    if (!isPlaybackController) void publishLocalReport(report);
   }
   const dlnaProxyEnabled = ref(preferences.preferences.dlnaProxyEnabled);
   const dlnaHlsDirectEnabled = ref(
@@ -195,12 +208,6 @@ export const useCastingStore = defineStore("casting", () => {
             device.kind === "bilibili" ? "bilibiliQuality" : "mediaQuality"
           ],
         },
-        device.kind === "local"
-          ? (command) => {
-              ++revision;
-              localCommand.value = command;
-            }
-          : undefined,
       );
       activeDevice.value = device;
       syncLocalState();
@@ -227,6 +234,7 @@ export const useCastingStore = defineStore("casting", () => {
   }
   async function connect(device: CastDevice) {
     if (busy.value) return;
+    await connectionReady;
     requireSession(device);
     selectedDevice.value = device;
     await startIfReady();
@@ -394,6 +402,59 @@ export const useCastingStore = defineStore("casting", () => {
       if (playback.value) playback.value.danmaku = danmaku;
     });
   }
+  let connection: Awaited<ReturnType<typeof connectCastingView>> | undefined;
+  let applyingConnection = false;
+  let disposed = false;
+  const connectionReady = isTauri()
+    ? connectCastingView({
+        read: () => ({
+          room: room.value,
+          selectedDevice: selectedDevice.value,
+          activeDevice: activeDevice.value,
+          connecting: connecting.value,
+          enteringRoom: enteringRoom.value,
+          localPlayback: playbackIdentity.value
+            ? {
+                sessionId: playbackIdentity.value.sessionId,
+                commandId: playbackIdentity.value.commandId,
+              }
+            : null,
+        }),
+        apply: (view) => {
+          applyingConnection = true;
+          room.value = view.room;
+          selectedDevice.value = view.selectedDevice;
+          activeDevice.value = view.activeDevice;
+          connecting.value = view.connecting;
+          enteringRoom.value = view.enteringRoom;
+          if (isPlaybackController)
+            controllerPlayback.value = view.localPlayback;
+          applyingConnection = false;
+        },
+        localCommand: (command) => {
+          ++revision;
+          localCommand.value = command;
+        },
+        localReport: applyLocalReport,
+      }).then((value) => {
+        if (disposed) value.dispose();
+        else connection = value;
+      })
+    : Promise.resolve();
+  watch(
+    [
+      room,
+      selectedDevice,
+      activeDevice,
+      connecting,
+      enteringRoom,
+      localCommand,
+    ],
+    () => {
+      if (!applyingConnection) void connection?.publish();
+    },
+    { deep: true, flush: "sync" },
+  );
   watch(
     () => preferences.preferences.dlnaProxyEnabled,
     (value) => {
@@ -412,7 +473,12 @@ export const useCastingStore = defineStore("casting", () => {
       proxyDeviceOnly.value = value;
     },
   );
+  onScopeDispose(() => {
+    disposed = true;
+    connection?.dispose();
+  });
   return {
+    connectionReady,
     applyLocalReport,
     localCommand,
     dlnaProxyEnabled,

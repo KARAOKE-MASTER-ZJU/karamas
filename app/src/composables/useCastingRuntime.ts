@@ -36,6 +36,7 @@ export function useCastingRuntime() {
   }
   onMounted(async () => {
     if (!isTauri()) return;
+    await casting.connectionReady;
     if (disposed) return;
     try {
       await casting.initializeDlnaProxy();

@@ -1,5 +1,5 @@
 import { invokePresentation } from "@/services/presentationBridge";
-import type { LocalCommand, LocalReport } from "@/types/localPlayer";
+import type { LocalReport } from "@/types/localPlayer";
 import type { PlaybackDisplay } from "@/types/playbackOutput";
 import { Channel, invoke, isTauri, listen } from "@/services/platform";
 import type { ConnectionConfig, LogLevel, RoomEntryMode } from "@/types";
@@ -34,13 +34,6 @@ export function errorMessage(error: unknown): string {
     return error.message;
   return "操作失败，请查看运行日志。";
 }
-let stopLocalCommands: (() => void) | undefined;
-
-function clearLocalCommands() {
-  stopLocalCommands?.();
-  stopLocalCommands = undefined;
-}
-
 export const castingApi = {
   sendPlaybackWindowMessage: (message: unknown) =>
     call<void>("send_playback_window_message", { message }),
@@ -98,31 +91,13 @@ export const castingApi = {
           senderBuvid: string;
         },
     initialQuality: PlaybackQuality,
-    onLocalCommand?: (command: LocalCommand | null) => void,
   ) => {
-    clearLocalCommands();
-    if (onLocalCommand) {
-      stopLocalCommands = await listen<LocalCommand | null>(
-        "local-playback-command",
-        ({ payload }) => onLocalCommand(payload),
-      );
-    }
-    try {
-      await call<void>("start_casting", {
-        ...room,
-        target,
-        initialQuality,
-      });
-    } catch (error) {
-      clearLocalCommands();
-      throw error;
-    }
+    await call<void>("start_casting", { ...room, target, initialQuality });
   },
   reportLocalPlayback: (report: LocalReport) =>
     call<boolean>("report_local_playback", { report }),
   disconnect: async () => {
     await call<void>("disconnect_casting");
-    clearLocalCommands();
   },
   poll: () => call<PlaybackState | null>("poll_playback"),
   play: () => call<boolean>("play"),

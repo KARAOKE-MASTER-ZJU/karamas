@@ -12,6 +12,10 @@ import {
   sendPresentationMessage,
 } from "@/services/presentationBridge";
 
+export const isPlaybackController = new URLSearchParams(location.search).has(
+  "playback-controller",
+);
+
 const COMMAND_EVENT = "playback-window-command";
 const MESSAGE_EVENT = "playback-window-message";
 const WINDOW_LABEL = "playback";
