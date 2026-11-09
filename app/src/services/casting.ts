@@ -34,11 +34,11 @@ export function errorMessage(error: unknown): string {
     return error.message;
   return "操作失败，请查看运行日志。";
 }
-let localChannel: Channel<LocalCommand> | null = null;
+let stopLocalCommands: (() => void) | undefined;
 
-function clearLocalChannel() {
-  if (localChannel) localChannel.onmessage = () => {};
-  localChannel = null;
+function clearLocalCommands() {
+  stopLocalCommands?.();
+  stopLocalCommands = undefined;
 }
 
 export const castingApi = {
@@ -98,21 +98,23 @@ export const castingApi = {
           senderBuvid: string;
         },
     initialQuality: PlaybackQuality,
-    onLocalCommand?: (command: LocalCommand) => void,
+    onLocalCommand?: (command: LocalCommand | null) => void,
   ) => {
-    clearLocalChannel();
-    const channel = new Channel<LocalCommand>();
-    localChannel = channel;
-    if (onLocalCommand) channel.onmessage = onLocalCommand;
+    clearLocalCommands();
+    if (onLocalCommand) {
+      stopLocalCommands = await listen<LocalCommand | null>(
+        "local-playback-command",
+        ({ payload }) => onLocalCommand(payload),
+      );
+    }
     try {
       await call<void>("start_casting", {
         ...room,
         target,
         initialQuality,
-        onLocalCommand: channel,
       });
     } catch (error) {
-      clearLocalChannel();
+      clearLocalCommands();
       throw error;
     }
   },
@@ -120,7 +122,7 @@ export const castingApi = {
     call<boolean>("report_local_playback", { report }),
   disconnect: async () => {
     await call<void>("disconnect_casting");
-    clearLocalChannel();
+    clearLocalCommands();
   },
   poll: () => call<PlaybackState | null>("poll_playback"),
   play: () => call<boolean>("play"),

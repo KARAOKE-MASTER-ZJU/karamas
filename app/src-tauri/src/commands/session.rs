@@ -3,7 +3,7 @@ use crate::{
     models::{CastTarget, PlaybackQuality},
     state::BridgeState,
 };
-use tauri::State;
+use tauri::{Emitter, State};
 
 /// 校验边界输入，避免把非 HTTP 地址交给设备或房间接口。
 pub(super) fn http_url(value: &str) -> CommandResult<url::Url> {
@@ -31,7 +31,6 @@ pub async fn start_casting<R: tauri::Runtime>(
     room_id: String,
     target: CastTarget,
     initial_quality: PlaybackQuality,
-    on_local_command: tauri::ipc::Channel<karamas_core::cast::local::LocalCommand>,
 ) -> CommandResult<()> {
     let quality = karamas_core::cast::Quality::from_qn(initial_quality.qn)
         .ok_or_else(|| CommandError::new("INVALID_ARGUMENT", "不支持的清晰度"))?;
@@ -57,14 +56,21 @@ pub async fn start_casting<R: tauri::Runtime>(
     let room_id = room_id.trim().to_owned();
     // 在仍可见时启动前台服务，避免连接设备期间切后台后无法再启动。
     crate::platform::start_casting_service(&app, &room_id).await?;
+    app.emit(
+        "local-playback-command",
+        Option::<karamas_core::cast::local::LocalCommand>::None,
+    )
+    .map_err(|error| CommandError::new("LOCAL_COMMAND", error.to_string()))?;
     let result = match target {
         CastTarget::Local => {
-            let channel = on_local_command;
+            let handle = app.clone();
             karamas_core::start_local_engine_core(
                 server_url,
                 room_id,
                 std::sync::Arc::new(move |command| {
-                    channel.send(command).map_err(|error| error.to_string())
+                    handle
+                        .emit("local-playback-command", command)
+                        .map_err(|error| error.to_string())
                 }),
                 runtime,
                 media_quality,
@@ -110,6 +116,11 @@ pub async fn disconnect_casting<R: tauri::Runtime>(
 ) -> CommandResult<()> {
     let _lifecycle = state.lifecycle.lock().await;
     karamas_core::reset_engine();
+    app.emit(
+        "local-playback-command",
+        Option::<karamas_core::cast::local::LocalCommand>::None,
+    )
+    .map_err(|error| CommandError::new("LOCAL_COMMAND", error.to_string()))?;
     crate::platform::stop_casting_service(&app).await
 }
 
