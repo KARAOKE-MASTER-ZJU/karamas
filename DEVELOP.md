@@ -41,19 +41,21 @@ pnpm tauri dev
 
 ## 开发与检查
 
-| 命令                               | 用途                          |
-| ---------------------------------- | ----------------------------- |
-| `pnpm dev`                         | 启动前端开发服务器            |
-| `pnpm tauri dev`                   | 启动桌面应用调试              |
-| `pnpm tauri build`                 | 构建桌面安装包                |
-| `pnpm check:all`                   | 运行全部 lint、格式和类型检查 |
-| `pnpm fix:all`                     | 自动修复 lint 和格式          |
-| `pnpm build`                       | 类型检查并构建前端            |
-| `cargo test -p karamas_core --lib` | 运行核心库测试                |
+| 命令                               | 用途                      |
+| ---------------------------------- | ------------------------- |
+| `pnpm dev`                         | 启动前端开发服务器        |
+| `pnpm tauri dev`                   | 启动桌面应用调试          |
+| `pnpm tauri build`                 | 构建桌面安装包            |
+| `pnpm check:all`                   | 运行 lint、格式和类型检查 |
+| `pnpm fix:all`                     | 自动修复 lint 和格式      |
+| `pnpm build`                       | 类型检查并构建前端        |
+| `cargo check --workspace`          | 检查 Rust 工作区编译      |
+| `cargo test -p karamas_core --lib` | 运行核心库测试            |
+| `cargo test -p karamas --lib`      | 运行应用层测试            |
 
 浏览器预览用于检查界面，投屏和登录需通过 Tauri 应用调试。
 
-提交前自动运行 `pnpm format:check`，提醒遗漏的格式问题。完整检查由 CI 执行，本地也可以运行 `pnpm check:all`。
+提交前自动运行 `pnpm format:check`，提醒遗漏的格式问题。本地可运行 `pnpm check:all` 检查 lint、格式和类型，Rust 编译和测试需另外运行表中的对应命令。完整检查由 CI 执行。
 
 CI 配置见 [GitHub Actions 工作流](.github/workflows/ci.yml)。
 
