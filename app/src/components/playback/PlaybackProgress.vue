@@ -9,21 +9,24 @@ const props = defineProps<{
   disabled: boolean;
 }>();
 const emit = defineEmits<{ seek: [seconds: number] }>();
-// 拖动时使用本地预览，避免轮询更新把滑块拉回。
-const draft = ref<number | null>(null);
-const displaySecs = computed(() => draft.value ?? props.currentSecs);
+// 拖动时固定预览位置和滑杆范围，避免轮询更新改变拖动目标。
+const draft = ref<{ seconds: number; max: number } | null>(null);
+const displaySecs = computed(() => draft.value?.seconds ?? props.currentSecs);
+const maxSecs = computed(
+  () =>
+    draft.value?.max ??
+    (props.totalSecs || Math.max(600, (props.currentSecs ?? 0) * 2)),
+);
 const progress = computed(() => {
-  if (displaySecs.value === null || !props.totalSecs) return 0;
-  return Math.max(
-    0,
-    Math.min(100, (100 * displaySecs.value) / props.totalSecs),
-  );
+  if (displaySecs.value === null) return 0;
+  return Math.max(0, Math.min(100, (100 * displaySecs.value) / maxSecs.value));
 });
 const unavailable = computed(
-  () => props.disabled || !props.totalSecs || props.currentSecs === null,
+  () => props.disabled || props.currentSecs === null,
 );
 function preview(event: Event) {
-  draft.value = Number((event.target as HTMLInputElement).value);
+  const input = event.target as HTMLInputElement;
+  draft.value = { seconds: Number(input.value), max: Number(input.max) };
 }
 function seek(event: Event) {
   if (!unavailable.value)
@@ -41,7 +44,7 @@ watch([() => props.totalSecs, unavailable], () => {
     type="range"
     min="0"
     step="1"
-    :max="totalSecs || 1"
+    :max="maxSecs"
     :value="displaySecs ?? 0"
     :disabled="unavailable"
     :style="{ '--progress': `${progress}%` }"
