@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.5.0]
+
 ### 新增
 
 - 支持nulla/mmf直播
