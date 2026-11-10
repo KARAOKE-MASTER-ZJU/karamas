@@ -452,12 +452,13 @@ impl Caster for DlnaCaster {
                 let Ok(_transport) = self.transport.try_lock() else {
                     return;
                 };
-                if !self.is_live() {
-                    self.playback().report(revision, current, total);
+                if !self.is_live() && self.playback().report(revision, current, total) {
+                    crate::engine::remote::wake();
                 }
             }
             Err(error) => {
                 self.failure("查询进度", error);
+                self.playback().query_failed(revision);
             }
         }
     }
