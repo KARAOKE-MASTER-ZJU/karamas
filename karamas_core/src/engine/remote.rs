@@ -247,18 +247,22 @@ fn quality_options(
     let formats = split_formats(mode);
     let mut options = Vec::new();
     for quality in &cache.items {
-        let label: String = quality.label.split_whitespace().collect();
         if quality.direct_mp4 == Some(true) {
             options.push(quality_option(
                 quality.qn,
                 Some(MediaFormat::Mp4),
-                &label,
+                &quality.label,
                 current,
             ));
         }
         if quality.dash {
             for format in &formats {
-                options.push(quality_option(quality.qn, Some(*format), &label, current));
+                options.push(quality_option(
+                    quality.qn,
+                    Some(*format),
+                    &quality.label,
+                    current,
+                ));
             }
         }
     }
@@ -279,11 +283,7 @@ fn quality_option(
     label: &str,
     current: Option<(u32, Option<MediaFormat>)>,
 ) -> Value {
-    let text = match format {
-        Some(format) => format!("[{}] {}", format_name(format).to_uppercase(), label),
-        None => label.to_owned(),
-    };
-    let mut option = json!({ "qn": qn, "label": text });
+    let mut option = json!({ "qn": qn, "label": label });
     if let Some(format) = format {
         option["format"] = json!(format_name(format));
     }
