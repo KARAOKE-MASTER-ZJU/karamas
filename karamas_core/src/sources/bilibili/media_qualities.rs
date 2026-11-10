@@ -179,15 +179,8 @@ pub(super) async fn request_playurl(
     Ok(json)
 }
 
-fn is_media_url(value: &Value) -> bool {
-    value.as_str().is_some_and(|value| {
-        url::Url::parse(value)
-            .is_ok_and(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some())
-    })
-}
-
 fn has_track_url(track: &Value) -> bool {
-    is_media_url(&track["baseUrl"]) || is_media_url(&track["base_url"])
+    !super::playback_media::media_urls(track).is_empty()
 }
 
 fn has_dash(data: &Value, qn: u32) -> bool {
@@ -209,7 +202,7 @@ fn parse_mp4_qualities(json: &Value) -> Result<Vec<BilibiliQuality>, String> {
         .is_some_and(|format| format.starts_with("mp4"))
         || !data["durl"]
             .as_array()
-            .is_some_and(|files| files.len() == 1 && is_media_url(&files[0]["url"]))
+            .is_some_and(|files| files.len() == 1 && has_track_url(&files[0]))
     {
         return Err("HTML5 接口未返回单文件 MP4".into());
     }

@@ -55,19 +55,21 @@ pub(super) async fn resolve(
             bvid,
             dash_result.as_ref().map_err(Clone::clone)?,
             selected.0.as_qn(),
-        )?;
+        )
+        .await?;
         resolved.format = selected.1;
         resolved
     } else {
         let current = mp4_result.as_ref().map_err(Clone::clone)?;
         if current["data"]["quality"].as_u64() == Some(selected.0.as_qn() as u64) {
-            parse_mp4(bvid, current)?
+            parse_mp4(bvid, current).await?
         } else {
             // 仅在最终选中其他 MP4 档位时补取该地址，不逐档探测。
             parse_mp4(
                 bvid,
                 &request_mp4(bvid, cid, selected.0.as_qn(), session.as_ref()).await?,
-            )?
+            )
+            .await?
         }
     };
     if (resolved.quality, resolved.format) != selected {
@@ -130,7 +132,7 @@ async fn request_mp4(
     .await
 }
 
-fn parse_mp4(bvid: &str, json: &Value) -> Result<ResolvedBilibiliMedia, String> {
+async fn parse_mp4(bvid: &str, json: &Value) -> Result<ResolvedBilibiliMedia, String> {
     let data = &json["data"];
     if !data["format"]
         .as_str()
@@ -142,12 +144,13 @@ fn parse_mp4(bvid: &str, json: &Value) -> Result<ResolvedBilibiliMedia, String> 
         .as_array()
         .filter(|files| files.len() == 1)
         .ok_or("B站未返回单文件 MP4")?;
-    let url = valid_url(&files[0]["url"]).ok_or("MP4 没有有效的 URL")?;
     let quality = data["quality"]
         .as_u64()
         .and_then(|qn| u32::try_from(qn).ok())
         .and_then(Quality::from_qn)
         .ok_or("MP4 没有有效的清晰度")?;
+    let client = crate::media::upstream::client().map_err(|error| error.to_string())?;
+    let url = select_media_url(&client, &files[0]).await?;
     log::info!(target: "DLNA1080", "选中完整 MP4: bvid={}, qn={}", bvid, quality.as_qn());
     Ok(ResolvedBilibiliMedia {
         media: BilibiliMedia::Direct { url },
@@ -157,23 +160,30 @@ fn parse_mp4(bvid: &str, json: &Value) -> Result<ResolvedBilibiliMedia, String> 
     })
 }
 
-fn parse_dash(bvid: &str, json: &Value, qn: u32) -> Result<ResolvedBilibiliMedia, String> {
+async fn parse_dash(bvid: &str, json: &Value, qn: u32) -> Result<ResolvedBilibiliMedia, String> {
     let quality = Quality::from_qn(qn).ok_or("不支持的清晰度")?;
     let (video, audio) = dash_tracks(json, qn)?;
+    let client = crate::media::upstream::client().map_err(|error| error.to_string())?;
+    let (video_url, audio_url) = tokio::try_join!(
+        select_media_url(&client, video),
+        select_media_url(&client, audio),
+    )?;
+    let hls_tracks = hls_track_with_url(video, video_url.clone())
+        .zip(hls_track_with_url(audio, audio_url.clone()));
     log::info!(target: "DLNA1080", "选中 DASH 轨道: bvid={}, video_id={}, codec={}, {}x{}, audio_id={}",
         bvid, qn, video["codecs"].as_str().unwrap_or("unknown"),
         video["width"].as_u64().unwrap_or(0), video["height"].as_u64().unwrap_or(0),
         audio["id"].as_u64().unwrap_or(0));
     Ok(ResolvedBilibiliMedia {
         media: BilibiliMedia::Dash {
-            video_url: track_url(video).unwrap(),
-            audio_url: track_url(audio).unwrap(),
+            video_url,
+            audio_url,
             width: video["width"].as_u64().unwrap_or(0) as u32,
             height: video["height"].as_u64().unwrap_or(0) as u32,
         },
         quality,
         format: MediaFormat::Dash,
-        hls_tracks: hls_track(video).zip(hls_track(audio)),
+        hls_tracks,
     })
 }
 
@@ -204,11 +214,15 @@ fn dash_tracks(json: &Value, qn: u32) -> Result<(&Value, &Value), String> {
 }
 
 fn hls_track(track: &Value) -> Option<crate::media::hls::Track> {
+    hls_track_with_url(track, track_url(track)?)
+}
+
+fn hls_track_with_url(track: &Value, url: String) -> Option<crate::media::hls::Track> {
     let segment = track
         .get("SegmentBase")
         .or_else(|| track.get("segment_base"))?;
     crate::media::hls::Track::new(
-        track_url(track)?,
+        url,
         track["codecs"].as_str()?,
         track["bandwidth"].as_u64()?,
         segment
@@ -223,7 +237,82 @@ fn hls_track(track: &Value) -> Option<crate::media::hls::Track> {
 }
 
 fn track_url(track: &Value) -> Option<String> {
-    valid_url(&track["baseUrl"]).or_else(|| valid_url(&track["base_url"]))
+    media_urls(track).into_iter().next()
+}
+
+pub(super) fn media_urls(track: &Value) -> Vec<String> {
+    let mut urls = Vec::new();
+    let primary = ["baseUrl", "base_url", "url"].map(|key| &track[key]);
+    let backups = ["backupUrl", "backup_url"]
+        .into_iter()
+        .filter_map(|key| track[key].as_array())
+        .flatten();
+    for value in primary.into_iter().chain(backups) {
+        if let Some(url) = valid_url(value) {
+            if !urls.contains(&url) {
+                urls.push(url);
+            }
+        }
+    }
+    urls
+}
+
+// 在取源时选定 CDN，索引准备、后续分片和设备直连共用该地址。
+async fn select_media_url(client: &reqwest::Client, track: &Value) -> Result<String, String> {
+    let mut last_error = "没有有效的媒体地址".to_owned();
+    for url in media_urls(track) {
+        match probe_media_url(client, &url).await {
+            Ok(()) => return Ok(url),
+            Err(error) => {
+                let endpoint = url::Url::parse(&url).unwrap();
+                log::warn!(target: "DLNA1080", "B站媒体 CDN 不可用: endpoint={}, error={}", endpoint.origin().ascii_serialization(), error);
+                last_error = error;
+            }
+        }
+    }
+    Err(format!("B站媒体 CDN 均不可用：{last_error}"))
+}
+
+async fn probe_media_url(client: &reqwest::Client, url: &str) -> Result<(), String> {
+    let mut response = client
+        .get(url)
+        .header("Range", "bytes=0-0")
+        .header("Referer", crate::media::upstream::referer(url))
+        .header("User-Agent", crate::media::upstream::user_agent(url))
+        .header("Accept-Encoding", "identity")
+        .timeout(crate::config::PROXY_CONNECT_TIMEOUT)
+        .send()
+        .await
+        .map_err(|error| format!("{:?}", error.without_url()))?;
+    if response.status() != reqwest::StatusCode::PARTIAL_CONTENT
+        || !response
+            .headers()
+            .get("Content-Range")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.strip_prefix("bytes 0-0/"))
+            .and_then(|length| length.parse::<u64>().ok())
+            .is_some_and(|length| length > 0)
+    {
+        return Err(format!(
+            "媒体未返回有效的字节范围：HTTP {}",
+            response.status()
+        ));
+    }
+    let mut length = 0;
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| format!("{:?}", error.without_url()))?
+    {
+        length += chunk.len();
+        if length > 1 {
+            return Err("媒体范围响应过长".into());
+        }
+    }
+    if length != 1 {
+        return Err("媒体范围响应不完整".into());
+    }
+    Ok(())
 }
 
 fn valid_url(value: &Value) -> Option<String> {
