@@ -8,6 +8,8 @@ defineProps<{
   checked: boolean;
   busy?: boolean;
   disabled?: boolean;
+  /** 嵌入密集的选项列表时使用，去掉设置页的行高与内边距 */
+  compact?: boolean;
 }>();
 const emit = defineEmits<{ change: [checked: boolean] }>();
 const id = useId();
@@ -39,7 +41,7 @@ onScopeDispose(() => {
 </script>
 
 <template>
-  <div class="setting-row">
+  <div class="setting-row" :class="{ compact }">
     <div ref="info" class="setting-label">
       <span :id="`${id}-label`">{{ label }}</span>
       <button
@@ -89,6 +91,10 @@ onScopeDispose(() => {
   padding: 12px 0;
   font-size: 14px;
 }
+.setting-row.compact {
+  min-height: 0;
+  padding: 16px 0 0;
+}
 .setting-label {
   position: relative;
   display: flex;
@@ -123,6 +129,7 @@ onScopeDispose(() => {
   border-radius: 11px;
   padding: 3px;
   background: var(--input-line);
+  transition: background-color 0.2s ease;
 }
 .setting-switch[aria-checked="true"] {
   background: var(--accent);
@@ -133,6 +140,7 @@ onScopeDispose(() => {
   height: 16px;
   border-radius: 50%;
   background: #fff;
+  transition: transform 0.2s ease;
 }
 .setting-switch[aria-checked="true"] span {
   transform: translateX(16px);
