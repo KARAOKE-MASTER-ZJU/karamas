@@ -41,6 +41,12 @@ impl EngineContext {
         let position = report.current_secs as u32;
         let settled = !report.seeking && report.error.is_none();
         let playing = !report.paused && !report.ended && report.error.is_none();
+        let seeking = report.seeking;
+        let ended = report.ended;
+        let failed = report.error.is_some();
+        let reported_volume = if report.muted { 0 } else { report.volume };
+        let was_playing = self.is_playing.load(Ordering::SeqCst);
+        let was_volume = self.caster.get_volume().await.ok().flatten();
         if !self.caster.report_local_playback(report)? {
             return Ok(false);
         }
@@ -53,6 +59,15 @@ impl EngineContext {
         if settled {
             let revision = gate.revision();
             gate.seek_succeeded(revision, position);
+        }
+        // 本地播放器的暂停、拖动、音量调整和结束没有走控制命令，这里补一次上报唤醒。
+        if playing != was_playing
+            || seeking
+            || ended
+            || failed
+            || was_volume != Some(reported_volume)
+        {
+            super::remote::wake();
         }
         Ok(true)
     }
