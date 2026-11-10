@@ -41,11 +41,12 @@ pub async fn enter_room<R: tauri::Runtime>(
         url.path().trim_end_matches('/')
     ));
     url.query_pairs_mut().append_pair("roomId", room_id.trim());
-    let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|e| CommandError::new("NETWORK_ERROR", e.to_string()))?;
+    let client =
+        karamas_core::playlist::bypass_loopback_proxy(reqwest::Client::builder(), url.as_str())
+            .connect_timeout(Duration::from_secs(5))
+            .timeout(Duration::from_secs(10))
+            .build()
+            .map_err(|e| CommandError::new("NETWORK_ERROR", e.to_string()))?;
     let request = match mode {
         RoomEntryMode::Create => client.post(url),
         RoomEntryMode::Join => client.get(url),

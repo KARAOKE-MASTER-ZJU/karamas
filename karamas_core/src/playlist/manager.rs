@@ -23,7 +23,7 @@ impl PlaylistManager {
     /// 创建指定房间的歌单管理器。
     pub fn new(url: &str, room_id: String) -> Self {
         // 在初始化时构建一次 Client
-        let client = Client::builder()
+        let client = super::bypass_loopback_proxy(Client::builder(), url)
             .tls_backend_rustls()
             .timeout(crate::config::API_TIMEOUT)
             .build()
