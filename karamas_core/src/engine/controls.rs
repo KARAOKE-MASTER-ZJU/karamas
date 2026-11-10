@@ -21,6 +21,7 @@ async fn switch_song(next: bool) -> Result<(), CoreError> {
     let mut pm = ctx.playlist_manager.clone();
     ctx.spawn_task(async move { pm.switch_song(next).await })?
         .await??;
+    super::remote::wake();
     Ok(())
 }
 
@@ -42,6 +43,7 @@ pub(super) async fn seek(ctx: &EngineContext, target_secs: u32) -> Result<(), Co
         .lock()
         .await
         .seek_succeeded(revision, target_secs);
+    super::remote::wake();
     Ok(())
 }
 
@@ -70,6 +72,7 @@ async fn set_playing_core(playing: bool) -> Result<bool, CoreError> {
             .await
             .confirm_resume();
     }
+    super::remote::wake();
     Ok(result)
 }
 
@@ -111,6 +114,7 @@ pub(super) async fn toggle_pause(ctx: &EngineContext) -> Result<bool, CoreError>
             .await
             .confirm_resume();
     }
+    super::remote::wake();
     Ok(result)
 }
 
@@ -122,6 +126,7 @@ pub async fn set_volume_core(volume: u32) -> Result<u32, CoreError> {
     };
     let target = volume.clamp(0, 100);
     ctx.caster.set_volume(target).await?;
+    super::remote::wake();
     Ok(target)
 }
 
@@ -142,6 +147,7 @@ pub async fn volume_up_core(step: u32) -> Result<(), CoreError> {
         guard.as_ref().cloned().ok_or("Engine not initialized")?
     };
     ctx.caster.volume_up(step).await?;
+    super::remote::wake();
     Ok(())
 }
 
@@ -152,6 +158,7 @@ pub async fn volume_down_core(step: u32) -> Result<(), CoreError> {
         guard.as_ref().cloned().ok_or("Engine not initialized")?
     };
     ctx.caster.volume_down(step).await?;
+    super::remote::wake();
     Ok(())
 }
 
@@ -163,6 +170,7 @@ pub async fn set_danmaku_core(on: bool) -> Result<bool, CoreError> {
     };
     ctx.caster.set_danmaku(on).await?;
     // ctx.danmaku_on.store(on, Ordering::SeqCst);
+    super::remote::wake();
     Ok(on)
 }
 
@@ -190,6 +198,7 @@ pub async fn set_quality_core(quality: cast::Quality) -> Result<cast::Quality, C
     };
     ctx.caster.set_quality(quality).await?;
     // ctx.quality_qn.store(quality.as_qn(), Ordering::SeqCst);
+    super::remote::wake();
     Ok(quality)
 }
 
@@ -207,6 +216,7 @@ pub async fn set_media_quality_core(
         .caster
         .get_media_format()
         .ok_or(cast::CastError::Unsupported)?;
+    super::remote::wake();
     Ok((ctx.caster.get_quality()?, format))
 }
 

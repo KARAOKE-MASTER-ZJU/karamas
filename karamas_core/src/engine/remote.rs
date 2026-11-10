@@ -1,6 +1,6 @@
-//! 网页遥控：执行端注册、命令执行和播放状态上报。
-
-use super::{controls, playback::recast_current_song, state::EngineContext};
+use super::{
+    controls, monitor::EnginePlaybackState, playback::recast_current_song, state::EngineContext,
+};
 use crate::{
     cast::{
         dlna::settings::{get_dlna_direct, get_dlna_hls_direct},
@@ -10,16 +10,30 @@ use crate::{
     playlist::RemoteSync,
     sources::bilibili::BilibiliMediaQuality,
 };
+use futures_util::FutureExt;
 use log::{debug, info, warn};
 use serde_json::{json, Value};
 use std::{
-    sync::{Arc, Weak},
+    sync::{Arc, Mutex, Weak},
     time::Duration,
 };
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Notify};
+/// 无变化时的完整上报间隔，覆盖设备侧变化等没有事件来源的情况。
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 
-/// 状态采样间隔；命令执行后立即补一帧。
-const PLAYBACK_INTERVAL: Duration = Duration::from_secs(5);
+/// 状态变化唤醒；控制入口与起播流程触发，避免用轮询猜变化。
+static WAKE: Mutex<Option<Arc<Notify>>> = Mutex::new(None);
+
+/// 通知遥控任务立即上报一次状态。
+pub(crate) fn wake() {
+    let wake = WAKE
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .clone();
+    if let Some(wake) = wake {
+        wake.notify_one();
+    }
+}
 
 /// 注册时上报的执行端身份。
 pub struct RemoteIdentity {
@@ -73,32 +87,37 @@ pub(crate) fn start_remote(
 ) -> Result<RemoteSync, CoreError> {
     let (command_tx, mut command_rx) = mpsc::unbounded_channel();
     let (playback_tx, playback_rx) = mpsc::unbounded_channel();
+    let wake = Arc::new(Notify::new());
+    *WAKE.lock().unwrap_or_else(|error| error.into_inner()) = Some(wake.clone());
     let session: Weak<EngineContext> = Arc::downgrade(ctx);
     let mode = identity.mode;
 
     ctx.spawn_task(async move {
         let mut seq = 0_u64;
         let mut cache = QualityCache::default();
-        let mut timer = tokio::time::interval(PLAYBACK_INTERVAL);
-        timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        timer.tick().await;
+        // 连接建立后先推一帧，之后由状态变化和心跳驱动。
+        {
+            let Some(ctx) = session.upgrade() else { return };
+            if !report_once(&ctx, mode, &mut cache, &mut seq, &playback_tx).await {
+                return;
+            }
+        }
+        let mut heartbeat = tokio::time::interval(HEARTBEAT_INTERVAL);
+        heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        heartbeat.tick().await;
         loop {
-            let ctx = tokio::select! {
+            tokio::select! {
                 Some(command) = command_rx.recv() => {
                     let Some(ctx) = session.upgrade() else { break };
                     execute(&ctx, &command).await;
-                    ctx
+                    // 命令执行自己会回报，丢弃执行期间产生的唤醒。
+                    let _ = wake.notified().now_or_never();
                 }
-                _ = timer.tick() => {
-                    let Some(ctx) = session.upgrade() else { break };
-                    ctx
-                }
-            };
-            seq += 1;
-            let Some(frame) = playback_frame(&ctx, mode, &mut cache, seq).await else {
-                continue;
-            };
-            if playback_tx.send(frame).is_err() {
+                _ = wake.notified() => {}
+                _ = heartbeat.tick() => {}
+            }
+            let Some(ctx) = session.upgrade() else { break };
+            if !report_once(&ctx, mode, &mut cache, &mut seq, &playback_tx).await {
                 break;
             }
         }
@@ -110,6 +129,22 @@ pub(crate) fn start_remote(
         commands: command_tx,
         playback: playback_rx,
     })
+}
+
+/// 生成并投递一帧状态；返回 false 表示接收端已经关闭。
+async fn report_once(
+    ctx: &Arc<EngineContext>,
+    mode: &str,
+    cache: &mut QualityCache,
+    seq: &mut u64,
+    playback_tx: &mpsc::UnboundedSender<String>,
+) -> bool {
+    *seq += 1;
+    let state = ctx.playback_state().await;
+    let Some(frame) = playback_frame(ctx, &state, mode, cache, *seq).await else {
+        return true;
+    };
+    playback_tx.send(frame).is_ok()
 }
 
 async fn execute(ctx: &Arc<EngineContext>, message: &Value) {
@@ -173,11 +208,11 @@ async fn set_quality(payload: &Value) -> Result<(), CoreError> {
 
 async fn playback_frame(
     ctx: &Arc<EngineContext>,
+    state: &EnginePlaybackState,
     mode: &str,
     cache: &mut QualityCache,
     seq: u64,
 ) -> Option<String> {
-    let state = ctx.playback_state().await;
     let volume = ctx.caster.get_volume().await.ok().flatten();
     refresh_qualities(cache, state.song_url.as_deref()).await;
     let qualities = quality_options(

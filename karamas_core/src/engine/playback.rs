@@ -28,6 +28,8 @@ pub(super) async fn update_playback(ctx: &EngineContext, video_url: String) {
     if play_and_confirm(&*ctx.caster, &video_url, token, gate).await {
         ctx.is_playing.store(true, Ordering::SeqCst);
     }
+    // 新曲起播（含自动切歌）立即上报，不必等心跳。
+    super::remote::wake();
 }
 
 pub(super) async fn sample_progress(ctx: &EngineContext) -> (i32, i32) {
