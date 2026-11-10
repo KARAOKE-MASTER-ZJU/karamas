@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, toRef, useId } from "vue";
 import { ChevronDown, RefreshCw } from "@lucide/vue";
+import SettingSwitch from "@/components/base/SettingSwitch.vue";
 import type { CastMode } from "@/types";
 import { useBilibiliQualities } from "@/composables/useBilibiliQualities";
 import type {
@@ -28,7 +29,6 @@ const emit = defineEmits<{
   danmaku: [enabled: boolean];
 }>();
 const qualityId = useId();
-const danmakuId = useId();
 const {
   qualities,
   loading: bilibiliLoading,
@@ -205,20 +205,14 @@ function refresh() {
         <RefreshCw :size="14" aria-hidden="true" />重试
       </button>
     </div>
-    <div v-if="mode === 'bilibili'" class="option-row">
-      <span :id="danmakuId">弹幕</span>
-      <button
-        type="button"
-        class="danmaku-switch"
-        role="switch"
-        :aria-labelledby="danmakuId"
-        :aria-checked="danmaku ?? false"
-        :disabled="disabled || danmaku === null"
-        @click="emit('danmaku', !danmaku)"
-      >
-        <span />
-      </button>
-    </div>
+    <SettingSwitch
+      v-if="mode === 'bilibili'"
+      label="弹幕"
+      compact
+      :checked="danmaku ?? false"
+      :disabled="disabled || danmaku === null"
+      @change="emit('danmaku', $event)"
+    />
   </div>
 </template>
 
@@ -247,26 +241,5 @@ function refresh() {
 .quality-error p {
   flex: 1;
   margin: 0;
-}
-.danmaku-switch {
-  width: 38px;
-  height: 22px;
-  border: 0;
-  border-radius: 11px;
-  padding: 3px;
-  background: var(--input-line);
-}
-.danmaku-switch[aria-checked="true"] {
-  background: var(--accent);
-}
-.danmaku-switch span {
-  display: block;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #fff;
-}
-.danmaku-switch[aria-checked="true"] span {
-  transform: translateX(16px);
 }
 </style>
