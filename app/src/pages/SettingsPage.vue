@@ -151,7 +151,6 @@ async function logout() {
         description="开启后由本机代理媒体；关闭后设备直接访问媒体源。下次切歌或点击“重新投屏”生效。"
         :checked="casting.dlnaProxyEnabled"
         :busy="casting.changingDlnaProxy"
-        :disabled="casting.busy"
         @change="updateDlnaProxy"
       />
       <SettingSwitch
@@ -159,7 +158,6 @@ async function logout() {
         description="允许 DLNA 使用 HLS 播放音视频分轨源。需要接收端支持，部分设备可能无法播放或定位。下次切歌或重新投屏生效。"
         :checked="casting.dlnaHlsDirectEnabled"
         :busy="casting.changingDlnaProxy"
-        :disabled="casting.busy"
         @change="updateDlnaHlsDirect"
       />
     </section>
@@ -170,7 +168,6 @@ async function logout() {
         description="仅允许当前连接设备的 IP 访问媒体代理，修改后立即生效。如果设备无法播放，可关闭此项后重试。"
         :checked="casting.proxyDeviceOnly"
         :busy="casting.changingDlnaProxy"
-        :disabled="casting.busy"
         @change="updateProxyDeviceOnly"
       />
       <SettingSwitch

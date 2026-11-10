@@ -124,7 +124,8 @@ export const useCastingStore = defineStore("casting", () => {
   }
 
   async function setDlnaProxyEnabled(enabled: boolean) {
-    if (busy.value) return;
+    // 这些设置只改进程级代理配置，与投屏会话无关，只挡同一组设置的重复保存。
+    if (changingDlnaProxy.value) return;
     changingDlnaProxy.value = true;
     ++revision;
     try {
@@ -138,7 +139,7 @@ export const useCastingStore = defineStore("casting", () => {
   }
 
   async function setDlnaHlsDirectEnabled(enabled: boolean) {
-    if (busy.value) return;
+    if (changingDlnaProxy.value) return;
     changingDlnaProxy.value = true;
     ++revision;
     try {
@@ -152,7 +153,7 @@ export const useCastingStore = defineStore("casting", () => {
   }
 
   async function setProxyDeviceOnly(enabled: boolean) {
-    if (busy.value) return;
+    if (changingDlnaProxy.value) return;
     changingDlnaProxy.value = true;
     try {
       await initializeDlnaProxy();

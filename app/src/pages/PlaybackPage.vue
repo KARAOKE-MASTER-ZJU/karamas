@@ -178,7 +178,7 @@ useVideoLayout(
           :media-qualities-loading="casting.mediaQualitiesLoading"
           :media-qualities-error="casting.mediaQualitiesError"
           :danmaku="playback?.danmaku ?? null"
-          :disabled="casting.busy || playbackBusy"
+          :disabled="!casting.connected || playbackBusy"
           @quality="controls.setQuality"
           @refresh-media-qualities="casting.refreshMediaQualities"
           @danmaku="controls.setDanmaku"
