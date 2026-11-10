@@ -14,6 +14,8 @@ export interface ConnectionConfig {
 
 // 用户偏好设置接口
 export interface Preferences extends ConnectionConfig {
+  /** 遥控注册使用的安装标识，首次启动生成后保持不变。 */
+  appId: string;
   theme: Theme;
   logLevel: LogLevel;
   dlnaProxyEnabled: boolean;

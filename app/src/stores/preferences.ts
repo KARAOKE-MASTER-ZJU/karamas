@@ -15,6 +15,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
   const preferences = reactive<Preferences>({
     serverUrl: "",
     roomId: "",
+    appId: "",
     theme: "system",
     logLevel: "info",
     dlnaProxyEnabled: true,
@@ -56,6 +57,12 @@ export const usePreferencesStore = defineStore("preferences", () => {
           typeof stored.bilibiliBuvid === "string"
         )
           preferences.bilibiliBuvid = stored.bilibiliBuvid;
+        if (
+          "appId" in stored &&
+          typeof stored.appId === "string" &&
+          stored.appId
+        )
+          preferences.appId = stored.appId;
         if ("serverUrl" in stored && typeof stored.serverUrl === "string")
           preferences.serverUrl = stored.serverUrl;
         if ("roomId" in stored && typeof stored.roomId === "string")
@@ -113,6 +120,15 @@ export const usePreferencesStore = defineStore("preferences", () => {
     return bilibiliBuvid;
   }
 
+  // 遥控注册标识；安装后保持不变，网页按它记忆选中的设备。
+  function ensureAppId(): string {
+    if (preferences.appId) return preferences.appId;
+    const appId = crypto.randomUUID();
+    if (!save({ appId }))
+      throw new Error("无法保存遥控设备标识，请检查本地存储。");
+    return appId;
+  }
+
   // 保存连接配置
   function saveConnection({ serverUrl, roomId }: ConnectionConfig): boolean {
     return save({ serverUrl, roomId });
@@ -150,6 +166,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     preferences,
     storageWarning,
     ensureBilibiliBuvid,
+    ensureAppId,
     saveConnection,
     saveTheme,
     saveLogLevel,

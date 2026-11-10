@@ -1,6 +1,7 @@
 use super::{
     monitor::start_monitor,
     playback::update_playback,
+    remote::{self, RemoteIdentity},
     state::{ENGINE_STATE, EngineContext},
 };
 use crate::cast::dlna::settings::{reset_dlna_media_quality, set_dlna_media_quality};
@@ -33,6 +34,7 @@ pub async fn start_engine_core(
     loc_str: String,
     rt: tokio::runtime::Handle,
     initial_quality: (Quality, MediaFormat),
+    app_id: String,
 ) -> Result<(), CoreError> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     info!("开始初始化核心引擎: {}, Room: {}", loc_str, room_id);
@@ -46,11 +48,22 @@ pub async fn start_engine_core(
     let (controller, device, local_ip_addr, port, cache, shared_state) =
         connect_dlna_device(loc_str, handle).await?;
 
+    let target_name = device.friendly_name.clone();
     let caster: Arc<dyn cast::Caster> =
         Arc::new(DlnaCaster::new(controller, device, local_ip_addr, port)
             .with_sessions(shared_state.media_sessions.clone()));
 
-    connect_room(base_url_str, room_id, caster, local_ip_addr, port, cache, rt).await?;
+    connect_room(
+        base_url_str,
+        room_id,
+        caster,
+        local_ip_addr,
+        port,
+        cache,
+        rt,
+        Some(RemoteIdentity::new(app_id, "dlna", target_name)),
+    )
+    .await?;
 
     info!("Rust Engine 已初始化，设备连接成功");
     Ok(())
@@ -107,6 +120,7 @@ pub async fn connect_room(
     port: u16,
     cache: Arc<Mutex<std::collections::HashMap<String, u32>>>,
     rt: tokio::runtime::Handle,
+    remote_identity: Option<RemoteIdentity>,
 ) -> Result<(), CoreError> {
     info!("开始连接房间: {}", room_id);
 
@@ -128,15 +142,25 @@ pub async fn connect_room(
         stopped: AtomicBool::new(false),
     });
 
+    // 遥控与歌单同步共用同一条 WS 连接。
+    let remote_sync = match remote_identity {
+        Some(identity) => Some(remote::start_remote(&ctx, identity)?),
+        None => None,
+    };
+
     // 同步任务只弱引用会话，避免阻止引擎释放。
     let session = Arc::downgrade(&ctx);
-    let sync_task = ctx.playlist_manager.start_sync(&ctx.rt, move |video_url| {
-        let session = session.clone();
-        Box::pin(async move {
-            let Some(ctx) = session.upgrade() else { return };
-            update_playback(&ctx, video_url).await;
-        })
-    });
+    let sync_task = ctx.playlist_manager.start_sync(
+        &ctx.rt,
+        move |video_url| {
+            let session = session.clone();
+            Box::pin(async move {
+                let Some(ctx) = session.upgrade() else { return };
+                update_playback(&ctx, video_url).await;
+            })
+        },
+        remote_sync,
+    );
     ctx.tasks.lock().map_err(|_| "Lock error")?.push(sync_task.abort_handle());
     start_monitor(&ctx)?;
 
@@ -155,6 +179,7 @@ pub async fn start_bilibili_engine_core(
     sender_buvid: String,
     rt: tokio::runtime::Handle,
     initial_quality: Quality,
+    app_id: String,
 ) -> Result<(), CoreError> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     info!("开始初始化Bilibili引擎, Room: {}", room_id);
@@ -165,7 +190,17 @@ pub async fn start_bilibili_engine_core(
     caster.initialize_quality(initial_quality);
     caster.start_broadcast();
     let cache = Arc::new(Mutex::new(std::collections::HashMap::new()));
-    connect_room(base_url_str, room_id, caster, "127.0.0.1".parse().unwrap(), 0, cache, rt).await
+    connect_room(
+        base_url_str,
+        room_id,
+        caster,
+        "127.0.0.1".parse().unwrap(),
+        0,
+        cache,
+        rt,
+        Some(RemoteIdentity::new(app_id, "bilibili", "小电视".to_owned())),
+    )
+    .await
 }
 
 /// 启动本机播放；宿主负责转发操作和回传播放器状态。
@@ -175,6 +210,7 @@ pub async fn start_local_engine_core(
     send: crate::cast::local::LocalCommandSink,
     rt: tokio::runtime::Handle,
     initial_quality: (Quality, MediaFormat),
+    app_id: String,
 ) -> Result<(), CoreError> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     reset_engine();
@@ -187,5 +223,15 @@ pub async fn start_local_engine_core(
     caster
         .set_media_quality(initial_quality.0, initial_quality.1)
         .await?;
-    connect_room(base_url, room_id, caster, ip, port, cache, rt).await
+    connect_room(
+        base_url,
+        room_id,
+        caster,
+        ip,
+        port,
+        cache,
+        rt,
+        Some(RemoteIdentity::new(app_id, "local", "本机播放".to_owned())),
+    )
+    .await
 }

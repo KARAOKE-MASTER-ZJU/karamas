@@ -4,6 +4,7 @@ mod lifecycle;
 mod monitor;
 mod parts;
 mod playback;
+pub(crate) mod remote;
 mod state;
 
 pub use controls::{

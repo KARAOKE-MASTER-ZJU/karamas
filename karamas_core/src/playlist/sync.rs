@@ -1,12 +1,21 @@
 use super::PlaylistManager;
 use futures_util::{SinkExt, StreamExt};
 use log::{debug, error, info, warn};
+use serde_json::Value;
 use std::{env, future::Future, pin::Pin, time::Duration};
+use tokio::sync::mpsc;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use url::Url;
 
 const PLAYLIST_RETRIES: usize = 3;
 const PLAYLIST_RETRY_INTERVAL: Duration = Duration::from_secs(1);
+
+/// 遥控接入点：注册帧随连接发送，命令读入后交给引擎，状态帧写回连接。
+pub struct RemoteSync {
+    pub registration: String,
+    pub commands: mpsc::UnboundedSender<Value>,
+    pub playback: mpsc::UnboundedReceiver<String>,
+}
 
 impl PlaylistManager {
     // 根据环境变量切换同步驱动（WS / POLLING）
@@ -16,6 +25,7 @@ impl PlaylistManager {
         &self,
         runtime: &tokio::runtime::Handle,
         f_on_update: F,
+        remote: Option<RemoteSync>,
     ) -> tokio::task::JoinHandle<()>
     where
         F: Fn(String) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
@@ -23,8 +33,11 @@ impl PlaylistManager {
         let mode = env::var("KTV_SYNC_MODE").unwrap_or_else(|_| "WS".to_string());
         info!("播放列表同步模式: {}", mode);
         if mode.to_uppercase() != "POLLING" {
-            self.start_ws_update(runtime, f_on_update)
+            self.start_ws_update(runtime, f_on_update, remote)
         } else {
+            if remote.is_some() {
+                warn!("HTTP 轮询模式不承载遥控协议，网页遥控不可用");
+            }
             self.start_periodic_update(runtime, f_on_update)
         }
     }
@@ -73,6 +86,7 @@ impl PlaylistManager {
         &self,
         runtime: &tokio::runtime::Handle,
         mut f_on_update: F,
+        remote: Option<RemoteSync>,
     ) -> tokio::task::JoinHandle<()>
     where
         F: Fn(String) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + 'static,
@@ -90,6 +104,15 @@ impl PlaylistManager {
             info!("心跳间隔: {} 秒", interval_secs);
             // Keep the last handled song across reconnects as well as heartbeat/WS updates.
             let mut song_playing_cached = None;
+            // 遥控通道跨重连复用；注册帧每次连接后重发。
+            let (registration, command_tx, mut playback_rx) = match remote {
+                Some(remote) => (
+                    Some(remote.registration),
+                    Some(remote.commands),
+                    Some(remote.playback),
+                ),
+                None => (None, None, None),
+            };
             loop {
                 // 构造 WS URL （将 http(s) -> ws(s)）
                 let nickname = env::var("KTV_NICKNAME").unwrap_or_default();
@@ -218,6 +241,18 @@ impl PlaylistManager {
                 }
                 let (mut write, mut read) = ws_stream.split();
 
+                // 每次连接后重新注册遥控身份。
+                if let Some(registration) = &registration {
+                    if let Err(error) = write
+                        .send(Message::Text(registration.clone().into()))
+                        .await
+                    {
+                        warn!("发送遥控注册失败: {}，准备重连", error);
+                        tokio::time::sleep(Duration::from_secs(3)).await;
+                        continue;
+                    }
+                }
+
                 // 引入心跳计时器
                 let mut heartbeat = tokio::time::interval(Duration::from_secs(interval_secs));
                 // 设置为延迟触发模式，避免不必要的积压和短间隔
@@ -227,6 +262,18 @@ impl PlaylistManager {
 
                 loop {
                     tokio::select! {
+                        // 分支 C：遥控状态帧
+                        frame = next_remote_frame(&mut playback_rx) => {
+                            let Some(frame) = frame else {
+                                debug!("遥控通道已关闭");
+                                break;
+                            };
+                            if let Err(error) = write.send(Message::Text(frame.into())).await {
+                                warn!("发送遥控状态失败: {}，准备重连", error);
+                                break;
+                            }
+                        }
+
                         // 分支 A：定时发送心跳
                         _ = heartbeat.tick() => {
                             // 发送 WebSocket 协议层 Ping (维持 WS 长连接)
@@ -256,7 +303,18 @@ impl PlaylistManager {
                                         Ok(v) => v,
                                         Err(e) => { error!("解析 JSON 失败: {}", e); continue; },
                                     };
-                                    if v["type"].as_str().unwrap_or("") != "UPDATE" { continue; }
+                                    let kind = v["type"].as_str().unwrap_or("");
+                                    if kind != "UPDATE" {
+                                        // 遥控命令交给引擎执行，其余消息与本客户端无关。
+                                        if kind == "remote:command" {
+                                            if let Some(commands) = &command_tx {
+                                                if commands.send(v).is_err() {
+                                                    debug!("遥控命令通道已关闭");
+                                                }
+                                            }
+                                        }
+                                        continue;
+                                    }
                                     info!("收到 WS UPDATE 消息: {:?}", v);
                                     let incoming_hash = v["hash"].as_str().unwrap_or("");
                                     let current_hash = self_clone.hash.lock().await.clone().unwrap_or_default();
@@ -304,5 +362,13 @@ impl PlaylistManager {
                 }
             }
         })
+    }
+}
+
+/// 等待遥控状态帧；未接入遥控时永久等待，避免 select 空转。
+async fn next_remote_frame(rx: &mut Option<mpsc::UnboundedReceiver<String>>) -> Option<String> {
+    match rx {
+        Some(rx) => rx.recv().await,
+        None => std::future::pending().await,
     }
 }

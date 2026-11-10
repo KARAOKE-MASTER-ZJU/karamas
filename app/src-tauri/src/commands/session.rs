@@ -29,6 +29,7 @@ pub async fn start_casting<R: tauri::Runtime>(
     state: State<'_, BridgeState>,
     server_url: String,
     room_id: String,
+    app_id: String,
     target: CastTarget,
     initial_quality: PlaybackQuality,
 ) -> CommandResult<()> {
@@ -36,6 +37,15 @@ pub async fn start_casting<R: tauri::Runtime>(
         .ok_or_else(|| CommandError::new("INVALID_ARGUMENT", "不支持的清晰度"))?;
     let media_quality = (quality, initial_quality.format.unwrap_or_default());
     let url = http_url(&server_url)?;
+    let app_id = app_id.trim().to_owned();
+    if app_id.is_empty()
+        || app_id.len() > 128
+        || !app_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+    {
+        return Err(CommandError::new("INVALID_ARGUMENT", "客户端标识无效"));
+    }
     if url.query().is_some() || url.fragment().is_some() || room_id.trim().is_empty() {
         return Err(CommandError::new(
             "INVALID_ARGUMENT",
@@ -74,12 +84,20 @@ pub async fn start_casting<R: tauri::Runtime>(
                 }),
                 runtime,
                 media_quality,
+                app_id,
             )
             .await
         }
         CastTarget::Dlna { location } => {
-            karamas_core::start_engine_core(server_url, room_id, location, runtime, media_quality)
-                .await
+            karamas_core::start_engine_core(
+                server_url,
+                room_id,
+                location,
+                runtime,
+                media_quality,
+                app_id,
+            )
+            .await
         }
         CastTarget::Bilibili {
             session,
@@ -94,6 +112,7 @@ pub async fn start_casting<R: tauri::Runtime>(
                 sender_buvid,
                 runtime,
                 quality,
+                app_id,
             )
             .await
         }

@@ -71,6 +71,7 @@ export const castingApi = {
     call<BilibiliDevice[]>("list_bilibili_devices", { session }),
   start: async (
     room: ConnectionConfig,
+    appId: string,
     target:
       | { kind: "local" }
       | { kind: "dlna"; location: string }
@@ -82,7 +83,12 @@ export const castingApi = {
         },
     initialQuality: PlaybackQuality,
   ) => {
-    await call<void>("start_casting", { ...room, target, initialQuality });
+    await call<void>("start_casting", {
+      ...room,
+      appId,
+      target,
+      initialQuality,
+    });
   },
   reportLocalPlayback: (report: LocalReport) =>
     call<boolean>("report_local_playback", { report }),

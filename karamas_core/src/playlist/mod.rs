@@ -8,4 +8,5 @@ mod sync;
 
 pub(crate) use commands::SwitchSongError;
 pub use manager::PlaylistManager;
+pub(crate) use sync::RemoteSync;
 pub use parts::PartError;
