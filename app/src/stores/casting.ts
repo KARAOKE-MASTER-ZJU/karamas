@@ -194,6 +194,7 @@ export const useCastingStore = defineStore("casting", () => {
       await castingApi.start(
         config,
         preferences.ensureAppId(),
+        preferences.preferences.remoteControlEnabled,
         device.kind === "dlna"
           ? { kind: "dlna", location: device.location }
           : device.kind === "local"

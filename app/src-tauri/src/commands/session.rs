@@ -30,6 +30,7 @@ pub async fn start_casting<R: tauri::Runtime>(
     server_url: String,
     room_id: String,
     app_id: String,
+    remote_control: bool,
     target: CastTarget,
     initial_quality: PlaybackQuality,
 ) -> CommandResult<()> {
@@ -85,6 +86,7 @@ pub async fn start_casting<R: tauri::Runtime>(
                 runtime,
                 media_quality,
                 app_id,
+                remote_control,
             )
             .await
         }
@@ -96,6 +98,7 @@ pub async fn start_casting<R: tauri::Runtime>(
                 runtime,
                 media_quality,
                 app_id,
+                remote_control,
             )
             .await
         }
@@ -113,6 +116,7 @@ pub async fn start_casting<R: tauri::Runtime>(
                 runtime,
                 quality,
                 app_id,
+                remote_control,
             )
             .await
         }

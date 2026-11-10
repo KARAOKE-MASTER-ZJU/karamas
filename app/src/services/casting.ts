@@ -72,6 +72,7 @@ export const castingApi = {
   start: async (
     room: ConnectionConfig,
     appId: string,
+    remoteControl: boolean,
     target:
       | { kind: "local" }
       | { kind: "dlna"; location: string }
@@ -86,6 +87,7 @@ export const castingApi = {
     await call<void>("start_casting", {
       ...room,
       appId,
+      remoteControl,
       target,
       initialQuality,
     });

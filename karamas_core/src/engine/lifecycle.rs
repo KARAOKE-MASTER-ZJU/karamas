@@ -35,6 +35,7 @@ pub async fn start_engine_core(
     rt: tokio::runtime::Handle,
     initial_quality: (Quality, MediaFormat),
     app_id: String,
+    remote_control: bool,
 ) -> Result<(), CoreError> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     info!("开始初始化核心引擎: {}, Room: {}", loc_str, room_id);
@@ -52,6 +53,7 @@ pub async fn start_engine_core(
     let caster: Arc<dyn cast::Caster> =
         Arc::new(DlnaCaster::new(controller, device, local_ip_addr, port)
             .with_sessions(shared_state.media_sessions.clone()));
+    let identity = remote_control.then(|| RemoteIdentity::new(app_id, "dlna", target_name));
 
     connect_room(
         base_url_str,
@@ -61,7 +63,7 @@ pub async fn start_engine_core(
         port,
         cache,
         rt,
-        Some(RemoteIdentity::new(app_id, "dlna", target_name)),
+        identity,
     )
     .await?;
 
@@ -180,6 +182,7 @@ pub async fn start_bilibili_engine_core(
     rt: tokio::runtime::Handle,
     initial_quality: Quality,
     app_id: String,
+    remote_control: bool,
 ) -> Result<(), CoreError> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     info!("开始初始化Bilibili引擎, Room: {}", room_id);
@@ -190,6 +193,8 @@ pub async fn start_bilibili_engine_core(
     caster.initialize_quality(initial_quality);
     caster.start_broadcast();
     let cache = Arc::new(Mutex::new(std::collections::HashMap::new()));
+    let identity =
+        remote_control.then(|| RemoteIdentity::new(app_id, "bilibili", "小电视".to_owned()));
     connect_room(
         base_url_str,
         room_id,
@@ -198,7 +203,7 @@ pub async fn start_bilibili_engine_core(
         0,
         cache,
         rt,
-        Some(RemoteIdentity::new(app_id, "bilibili", "小电视".to_owned())),
+        identity,
     )
     .await
 }
@@ -211,6 +216,7 @@ pub async fn start_local_engine_core(
     rt: tokio::runtime::Handle,
     initial_quality: (Quality, MediaFormat),
     app_id: String,
+    remote_control: bool,
 ) -> Result<(), CoreError> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     reset_engine();
@@ -223,15 +229,7 @@ pub async fn start_local_engine_core(
     caster
         .set_media_quality(initial_quality.0, initial_quality.1)
         .await?;
-    connect_room(
-        base_url,
-        room_id,
-        caster,
-        ip,
-        port,
-        cache,
-        rt,
-        Some(RemoteIdentity::new(app_id, "local", "本机播放".to_owned())),
-    )
-    .await
+    let identity =
+        remote_control.then(|| RemoteIdentity::new(app_id, "local", "本机播放".to_owned()));
+    connect_room(base_url, room_id, caster, ip, port, cache, rt, identity).await
 }
