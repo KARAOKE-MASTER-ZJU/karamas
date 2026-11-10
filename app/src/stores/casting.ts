@@ -266,6 +266,12 @@ export const useCastingStore = defineStore("casting", () => {
       connecting.value = false;
     }
   }
+  // 退出房间要同时结束投屏会话，否则后台仍在同步歌单和自动切歌。
+  async function leaveRoom() {
+    if (busy.value) return;
+    await disconnect();
+    room.value = null;
+  }
   async function refreshVolume() {
     const currentRevision = revision;
     if (
@@ -507,6 +513,7 @@ export const useCastingStore = defineStore("casting", () => {
     busy,
     connect,
     enterRoom,
+    leaveRoom,
     disconnect,
     poll,
     control,

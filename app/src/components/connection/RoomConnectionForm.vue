@@ -60,26 +60,45 @@ async function enterRoom(entryMode: RoomEntryMode) {
       notify("已加入房间，但无法保存本机配置。", "warning");
   }
 }
+
+async function leaveRoom() {
+  try {
+    await casting.leaveRoom();
+  } catch (error) {
+    notify(errorMessage(error), "error");
+  }
+}
 </script>
 
 <template>
   <section class="content-section" aria-labelledby="room-title">
     <div class="room-heading">
       <h2 id="room-title">点歌房间</h2>
-      <p
-        class="room-status"
-        :class="{ joined: casting.room !== null }"
-        :title="casting.room?.serverUrl"
-        role="status"
-      >
-        {{
-          casting.enteringRoom
-            ? "正在加入…"
-            : casting.room
-              ? `已加入：${casting.room.roomId}`
-              : "未加入"
-        }}
-      </p>
+      <div class="room-heading-status">
+        <p
+          class="room-status"
+          :class="{ joined: casting.room !== null }"
+          :title="casting.room?.serverUrl"
+          role="status"
+        >
+          {{
+            casting.enteringRoom
+              ? "正在加入…"
+              : casting.room
+                ? `已加入：${casting.room.roomId}`
+                : "未加入"
+          }}
+        </p>
+        <button
+          v-if="casting.room"
+          class="button text-button room-leave"
+          type="button"
+          :disabled="casting.busy"
+          @click="leaveRoom"
+        >
+          退出房间
+        </button>
+      </div>
     </div>
     <form
       class="room-form"
@@ -143,6 +162,17 @@ async function enterRoom(entryMode: RoomEntryMode) {
   flex-wrap: wrap;
   gap: 8px 16px;
   margin-bottom: 20px;
+}
+.room-heading-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.room-leave {
+  min-height: 28px;
+  padding: 4px 8px;
+  font-size: 12px;
 }
 .room-status {
   min-width: 0;
