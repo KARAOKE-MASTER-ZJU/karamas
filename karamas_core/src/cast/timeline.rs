@@ -10,6 +10,7 @@ pub(crate) struct PlaybackTimeline {
     measured_at: Instant,
     confirmed: bool,
     last_reported: Option<u32>,
+    frozen: bool,
 }
 
 impl Default for PlaybackTimeline {
@@ -21,13 +22,14 @@ impl Default for PlaybackTimeline {
             measured_at: Instant::now(),
             confirmed: false,
             last_reported: None,
+            frozen: false,
         }
     }
 }
 
 impl PlaybackTimeline {
     fn current_secs(&self) -> u32 {
-        let elapsed = if self.position.is_some() && self.playing != Some(false) {
+        let elapsed = if self.position.is_some() && self.playing != Some(false) && !self.frozen {
             self.measured_at.elapsed().as_secs().min(u32::MAX as u64) as u32
         } else {
             0
@@ -44,6 +46,13 @@ impl PlaybackTimeline {
         self.total.get_or_insert(duration);
         self.playing.get_or_insert(true);
         self.confirmed = true;
+        self.frozen = false;
+    }
+
+    /// 切歌等待期间停止本地累加，保留设备回传校正和播放状态。
+    pub fn freeze(&mut self) {
+        self.update(None, None);
+        self.frozen = true;
     }
 
     pub fn snapshot(&self) -> Option<PlaybackSnapshot> {

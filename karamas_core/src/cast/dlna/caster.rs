@@ -437,6 +437,10 @@ impl Caster for DlnaCaster {
         self.playback().snapshot()
     }
 
+    fn freeze_progress(&self) {
+        self.playback().freeze();
+    }
+
     async fn refresh_playback(&self) {
         let revision = {
             let Ok(_transport) = self.transport.try_lock() else {

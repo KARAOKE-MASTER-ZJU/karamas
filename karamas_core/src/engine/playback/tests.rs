@@ -18,6 +18,7 @@ struct TestCaster {
     progress_reply: Notify,
     refresh_started: Notify,
     refresh_reply: Notify,
+    progress_frozen: AtomicBool,
 }
 
 impl TestCaster {
@@ -36,6 +37,7 @@ impl TestCaster {
             progress_reply: Notify::new(),
             refresh_started: Notify::new(),
             refresh_reply: Notify::new(),
+            progress_frozen: AtomicBool::new(false),
         }
     }
 }
@@ -73,6 +75,9 @@ impl Caster for TestCaster {
     }
     fn playback_snapshot(&self) -> Option<crate::cast::PlaybackSnapshot> {
         *self.snapshot.lock().unwrap()
+    }
+    fn freeze_progress(&self) {
+        self.progress_frozen.store(true, Ordering::SeqCst);
     }
     async fn refresh_playback(&self) {
         self.refresh_started.notify_one();
@@ -385,6 +390,7 @@ async fn pending_device_query_does_not_block_progress_or_auto_next() {
         !gate.auto_next.observe_finished(),
         "查询未返回时仍应按进度切歌"
     );
+    assert!(caster.progress_frozen.load(Ordering::SeqCst));
     gate.auto_next.cancel_pending_request();
 }
 

@@ -189,6 +189,9 @@ pub trait Caster: Send + Sync {
     /// 在独立任务中查询设备并校正状态，耗时请求不阻塞进度采样。
     async fn refresh_playback(&self) {}
 
+    /// 发起自动切歌时冻结本地估算进度，设备播放和状态回传继续处理。
+    fn freeze_progress(&self) {}
+
     /// 返回本地维护的播放快照；没有快照时沿用进度查询接口。
     fn playback_snapshot(&self) -> Option<PlaybackSnapshot> {
         None

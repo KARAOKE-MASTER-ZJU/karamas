@@ -115,6 +115,7 @@ pub(super) async fn sample_progress(ctx: &EngineContext) -> (i32, i32) {
     };
     if should_advance {
         info!("歌曲即将结束，启动一次自动切歌任务");
+        ctx.caster.freeze_progress();
         gate.auto_next
             .start_request(ctx.playlist_manager.clone(), hash, &ctx.rt);
     }

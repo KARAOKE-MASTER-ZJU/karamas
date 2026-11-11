@@ -15,6 +15,10 @@ pub(super) struct DlnaPlayback {
 }
 
 impl DlnaPlayback {
+    pub fn freeze(&mut self) {
+        self.timeline.freeze();
+    }
+
     pub fn begin_song(&mut self) {
         self.previous_position = self.snapshot().map(|state| state.progress.current_secs);
         self.timeline = PlaybackTimeline::default();
@@ -88,5 +92,41 @@ impl DlnaPlayback {
         }
         self.timeline.report(current, Some(total), None);
         self.snapshot().map(|state| state.is_playing) != was_playing
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test(start_paused = true)]
+    async fn switching_freezes_local_time_until_new_playback() {
+        let mut playback = DlnaPlayback::default();
+        playback.start(0);
+        let revision = playback.query_revision().unwrap();
+        playback.report(revision, Some(0), 180);
+        playback.report(revision, Some(178), 180);
+        playback.freeze();
+        tokio::time::advance(Duration::from_secs(10)).await;
+        let state = playback.snapshot().unwrap();
+        assert_eq!(state.progress.current_secs, 178);
+        assert!(state.is_playing);
+
+        // 设备回包仍能校准位置，但不能重新启动本地累加。
+        playback.report(revision, Some(179), 180);
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert_eq!(playback.snapshot().unwrap().progress.current_secs, 179);
+
+        playback.begin_song();
+        playback.start(0);
+        let revision = playback.query_revision().unwrap();
+        tokio::time::advance(Duration::from_secs(1)).await;
+        playback.report(revision, Some(179), 180);
+        assert_eq!(playback.snapshot().unwrap().progress.current_secs, 1);
+        playback.report(revision, Some(0), 240);
+        tokio::time::advance(Duration::from_secs(2)).await;
+        let state = playback.snapshot().unwrap();
+        assert_eq!(state.progress.current_secs, 2);
+        assert!(state.is_playing);
     }
 }
