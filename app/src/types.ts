@@ -18,6 +18,8 @@ export interface Preferences extends ConnectionConfig {
   appId: string;
   /** 是否允许网页遥控，默认关闭；下次连接生效。 */
   remoteControlEnabled: boolean;
+  /** 网页遥控列表里显示的名字，留空使用系统默认。 */
+  deviceName: string;
   theme: Theme;
   logLevel: LogLevel;
   dlnaProxyEnabled: boolean;

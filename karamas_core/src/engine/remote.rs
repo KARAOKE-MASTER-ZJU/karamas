@@ -35,21 +35,41 @@ pub(crate) fn wake() {
     }
 }
 
+/// 宿主传入的客户端标识；名字由用户在设置里决定。
+pub struct RemoteClient {
+    pub app_id: String,
+    pub name: String,
+}
+
 /// 注册时上报的执行端身份。
 pub struct RemoteIdentity {
     pub app_id: String,
+    pub name: String,
     pub mode: &'static str,
     pub target_name: String,
 }
 
 impl RemoteIdentity {
-    pub fn new(app_id: String, mode: &'static str, target_name: String) -> Self {
+    pub fn new(app_id: String, name: String, mode: &'static str, target_name: String) -> Self {
+        // 名字只用于展示：留空回退到平台名，超出协议上限就截断。
+        let name = name.trim();
+        let name = if name.is_empty() {
+            default_remote_name()
+        } else {
+            name.chars().take(80).collect()
+        };
         Self {
             app_id,
+            name,
             mode,
             target_name,
         }
     }
+}
+
+/// 未设置设备名称时上报的名字。
+pub fn default_remote_name() -> String {
+    format!("{} 投屏", platform_label())
 }
 
 fn platform_label() -> &'static str {
@@ -68,7 +88,7 @@ fn registration_frame(identity: &RemoteIdentity) -> String {
         "v": 1,
         "type": "remote:register",
         "appId": identity.app_id,
-        "name": format!("{} 投屏", platform_label()),
+        "name": identity.name,
         "target": { "name": identity.target_name, "mode": identity.mode },
     })
     .to_string()

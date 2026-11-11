@@ -30,6 +30,7 @@ pub async fn start_casting<R: tauri::Runtime>(
     server_url: String,
     room_id: String,
     app_id: String,
+    remote_name: String,
     remote_control: bool,
     target: CastTarget,
     initial_quality: PlaybackQuality,
@@ -47,6 +48,11 @@ pub async fn start_casting<R: tauri::Runtime>(
     {
         return Err(CommandError::new("INVALID_ARGUMENT", "客户端标识无效"));
     }
+    // 名字只用于展示，留空时由核心库回退到平台默认名。
+    let remote = remote_control.then(|| karamas_core::RemoteClient {
+        app_id,
+        name: remote_name.trim().chars().take(80).collect(),
+    });
     if url.query().is_some() || url.fragment().is_some() || room_id.trim().is_empty() {
         return Err(CommandError::new(
             "INVALID_ARGUMENT",
@@ -85,8 +91,7 @@ pub async fn start_casting<R: tauri::Runtime>(
                 }),
                 runtime,
                 media_quality,
-                app_id,
-                remote_control,
+                remote,
             )
             .await
         }
@@ -97,8 +102,7 @@ pub async fn start_casting<R: tauri::Runtime>(
                 location,
                 runtime,
                 media_quality,
-                app_id,
-                remote_control,
+                remote,
             )
             .await
         }
@@ -115,8 +119,7 @@ pub async fn start_casting<R: tauri::Runtime>(
                 sender_buvid,
                 runtime,
                 quality,
-                app_id,
-                remote_control,
+                remote,
             )
             .await
         }
@@ -163,6 +166,12 @@ pub async fn set_dlna_hls_direct(enabled: bool) {
 #[tauri::command]
 pub async fn set_proxy_device_only(enabled: bool) {
     karamas_core::set_proxy_device_only(enabled);
+}
+
+/// 网页遥控使用的默认设备名称。
+#[tauri::command]
+pub fn default_device_name() -> String {
+    karamas_core::default_remote_name()
 }
 
 /// 读取 DLNA 直连设置。

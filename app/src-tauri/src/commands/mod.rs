@@ -37,6 +37,7 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         devices::discover_dlna_device,
         devices::list_bilibili_devices,
         session::start_casting,
+        session::default_device_name,
         session::disconnect_casting,
         session::get_dlna_direct,
         session::set_dlna_direct,

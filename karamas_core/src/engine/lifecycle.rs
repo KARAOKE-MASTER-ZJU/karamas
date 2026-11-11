@@ -1,7 +1,7 @@
 use super::{
     monitor::start_monitor,
     playback::update_playback,
-    remote::{self, RemoteIdentity},
+    remote::{self, RemoteClient, RemoteIdentity},
     state::{ENGINE_STATE, EngineContext},
 };
 use crate::cast::dlna::settings::{reset_dlna_media_quality, set_dlna_media_quality};
@@ -34,8 +34,7 @@ pub async fn start_engine_core(
     loc_str: String,
     rt: tokio::runtime::Handle,
     initial_quality: (Quality, MediaFormat),
-    app_id: String,
-    remote_control: bool,
+    remote: Option<RemoteClient>,
 ) -> Result<(), CoreError> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     info!("开始初始化核心引擎: {}, Room: {}", loc_str, room_id);
@@ -53,7 +52,8 @@ pub async fn start_engine_core(
     let caster: Arc<dyn cast::Caster> =
         Arc::new(DlnaCaster::new(controller, device, local_ip_addr, port)
             .with_sessions(shared_state.media_sessions.clone()));
-    let identity = remote_control.then(|| RemoteIdentity::new(app_id, "dlna", target_name));
+    let identity =
+        remote.map(|client| RemoteIdentity::new(client.app_id, client.name, "dlna", target_name));
 
     connect_room(
         base_url_str,
@@ -181,8 +181,7 @@ pub async fn start_bilibili_engine_core(
     sender_buvid: String,
     rt: tokio::runtime::Handle,
     initial_quality: Quality,
-    app_id: String,
-    remote_control: bool,
+    remote: Option<RemoteClient>,
 ) -> Result<(), CoreError> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     info!("开始初始化Bilibili引擎, Room: {}", room_id);
@@ -193,8 +192,9 @@ pub async fn start_bilibili_engine_core(
     caster.initialize_quality(initial_quality);
     caster.start_broadcast();
     let cache = Arc::new(Mutex::new(std::collections::HashMap::new()));
-    let identity =
-        remote_control.then(|| RemoteIdentity::new(app_id, "bilibili", "小电视".to_owned()));
+    let identity = remote.map(|client| {
+        RemoteIdentity::new(client.app_id, client.name, "bilibili", "小电视".to_owned())
+    });
     connect_room(
         base_url_str,
         room_id,
@@ -215,8 +215,7 @@ pub async fn start_local_engine_core(
     send: crate::cast::local::LocalCommandSink,
     rt: tokio::runtime::Handle,
     initial_quality: (Quality, MediaFormat),
-    app_id: String,
-    remote_control: bool,
+    remote: Option<RemoteClient>,
 ) -> Result<(), CoreError> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     reset_engine();
@@ -229,7 +228,8 @@ pub async fn start_local_engine_core(
     caster
         .set_media_quality(initial_quality.0, initial_quality.1)
         .await?;
-    let identity =
-        remote_control.then(|| RemoteIdentity::new(app_id, "local", "本机播放".to_owned()));
+    let identity = remote.map(|client| {
+        RemoteIdentity::new(client.app_id, client.name, "local", "本机播放".to_owned())
+    });
     connect_room(base_url, room_id, caster, ip, port, cache, rt, identity).await
 }

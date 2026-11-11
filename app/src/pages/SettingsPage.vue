@@ -8,9 +8,10 @@ import { usePreferencesStore } from "@/stores/preferences";
 import { useOperationNotice } from "@/composables/useOperationNotice";
 import { useBilibiliStore } from "@/stores/bilibili";
 import { useCastingStore } from "@/stores/casting";
-import { errorMessage } from "@/services/casting";
-import { ref } from "vue";
+import { castingApi, errorMessage } from "@/services/casting";
+import { onMounted, ref } from "vue";
 import SettingSwitch from "@/components/base/SettingSwitch.vue";
+import DeviceNameDialog from "@/components/DeviceNameDialog.vue";
 import type { LogLevel, Theme } from "@/types";
 import { useLogsStore } from "@/stores/logs";
 import { logLevelLabels } from "@/utils/logs";
@@ -22,6 +23,8 @@ const casting = useCastingStore();
 const loggingOut = ref(false);
 const logs = useLogsStore();
 const changingLogLevel = ref(false);
+const showDeviceName = ref(false);
+const defaultDeviceName = ref("");
 const { preferences } = storeToRefs(store);
 const { notify } = useOperationNotice();
 const themes: { value: Theme; label: string }[] = [
@@ -66,6 +69,13 @@ async function updateDlnaHlsDirect() {
     notify(`设置 HLS 播放失败：${errorMessage(error)}`, "error");
   }
 }
+onMounted(async () => {
+  try {
+    defaultDeviceName.value = await castingApi.defaultDeviceName();
+  } catch {
+    defaultDeviceName.value = "";
+  }
+});
 function updateRemoteControl(enabled: boolean) {
   if (!store.saveRemoteControlEnabled(enabled))
     notify("无法保存网页遥控设置，请检查本机存储是否可用。", "error");
@@ -140,6 +150,13 @@ async function logout() {
           <ChevronDown :size="16" aria-hidden="true" />
         </div>
       </div>
+      <button type="button" class="settings-row" @click="showDeviceName = true">
+        <span>设备名称</span>
+        <span class="settings-value">
+          {{ preferences.deviceName || defaultDeviceName }}
+          <ChevronRight :size="18" />
+        </span>
+      </button>
       <RouterLink class="settings-row" :to="{ name: 'logs' }">
         <span>运行日志</span><ChevronRight :size="18" />
       </RouterLink>
@@ -177,6 +194,11 @@ async function logout() {
         @change="updateRemoteControl"
       />
     </section>
+    <DeviceNameDialog
+      v-if="showDeviceName"
+      :default-name="defaultDeviceName"
+      @close="showDeviceName = false"
+    />
     <section class="content-section" aria-labelledby="account-title">
       <h2 id="account-title">账号</h2>
       <div class="settings-row">
@@ -265,6 +287,15 @@ async function logout() {
 }
 .settings-select {
   width: 140px;
+}
+.settings-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  justify-content: flex-end;
 }
 .about-row {
   display: flex;

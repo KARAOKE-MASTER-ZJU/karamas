@@ -17,6 +17,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     roomId: "",
     appId: "",
     remoteControlEnabled: false,
+    deviceName: "",
     theme: "system",
     logLevel: "info",
     dlnaProxyEnabled: true,
@@ -90,6 +91,8 @@ export const usePreferencesStore = defineStore("preferences", () => {
           typeof stored.remoteControlEnabled === "boolean"
         )
           preferences.remoteControlEnabled = stored.remoteControlEnabled;
+        if ("deviceName" in stored && typeof stored.deviceName === "string")
+          preferences.deviceName = stored.deviceName;
         if (
           "theme" in stored &&
           (stored.theme === "system" ||
@@ -161,6 +164,10 @@ export const usePreferencesStore = defineStore("preferences", () => {
     return save({ remoteControlEnabled });
   }
 
+  function saveDeviceName(deviceName: string): boolean {
+    return save({ deviceName: deviceName.trim() });
+  }
+
   function saveProxyDeviceOnly(proxyDeviceOnly: boolean): boolean {
     return save({ proxyDeviceOnly });
   }
@@ -184,6 +191,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     saveDlnaHlsDirectEnabled,
     saveProxyDeviceOnly,
     saveRemoteControlEnabled,
+    saveDeviceName,
   };
 });
 

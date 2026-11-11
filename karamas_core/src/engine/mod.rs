@@ -5,6 +5,8 @@ mod monitor;
 mod parts;
 mod playback;
 pub(crate) mod remote;
+
+pub use remote::{RemoteClient, default_remote_name};
 mod state;
 
 pub use controls::{

@@ -1,12 +1,12 @@
 <script setup lang="ts">
 defineOptions({ inheritAttrs: false });
-defineProps<{ id: string; label: string; error?: string }>();
+defineProps<{ id: string; label?: string; error?: string }>();
 const model = defineModel<string>({ required: true });
 </script>
 
 <template>
   <div class="field">
-    <label :for="id">{{ label }}</label>
+    <label v-if="label" :for="id">{{ label }}</label>
     <input
       v-bind="$attrs"
       :id="id"
