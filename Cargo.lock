@@ -2795,7 +2795,7 @@ dependencies = [
 
 [[package]]
 name = "karamas"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -2830,7 +2830,7 @@ dependencies = [
 
 [[package]]
 name = "karamas_core"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "actix-files",
  "actix-web",
