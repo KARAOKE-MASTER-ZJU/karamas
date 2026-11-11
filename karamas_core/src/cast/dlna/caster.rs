@@ -178,7 +178,7 @@ impl DlnaCaster {
             return Err(CastError::Device("播放请求已过期".into()));
         }
         let set_uri_started = std::time::Instant::now();
-        if direct {
+        let transport_uri = if direct {
             if !hls_direct {
                 if let Some(sessions) = &self.sessions {
                     sessions.clear();
@@ -186,26 +186,31 @@ impl DlnaCaster {
                 self.loaded_generation
                     .store(0, std::sync::atomic::Ordering::Relaxed);
             }
-            self.controller
-                .set_avtransport_url(&self.device, &media_url, "")
-                .await
-                .map_err(|error| self.failure("设置直连媒体地址", error))?;
+            media_url
         } else {
-            let media_path = self.sessions
+            let media_path = self
+                .sessions
                 .as_ref()
                 .ok_or_else(|| CastError::Device("媒体代理尚未初始化".into()))?
                 .proxy_path(&media_url);
-            self.controller
-                .set_avtransport_uri(
-                    &self.device,
-                    &media_path,
-                    "",
-                    self.server_ip,
-                    self.server_port,
+            format!(
+                "http://{}:{}/{}",
+                self.server_ip, self.server_port, media_path
+            )
+        };
+        self.controller
+            .set_avtransport_url(&self.device, &transport_uri, "")
+            .await
+            .map_err(|error| {
+                self.failure(
+                    if direct {
+                        "设置直连媒体地址"
+                    } else {
+                        "设置媒体地址"
+                    },
+                    error,
                 )
-                .await
-                .map_err(|error| self.failure("设置媒体地址", error))?;
-        }
+            })?;
         let set_uri_ms = set_uri_started.elapsed().as_millis();
         if session.as_ref().is_some_and(|s| s.is_stopped()) {
             return Err(CastError::Device("播放请求已过期".into()));
@@ -231,7 +236,7 @@ impl DlnaCaster {
         if let Some(actual) = selected {
             crate::cast::dlna::settings::set_dlna_actual_quality(actual);
         }
-        self.playback().start(position);
+        self.playback().start(transport_uri, position);
         log::info!(
             target: "DLNA1080",
             "DLNA 已重载媒体: reason={}, quality={}, start={}s, total_ms={}, preparation_ms={}, transport_wait_ms={}, stop_ms={}, set_uri_ms={}, play_ms={}",
@@ -452,11 +457,11 @@ impl Caster for DlnaCaster {
             revision
         };
         match self.controller.get_progress_update(&self.device).await {
-            Ok((current, total)) => {
+            Ok(position) => {
                 let Ok(_transport) = self.transport.try_lock() else {
                     return;
                 };
-                if !self.is_live() && self.playback().report(revision, current, total) {
+                if !self.is_live() && self.playback().report(revision, &position) {
                     crate::engine::remote::wake();
                 }
             }

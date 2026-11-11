@@ -13,6 +13,14 @@ use tokio::time::timeout;
 
 mod ssdp_discovery;
 
+/// 同一次 GetPositionInfo 响应中的媒体地址和进度。
+#[derive(Debug)]
+pub(crate) struct PositionInfo {
+    pub track_uri: Option<String>,
+    pub current_secs: Option<u32>,
+    pub total_secs: u32,
+}
+
 /// 兼容模式的单次 SOAP 请求超时。
 const SOAP_TIMEOUT_COMPAT: Duration = Duration::from_millis(1500);
 
@@ -863,19 +871,20 @@ impl DlnaController {
 
     /// 获取当前播放进度，返回 (当前时间秒, 总时长秒)；总时长为 0 表示未知。
     pub async fn get_secs(&self, device: &DlnaDevice) -> Result<(u32, u32), rupnp::Error> {
-        let (current, total) = self.get_progress_update(device).await?;
-        let current = current.ok_or(rupnp::Error::ParseError(
+        let position = self.get_progress_update(device).await?;
+        let current = position.current_secs.ok_or(rupnp::Error::ParseError(
             "设备未返回有效的 RelTime 播放进度",
         ))?;
-        Ok((current, total))
+        Ok((current, position.total_secs))
     }
 
     /// 分别解析位置和时长，缺少当前位置时仍保留可用的总时长。
     pub(crate) async fn get_progress_update(
         &self,
         device: &DlnaDevice,
-    ) -> Result<(Option<u32>, u32), rupnp::Error> {
-        let position_info = self.get_position_info(device).await?;
+    ) -> Result<PositionInfo, rupnp::Error> {
+        let mut position_info = self.get_position_info(device).await?;
+        let track_uri = position_info.remove("TrackURI");
         let current_secs = position_info
             .get("RelTime")
             .and_then(|value| parse_time_secs(value));
@@ -884,11 +893,16 @@ impl DlnaController {
             .and_then(|value| parse_time_secs(value))
             .unwrap_or(0);
         log::trace!(
-            "get_progress_update() : current_secs={:?}, total_secs={}",
+            "get_progress_update() : track_uri={:?}, current_secs={:?}, total_secs={}",
+            track_uri,
             current_secs,
             total_secs
         );
-        Ok((current_secs, total_secs))
+        Ok(PositionInfo {
+            track_uri,
+            current_secs,
+            total_secs,
+        })
     }
 
     // 设置播放进度（跳转到指定秒数）

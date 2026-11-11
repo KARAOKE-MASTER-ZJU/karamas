@@ -1,3 +1,4 @@
+use super::controller::PositionInfo;
 use crate::cast::{PlaybackSnapshot, timeline::PlaybackTimeline};
 use tokio::time::{Duration, Instant};
 
@@ -9,6 +10,7 @@ const PAUSE_DETECTION_WINDOW: Duration = Duration::from_secs(3);
 pub(super) struct DlnaPlayback {
     timeline: PlaybackTimeline,
     revision: u64,
+    media_uri: Option<String>,
     previous_position: Option<u32>,
     protect_until: Option<Instant>,
     observed_position: Option<(u32, Instant)>,
@@ -22,15 +24,17 @@ impl DlnaPlayback {
     pub fn begin_song(&mut self) {
         self.previous_position = self.snapshot().map(|state| state.progress.current_secs);
         self.timeline = PlaybackTimeline::default();
+        self.media_uri = None;
         self.protect_until = None;
         self.observed_position = None;
         self.revision += 1;
     }
 
-    pub fn start(&mut self, position: u32) {
+    pub fn start(&mut self, media_uri: String, position: u32) {
         if let Some(state) = self.snapshot() {
             self.previous_position = Some(state.progress.current_secs);
         }
+        self.media_uri = Some(media_uri);
         self.timeline.update(Some(position), Some(true));
         self.timeline.confirm_play(0);
         self.protect_until = Some(Instant::now() + OLD_PROGRESS_WINDOW);
@@ -59,10 +63,26 @@ impl DlnaPlayback {
     }
 
     /// 返回播放状态是否变化，供调用方触发状态上报。
-    pub fn report(&mut self, revision: u64, current: Option<u32>, total: u32) -> bool {
+    pub fn report(&mut self, revision: u64, position: &PositionInfo) -> bool {
         if self.revision != revision {
             return false;
         }
+        if let Some(uri) = position
+            .track_uri
+            .as_deref()
+            .filter(|uri| !uri.trim().is_empty() && *uri != "NOT_IMPLEMENTED")
+        {
+            if self.media_uri.as_deref() != Some(uri) {
+                log::trace!(
+                    "忽略其他媒体的 DLNA 进度：expected={:?}, position={:?}",
+                    self.media_uri,
+                    position
+                );
+                return false;
+            }
+        }
+        let current = position.current_secs;
+        let total = position.total_secs;
         if let Some(deadline) = self.protect_until {
             let rewound = current.is_some_and(|current| {
                 current == 0 || self.previous_position.is_some_and(|old| current < old)
@@ -99,13 +119,21 @@ impl DlnaPlayback {
 mod tests {
     use super::*;
 
+    fn position(current: u32, total: u32) -> PositionInfo {
+        PositionInfo {
+            track_uri: None,
+            current_secs: Some(current),
+            total_secs: total,
+        }
+    }
+
     #[tokio::test(start_paused = true)]
     async fn switching_freezes_local_time_until_new_playback() {
         let mut playback = DlnaPlayback::default();
-        playback.start(0);
+        playback.start("https://cdn.example/video.mp4".into(), 0);
         let revision = playback.query_revision().unwrap();
-        playback.report(revision, Some(0), 180);
-        playback.report(revision, Some(178), 180);
+        playback.report(revision, &position(0, 180));
+        playback.report(revision, &position(178, 180));
         playback.freeze();
         tokio::time::advance(Duration::from_secs(10)).await;
         let state = playback.snapshot().unwrap();
@@ -113,17 +141,17 @@ mod tests {
         assert!(state.is_playing);
 
         // 设备回包仍能校准位置，但不能重新启动本地累加。
-        playback.report(revision, Some(179), 180);
+        playback.report(revision, &position(179, 180));
         tokio::time::advance(Duration::from_secs(1)).await;
         assert_eq!(playback.snapshot().unwrap().progress.current_secs, 179);
 
         playback.begin_song();
-        playback.start(0);
+        playback.start("https://cdn.example/video.mp4".into(), 0);
         let revision = playback.query_revision().unwrap();
         tokio::time::advance(Duration::from_secs(1)).await;
-        playback.report(revision, Some(179), 180);
+        playback.report(revision, &position(179, 180));
         assert_eq!(playback.snapshot().unwrap().progress.current_secs, 1);
-        playback.report(revision, Some(0), 240);
+        playback.report(revision, &position(0, 240));
         tokio::time::advance(Duration::from_secs(2)).await;
         let state = playback.snapshot().unwrap();
         assert_eq!(state.progress.current_secs, 2);
