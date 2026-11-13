@@ -1,0 +1,57 @@
+.diagnostic-form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 20px;
+  width: 100%;
+}
+.diagnostic-form > .field {
+  width: 100%;
+}
+.diagnostic-form .select-control select {
+  text-overflow: ellipsis;
+}
+.diagnostic-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.diagnostic-inline-fields > .field {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+.diagnostic-inline-fields > .field > label {
+  flex-shrink: 0;
+}
+.diagnostic-control-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(100%, 480px);
+}
+.diagnostic-control-row > .field {
+  flex: 1;
+}
+.diagnostic-control-row .select-control {
+  flex: 1;
+  min-width: 0;
+}
+.diagnostic-details {
+  width: 100%;
+  font-size: 13px;
+}
+.diagnostic-details > summary {
+  width: fit-content;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.diagnostic-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 24px 0;
+  font-size: 14px;
+}

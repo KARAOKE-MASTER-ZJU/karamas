@@ -10,6 +10,40 @@ use tokio::sync::{Mutex, Notify};
 
 static MEDIA_SERVER_SHUTDOWN: RwLock<Option<Arc<Notify>>> = RwLock::new(None);
 
+type ServerState = (
+    std::net::IpAddr,
+    u16,
+    Arc<Mutex<std::collections::HashMap<String, u32>>>,
+    web::Data<SharedState>,
+);
+
+pub(crate) struct DiagnosticServer {
+    pub ip: std::net::IpAddr,
+    pub port: u16,
+    pub state: web::Data<SharedState>,
+    shutdown: Arc<Notify>,
+}
+
+impl Drop for DiagnosticServer {
+    fn drop(&mut self) {
+        self.state.media_sessions.clear();
+        self.shutdown.notify_one();
+    }
+}
+
+pub(crate) fn start_diagnostic(
+    target: &str,
+    handle: tokio::runtime::Handle,
+) -> Result<DiagnosticServer, CoreError> {
+    let ((ip, port, _, state), shutdown) = spawn_with_binding(Some(target), handle, true)?;
+    Ok(DiagnosticServer {
+        ip,
+        port,
+        state,
+        shutdown,
+    })
+}
+
 /// 优先选择与目标设备最接近的本机 IPv4 地址。
 fn get_best_local_ip(target_device_ip: &str) -> String {
     let interfaces = local_ip_address::list_afinet_netifas().unwrap_or_default();
@@ -69,15 +103,23 @@ pub(crate) fn start_local(
 fn start_with_binding(
     target_device_ip: Option<&str>,
     handle: tokio::runtime::Handle,
-) -> Result<
-    (
-        std::net::IpAddr,
-        u16,
-        Arc<Mutex<std::collections::HashMap<String, u32>>>,
-        web::Data<SharedState>,
-    ),
-    CoreError,
-> {
+) -> Result<ServerState, CoreError> {
+    {
+        let mut guard = MEDIA_SERVER_SHUTDOWN.write().map_err(|_| "Lock error")?;
+        if let Some(previous) = guard.take() {
+            previous.notify_one();
+        }
+    }
+    let (state, shutdown) = spawn_with_binding(target_device_ip, handle, false)?;
+    *MEDIA_SERVER_SHUTDOWN.write().map_err(|_| "Lock error")? = Some(shutdown);
+    Ok(state)
+}
+
+fn spawn_with_binding(
+    target_device_ip: Option<&str>,
+    handle: tokio::runtime::Handle,
+    diagnostic: bool,
+) -> Result<(ServerState, Arc<Notify>), CoreError> {
     let proxy_device_ip = target_device_ip.unwrap_or("127.0.0.1").parse()?;
     let cache = Arc::new(Mutex::new(std::collections::HashMap::new()));
     let shared_state = web::Data::new(SharedState {
@@ -85,16 +127,10 @@ fn start_with_binding(
         duration_cache: cache.clone(),
         media_sessions: Arc::new(session::MediaSessions::default()),
     });
-    // 通知旧服务器关闭（防止端口冲突）
-    {
-        let mut guard = MEDIA_SERVER_SHUTDOWN.write().map_err(|_| "Lock error")?;
-        if let Some(notify) = guard.take() {
-            notify.notify_one();
-        }
-    }
-
     // 优先使用已验证的 8080，被占用时回退到内核分配
-    let (listener, port) = match std::net::TcpListener::bind(if target_device_ip.is_some() {
+    let (listener, port) = match std::net::TcpListener::bind(if diagnostic {
+        "0.0.0.0:0"
+    } else if target_device_ip.is_some() {
         "0.0.0.0:8080"
     } else {
         "127.0.0.1:0"
@@ -136,10 +172,6 @@ fn start_with_binding(
 
     let shutdown = Arc::new(Notify::new());
     let shutdown_clone = shutdown.clone();
-    {
-        let mut guard = MEDIA_SERVER_SHUTDOWN.write().map_err(|_| "Lock error")?;
-        *guard = Some(shutdown);
-    }
 
     let media_sessions = shared_state.media_sessions.clone();
     handle.spawn(async move {
@@ -157,7 +189,7 @@ fn start_with_binding(
         }
     });
 
-    Ok((local_ip_addr, port, cache, shared_state))
+    Ok(((local_ip_addr, port, cache, shared_state), shutdown))
 }
 
 /// 通知当前媒体代理停止。

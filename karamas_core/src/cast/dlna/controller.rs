@@ -97,6 +97,10 @@ fn parse_time_secs(value: &str) -> Option<u32> {
 }
 
 fn build_didl_lite_metadata(title: &str, media_url: &str, protocol_info: Option<&str>) -> String {
+    xml_escape(&didl_lite_metadata(title, media_url, protocol_info))
+}
+
+pub(crate) fn didl_lite_metadata(title: &str, media_url: &str, protocol_info: Option<&str>) -> String {
     // Build a minimal DIDL-Lite and then XML-escape it for embedding into <CurrentURIMetaData>.
     // Many renderers require at least: upnp:class + res@protocolInfo.
     // NOTE: avoid strict DLNA.ORG_PN profile binding; some renderers reject when profile ≠ actual.
@@ -106,7 +110,7 @@ fn build_didl_lite_metadata(title: &str, media_url: &str, protocol_info: Option<
     // Important: the <res> inner URL should be XML-escaped *once* (so & -> &amp;).
     let res_url = xml_escape(media_url);
 
-    let didl = format!(
+    format!(
         r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">
         <item id="0" parentID="-1" restricted="1">
         <dc:title>{}</dc:title>
@@ -119,10 +123,7 @@ fn build_didl_lite_metadata(title: &str, media_url: &str, protocol_info: Option<
         xml_escape(title),
         protocol,
         res_url
-    );
-
-    // Embed metadata as escaped XML text nodes: <CurrentURIMetaData>&lt;DIDL-Lite ...&gt;...
-    xml_escape(&didl)
+    )
 }
 
 fn build_soap_envelope(action: &str, args_xml: &str) -> String {

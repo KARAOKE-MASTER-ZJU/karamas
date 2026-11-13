@@ -5,6 +5,7 @@ mod live;
 mod routes;
 
 pub(crate) use lifecycle::{start, stop};
+pub(crate) use lifecycle::{DiagnosticServer, start_diagnostic};
 pub use routes::proxy_handler;
 
 use crate::media::session;

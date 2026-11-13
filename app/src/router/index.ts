@@ -8,6 +8,7 @@ import PlaybackPage from "@/pages/PlaybackPage.vue";
 import SettingsPage from "@/pages/SettingsPage.vue";
 import LogsPage from "@/pages/LogsPage.vue";
 import AppPageLayout from "@/components/AppPageLayout.vue";
+import { diagnosticSections } from "@/types/diagnostics";
 
 declare module "vue-router" {
   interface RouteMeta {
@@ -59,6 +60,47 @@ export const router = createRouter({
                 title: "运行日志",
                 back: { to: { name: "settings" }, label: "返回设置" },
               },
+            },
+            {
+              path: "diagnostics",
+              children: [
+                {
+                  path: "",
+                  name: "diagnostics",
+                  component: () => import("@/pages/DiagnosticsPage.vue"),
+                  meta: {
+                    title: "诊断测试",
+                    back: { to: { name: "settings" }, label: "返回设置" },
+                  },
+                },
+                ...diagnosticSections.flatMap(({ key, title }) => [
+                  {
+                    path: key,
+                    name: `diagnostic-${key}`,
+                    component: () => import("@/pages/DiagnosticTestPage.vue"),
+                    props: { kind: key },
+                    meta: {
+                      title,
+                      back: {
+                        to: { name: "diagnostics" },
+                        label: "返回诊断测试",
+                      },
+                    },
+                  },
+                  {
+                    path: `${key}/detail`,
+                    name: `diagnostic-${key}-detail`,
+                    component: () => import("@/pages/DiagnosticDetailPage.vue"),
+                    meta: {
+                      title: "请求详情",
+                      back: {
+                        to: { name: `diagnostic-${key}` },
+                        label: `返回${title}`,
+                      },
+                    },
+                  },
+                ]),
+              ],
             },
             {
               path: "license",

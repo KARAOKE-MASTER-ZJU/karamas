@@ -160,6 +160,9 @@ async function logout() {
       <RouterLink class="settings-row" :to="{ name: 'logs' }">
         <span>运行日志</span><ChevronRight :size="18" />
       </RouterLink>
+      <RouterLink class="settings-row" :to="{ name: 'diagnostics' }">
+        <span>诊断测试</span><ChevronRight :size="18" aria-hidden="true" />
+      </RouterLink>
     </section>
     <section class="content-section" aria-labelledby="dlna-title">
       <h2 id="dlna-title">DLNA 投屏</h2>

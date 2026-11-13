@@ -7,6 +7,7 @@ use tokio::{
 
 /// 只管理 Tauri 接入所需的资源，播放状态仍由核心库持有。
 pub struct BridgeState {
+    pub diagnostic_player: Mutex<Option<Arc<karamas_core::diagnostics::PlaybackTester>>>,
     /// 串行执行启动和断开，避免同时修改核心库的全局会话。
     pub lifecycle: Mutex<()>,
     /// 当前扫码任务的取消句柄，不保存登录结果。
@@ -23,6 +24,7 @@ impl BridgeState {
     /// 记录应用私有目录，目录创建延迟到首次使用时。
     pub fn new(data_dir: PathBuf, cache_dir: PathBuf) -> Self {
         Self {
+            diagnostic_player: Mutex::new(None),
             lifecycle: Mutex::new(()),
             login: Mutex::new(None),
             session_io: Mutex::new(()),

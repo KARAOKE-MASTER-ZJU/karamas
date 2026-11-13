@@ -1,0 +1,11 @@
+//! 设备描述、协议查询、播放和网络请求测试。
+mod http;
+mod playback;
+mod upnp;
+
+pub use http::{TestResponse, http_url, latency};
+pub use playback::{PlaybackTest, PlaybackTester};
+pub use upnp::{
+    Action, Argument, DeviceInfo, Service, ServiceInfo, StateVariable, device_info, query,
+    service_info,
+};

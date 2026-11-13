@@ -3,6 +3,12 @@ import type { PlaybackDisplay } from "@/types/playbackOutput";
 import { Channel, invoke, isTauri, listen } from "@/services/platform";
 import type { ConnectionConfig, LogLevel, RoomEntryMode } from "@/types";
 import type {
+  DeviceInfo,
+  ServiceInfo,
+  TestResponse,
+  PlaybackTest,
+} from "@/types/diagnostics";
+import type {
   BilibiliDevice,
   BilibiliSession,
   DlnaDevice,
@@ -33,6 +39,26 @@ export function errorMessage(error: unknown): string {
   return "操作失败，请查看运行日志。";
 }
 export const castingApi = {
+  diagnosticDevice: (location: string) =>
+    call<DeviceInfo>("diagnostic_device", { location }),
+  diagnosticService: (location: string, serviceId: string) =>
+    call<ServiceInfo>("diagnostic_service", { location, serviceId }),
+  diagnosticQuery: (
+    location: string,
+    serviceId: string,
+    action: string,
+    args: Record<string, string>,
+  ) =>
+    call<TestResponse>("diagnostic_query", {
+      location,
+      serviceId,
+      action,
+      args,
+    }),
+  diagnosticPlayback: (location: string, test: PlaybackTest) =>
+    call<TestResponse[]>("diagnostic_playback", { location, test }),
+  diagnosticLatency: (url: string, lan: boolean) =>
+    call<TestResponse>("diagnostic_latency", { url, lan }),
   listPlaybackDisplays: () => call<PlaybackDisplay[]>("list_playback_displays"),
   moveToBackground: () => call<void>("move_to_background"),
   setDlnaDirect: (enabled: boolean) =>

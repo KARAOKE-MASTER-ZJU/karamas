@@ -2,6 +2,7 @@
 //! 宿主须在发起网络请求前安装 Rustls crypto provider。
 pub mod cast;
 pub mod config;
+pub mod diagnostics;
 pub mod engine;
 mod error;
 pub mod media;

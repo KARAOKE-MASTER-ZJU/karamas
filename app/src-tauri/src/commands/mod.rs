@@ -1,5 +1,6 @@
 pub mod bilibili;
 pub mod devices;
+pub mod diagnostics;
 pub mod logging;
 pub mod playback;
 pub mod playback_output;
@@ -36,6 +37,11 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         devices::discover_dlna_devices,
         devices::discover_dlna_device,
         devices::list_bilibili_devices,
+        diagnostics::diagnostic_device,
+        diagnostics::diagnostic_service,
+        diagnostics::diagnostic_query,
+        diagnostics::diagnostic_playback,
+        diagnostics::diagnostic_latency,
         session::start_casting,
         session::default_device_name,
         session::disconnect_casting,
