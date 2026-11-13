@@ -2,6 +2,7 @@ import type { MediaFormat } from "@/types/casting";
 
 export const diagnosticSections = [
   { key: "device", title: "设备信息" },
+  { key: "functions", title: "设备功能测试" },
   { key: "parameters", title: "参数查询" },
   { key: "playback", title: "播放测试" },
   { key: "latency", title: "延迟测试" },
@@ -38,6 +39,14 @@ export interface DiagnosticEntry {
 export interface DiagnosticPanelProps {
   location: string;
   run: (work: (current: () => boolean) => Promise<void>) => Promise<void>;
+}
+export interface FunctionCheck {
+  title: string;
+  service: string;
+  action: string;
+  state: "running" | "passed" | "failed" | "undeclared" | "skipped";
+  detail: string;
+  response: TestResponse | null;
 }
 export interface DiagnosticArgument {
   name: string;

@@ -1,10 +1,9 @@
 use crate::{error::CommandResult, state::BridgeState};
 use karamas_core::diagnostics::{
-    self, DeviceInfo, PlaybackTest, PlaybackTester, ServiceInfo, TestResponse,
+    self, DeviceInfo, FunctionCheck, PlaybackTest, ServiceInfo, TestResponse,
 };
 use std::collections::BTreeMap;
-use std::sync::Arc;
-use tauri::State;
+use tauri::{State, ipc::Channel};
 
 #[tauri::command]
 pub async fn diagnostic_device<R: tauri::Runtime>(
@@ -50,19 +49,35 @@ pub async fn diagnostic_playback<R: tauri::Runtime>(
     super::session::http_url(&location)?;
     crate::platform::ensure_network_access(&app).await?;
     state.initialize_storage().await?;
-    let tester = {
-        let mut slot = state.diagnostic_player.lock().await;
-        if slot
-            .as_ref()
-            .is_none_or(|tester| tester.location != location)
-        {
-            *slot = Some(Arc::new(PlaybackTester::new(location)));
-        }
-        slot.as_ref().expect("已初始化测试播放器").clone()
-    };
+    let tester = state.diagnostic_player_for(location).await;
     Ok(tester
         .execute(test, tauri::async_runtime::handle().inner().clone())
         .await?)
+}
+
+#[tauri::command]
+pub async fn diagnostic_functions<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    state: State<'_, BridgeState>,
+    location: String,
+    song_url: String,
+    on_check: Channel<FunctionCheck>,
+) -> CommandResult<()> {
+    super::session::http_url(&location)?;
+    super::session::http_url(&song_url)?;
+    crate::platform::ensure_network_access(&app).await?;
+    state.initialize_storage().await?;
+    let tester = state.diagnostic_player_for(location).await;
+    tester
+        .test_functions(
+            &song_url,
+            tauri::async_runtime::handle().inner().clone(),
+            move |check| {
+                let _ = on_check.send(check);
+            },
+        )
+        .await?;
+    Ok(())
 }
 
 #[tauri::command]

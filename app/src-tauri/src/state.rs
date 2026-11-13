@@ -21,6 +21,22 @@ pub struct BridgeState {
 }
 
 impl BridgeState {
+    pub async fn diagnostic_player_for(
+        &self,
+        location: String,
+    ) -> Arc<karamas_core::diagnostics::PlaybackTester> {
+        let mut slot = self.diagnostic_player.lock().await;
+        if slot
+            .as_ref()
+            .is_none_or(|tester| tester.location != location)
+        {
+            *slot = Some(Arc::new(karamas_core::diagnostics::PlaybackTester::new(
+                location,
+            )));
+        }
+        slot.as_ref().expect("已初始化测试播放器").clone()
+    }
+
     /// 记录应用私有目录，目录创建延迟到首次使用时。
     pub fn new(data_dir: PathBuf, cache_dir: PathBuf) -> Self {
         Self {

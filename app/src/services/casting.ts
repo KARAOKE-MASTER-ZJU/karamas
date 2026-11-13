@@ -7,6 +7,7 @@ import type {
   ServiceInfo,
   TestResponse,
   PlaybackTest,
+  FunctionCheck,
 } from "@/types/diagnostics";
 import type {
   BilibiliDevice,
@@ -57,6 +58,23 @@ export const castingApi = {
     }),
   diagnosticPlayback: (location: string, test: PlaybackTest) =>
     call<TestResponse[]>("diagnostic_playback", { location, test }),
+  diagnosticFunctions: async (
+    location: string,
+    songUrl: string,
+    onCheck: (check: FunctionCheck) => void,
+  ) => {
+    const channel = new Channel<FunctionCheck>();
+    channel.onmessage = onCheck;
+    try {
+      await call<void>("diagnostic_functions", {
+        location,
+        songUrl,
+        onCheck: channel,
+      });
+    } finally {
+      channel.dispose();
+    }
+  },
   diagnosticLatency: (url: string, lan: boolean) =>
     call<TestResponse>("diagnostic_latency", { url, lan }),
   listPlaybackDisplays: () => call<PlaybackDisplay[]>("list_playback_displays"),

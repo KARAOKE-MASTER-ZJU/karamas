@@ -62,7 +62,7 @@ fn xml_escape(s: &str) -> String {
 }
 
 /// 将设备返回的时长换算为整秒，小数部分直接舍去。
-fn parse_time_secs(value: &str) -> Option<u32> {
+pub(crate) fn parse_time_secs(value: &str) -> Option<u32> {
     let parts: Vec<_> = value.trim().split(':').collect();
     let (hours, minutes, seconds) = match parts.as_slice() {
         [hours, minutes, seconds] => (*hours, *minutes, *seconds),

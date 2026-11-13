@@ -6,7 +6,7 @@ pub mod settings;
 
 pub use caster::DlnaCaster;
 pub use controller::{DlnaController, DlnaDevice};
-pub(crate) use controller::didl_lite_metadata;
+pub(crate) use controller::{didl_lite_metadata, parse_time_secs};
 
 use crate::error::CoreError;
 

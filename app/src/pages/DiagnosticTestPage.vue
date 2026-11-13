@@ -3,6 +3,7 @@ import { computed, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import DiagnosticResultList from "@/components/DiagnosticResultList.vue";
 import DeviceDiagnostic from "@/components/diagnostics/DeviceDiagnostic.vue";
+import FunctionDiagnostic from "@/components/diagnostics/FunctionDiagnostic.vue";
 import ParameterDiagnostic from "@/components/diagnostics/ParameterDiagnostic.vue";
 import PlaybackDiagnostic from "@/components/diagnostics/PlaybackDiagnostic.vue";
 import NetworkDiagnostic from "@/components/diagnostics/NetworkDiagnostic.vue";
@@ -26,6 +27,7 @@ const device = computed(() =>
 );
 const panels = {
   device: DeviceDiagnostic,
+  functions: FunctionDiagnostic,
   parameters: ParameterDiagnostic,
   playback: PlaybackDiagnostic,
   latency: NetworkDiagnostic,
