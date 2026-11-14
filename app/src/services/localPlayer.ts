@@ -5,6 +5,7 @@ import type {
   LocalPlayerCallbacks,
 } from "@/types/localPlayer";
 import type Hls from "hls.js";
+import type Mpegts from "mpegts.js";
 
 const PLAYER_ERROR = "local-player-error";
 
@@ -96,13 +97,36 @@ export function createLocalPlayer(
   let reporting = false;
   let statusQueued = false;
   let hls: Hls | undefined;
+  let flv: Mpegts.Player | undefined;
 
   async function loadSource(url: string, signal: AbortSignal) {
     const isHls = new URL(url).pathname.endsWith(".m3u8");
     // 原生 HLS 需要通过 CORS 读取本机代理上的跨域字节范围分片。
     if (isHls) video.crossOrigin = "anonymous";
     else video.removeAttribute("crossorigin");
-    if (isHls && !video.canPlayType("application/vnd.apple.mpegurl")) {
+    if (new URL(url).pathname.endsWith(".flv")) {
+      const { default: mpegts } = await import("mpegts.js");
+      if (signal.aborted) return;
+      if (!mpegts.getFeatureList().mseLivePlayback)
+        throw new Error("当前播放器不支持 FLV 直播，请更新系统或 WebView。");
+      const instance = mpegts.createPlayer({ type: "flv", isLive: true, url });
+      flv = instance;
+      instance.on(mpegts.Events.ERROR, (type: string, detail: string) => {
+        if (flv !== instance) return;
+        instance.unload();
+        video.dispatchEvent(
+          new CustomEvent(PLAYER_ERROR, {
+            detail: new Error(
+              `FLV 直播加载失败（${type}：${detail}），请重新播放。`,
+            ),
+          }),
+        );
+      });
+      const ready = waitFor(video, "loadedmetadata", signal);
+      instance.attachMediaElement(video);
+      instance.load();
+      await ready;
+    } else if (isHls && !video.canPlayType("application/vnd.apple.mpegurl")) {
       const { default: Hls } = await import("hls.js");
       if (signal.aborted) return;
       if (!Hls.isSupported())
@@ -137,6 +161,8 @@ export function createLocalPlayer(
     activePointer = null;
     hls?.destroy();
     hls = undefined;
+    flv?.destroy();
+    flv = undefined;
     video.pause();
     // Stop 和会话清空可能连续到达，共用一次画中画退出操作。
     clearingMedia ??= (async () => {
@@ -225,7 +251,7 @@ export function createLocalPlayer(
           notifyState();
           await loadSource(action.url, signal);
           if (signal.aborted) return;
-          // HLS 自行选择直播起播点，不能用点播的零秒位置覆盖。
+          // 直播由播放器选择起播点，不能用点播的零秒位置覆盖。
           if (!action.live) await seekTo(element, action.position, signal);
           if (action.playing)
             await waitFor(element, () => element.play(), signal);

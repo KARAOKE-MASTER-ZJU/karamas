@@ -73,6 +73,14 @@ pub async fn proxy_handler(
                 return Ok(crate::media::mp4::http::serve(&req, mp4.clone(), cache.clone(), session.generation));
             }
             crate::media::session::SessionMedia::Direct(url) => {
+                if origin_url.ends_with("/video.flv") {
+                    let url = url::Url::parse(url)
+                        .map_err(actix_web::error::ErrorBadGateway)?;
+                    let referer = format!("{}/", url.origin().ascii_serialization());
+                    return super::hls::serve_track_with_referer(
+                        &req, client.get_ref(), session.clone(), url.as_str(), &referer,
+                    ).await;
+                }
                 // Progress reads durations by playlist song, including its page suffix.
                 duration_cache_key = Some(session.song.clone());
                 origin_url = url.clone();

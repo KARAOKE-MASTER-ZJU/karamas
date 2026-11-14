@@ -452,7 +452,7 @@ impl Drop for MediaSessions {
 pub fn generation_from_path(path: &str) -> Option<u64> {
     let path = path.strip_prefix("__ktv_media/")?;
     if let Some((generation, name)) = path.split_once('/') {
-        (matches!(name, "master.m3u8" | "video.m3u8" | "audio.m3u8" | "video.mp4" | "audio.mp4")
+        (matches!(name, "master.m3u8" | "video.m3u8" | "audio.m3u8" | "video.mp4" | "audio.mp4" | "video.flv")
             || crate::media::live::valid_resource(name))
             .then(|| generation.parse().ok())
             .flatten()

@@ -177,25 +177,36 @@ impl LocalCaster {
         };
         self.command(LocalAction::Loading).await?;
         let session = self.sessions.activate_with_format(song, quality, format);
-        if let Err(error) = session.prepare(&self.client).await {
-            let message = format!("准备本地视频失败：{error}");
-            let _ = self
-                .command(LocalAction::Error {
-                    message: message.clone(),
-                })
-                .await;
-            return Err(CastError::Device(message));
-        }
-        let live = session.is_live();
+        let media = match session.prepare(&self.client).await {
+            Ok(media) => media,
+            Err(error) => {
+                let message = format!("准备本地视频失败：{error}");
+                let _ = self
+                    .command(LocalAction::Error {
+                        message: message.clone(),
+                    })
+                    .await;
+                return Err(CastError::Device(message));
+            }
+        };
+        let flv = matches!(media.as_ref(), crate::media::session::SessionMedia::Direct(url)
+            if url::Url::parse(url).is_ok_and(|url| url.path().to_ascii_lowercase().ends_with(".flv")));
+        // shortcut: FLV 直链按直播处理；支持 FLV 点播时需补充时长和定位识别。
+        let path = if flv {
+            format!("__ktv_media/{}/video.flv", session.generation)
+        } else {
+            session.path()
+        };
+        let live = session.is_live() || flv;
         self.state.lock().unwrap().live = live;
         self.command(LocalAction::Load {
             url: format!(
                 "http://127.0.0.1:{}/{}",
                 self.port,
-                self.sessions.proxy_path(&session.path()),
+                self.sessions.proxy_path(&path),
             ),
             live,
-            position,
+            position: if live { 0 } else { position },
             playing,
             volume,
             muted,
@@ -488,5 +499,46 @@ mod tests {
         restored.volume = 73;
         player.report_local_playback(restored).unwrap();
         assert_eq!(player.get_volume().await.unwrap(), Some(73));
+    }
+
+    // FLV 直播使用本地转封装入口；普通视频仍允许从指定位置开始播放。
+    #[tokio::test]
+    async fn local_media_load_preserves_live_and_seek_contracts() {
+        for (extension, live) in [("FLV?token=signed", true), ("mp4", false)] {
+            let (player, mut commands) = player();
+            let task = tokio::spawn({
+                let player = player.clone();
+                async move {
+                    player
+                        .load(
+                            &format!("https://example.invalid/video.{extension}"),
+                            42,
+                            true,
+                        )
+                        .await
+                }
+            });
+            let loading = commands.recv().await.unwrap();
+            player
+                .report_local_playback(report(&loading, true))
+                .unwrap();
+            let loaded = commands.recv().await.unwrap();
+            let LocalAction::Load {
+                url,
+                live: actual_live,
+                position,
+                ..
+            } = &loaded.action
+            else {
+                panic!("expected load command");
+            };
+            assert_eq!(*actual_live, live);
+            assert_eq!(*position, if live { 0 } else { 42 });
+            assert_eq!(url.ends_with("/video.flv"), live);
+            player.report_local_playback(report(&loaded, true)).unwrap();
+            task.await.unwrap().unwrap();
+            assert_eq!(player.is_live(), live);
+            assert_eq!(player.capabilities().seek, !live);
+        }
     }
 }
