@@ -2,7 +2,7 @@
 use super::{
     Capabilities, CastError, Caster, MediaFormat, PlaybackSnapshot, Progress, Quality, SongRef,
 };
-use crate::media::session::MediaSessions;
+use crate::media::session::{MediaSessions, PlaybackMediaType};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
@@ -19,6 +19,7 @@ pub enum LocalAction {
     Loading,
     Load {
         url: String,
+        media_type: PlaybackMediaType,
         live: bool,
         position: u32,
         playing: bool,
@@ -176,7 +177,9 @@ impl LocalCaster {
             (state.quality, state.format, state.volume, state.muted)
         };
         self.command(LocalAction::Loading).await?;
-        let session = self.sessions.activate_with_format(song, quality, format);
+        let session = self
+            .sessions
+            .activate_local_with_format(song, quality, format);
         let media = match session.prepare(&self.client).await {
             Ok(media) => media,
             Err(error) => {
@@ -189,22 +192,15 @@ impl LocalCaster {
                 return Err(CastError::Device(message));
             }
         };
-        let flv = matches!(media.as_ref(), crate::media::session::SessionMedia::Direct(url)
-            if url::Url::parse(url).is_ok_and(|url| url.path().to_ascii_lowercase().ends_with(".flv")));
-        // shortcut: FLV 直链按直播处理；支持 FLV 点播时需补充时长和定位识别。
-        let path = if flv {
-            format!("__ktv_media/{}/video.flv", session.generation)
-        } else {
-            session.path()
-        };
-        let live = session.is_live() || flv;
+        let live = session.is_live();
         self.state.lock().unwrap().live = live;
         self.command(LocalAction::Load {
             url: format!(
                 "http://127.0.0.1:{}/{}",
                 self.port,
-                self.sessions.proxy_path(&path),
+                self.sessions.proxy_path(&session.path()),
             ),
+            media_type: media.playback_type(),
             live,
             position: if live { 0 } else { position },
             playing,
@@ -405,6 +401,32 @@ impl Caster for LocalCaster {
 mod tests {
     use super::*;
 
+    async fn media_server() -> (String, actix_web::dev::ServerHandle) {
+        use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = HttpServer::new(|| {
+            App::new().default_service(web::to(|request: HttpRequest| async move {
+                if request.query_string() == "stream" {
+                    HttpResponse::Ok()
+                        .content_type("application/octet-stream")
+                        .body(&b"FLV\x01\x05\x00\x00\x00\x09"[..])
+                } else {
+                    HttpResponse::Ok()
+                        .content_type("video/mp4")
+                        .body(&b"\x00\x00\x00\x18ftypisom"[..])
+                }
+            }))
+        })
+        .workers(1)
+        .listen(listener)
+        .unwrap()
+        .run();
+        let handle = server.handle();
+        actix_web::rt::spawn(server);
+        (format!("http://{address}"), handle)
+    }
+
     fn player() -> (
         Arc<LocalCaster>,
         tokio::sync::mpsc::UnboundedReceiver<LocalCommand>,
@@ -452,8 +474,9 @@ mod tests {
     }
 
     // 原生静音只改变有效音量；重新加载媒体时仍需保留滑块音量供取消静音恢复。
-    #[tokio::test]
+    #[actix_web::test]
     async fn native_mute_preserves_volume_for_media_reload() {
+        let (source, server) = media_server().await;
         let (player, mut commands) = player();
         let task = tokio::spawn({
             let p = player.clone();
@@ -471,10 +494,7 @@ mod tests {
         assert_eq!(player.get_volume().await.unwrap(), Some(0));
         let task = tokio::spawn({
             let p = player.clone();
-            async move {
-                p.play_song(&SongRef("http://example.invalid/video.mp4".into()))
-                    .await
-            }
+            async move { p.play_song(&SongRef(format!("{source}/video.mp4"))).await }
         });
         let loading = commands.recv().await.unwrap();
         let mut loading_ack = report(&loading, true);
@@ -499,24 +519,23 @@ mod tests {
         restored.volume = 73;
         player.report_local_playback(restored).unwrap();
         assert_eq!(player.get_volume().await.unwrap(), Some(73));
+        server.stop(true).await;
     }
 
-    // FLV 直播使用本地转封装入口；普通视频仍允许从指定位置开始播放。
-    #[tokio::test]
+    // 播放方式由实际媒体决定；无扩展名或扩展名误导时，直播和定位能力仍须正确。
+    #[actix_web::test]
     async fn local_media_load_preserves_live_and_seek_contracts() {
-        for (extension, live) in [("FLV?token=signed", true), ("mp4", false)] {
+        let (source, server) = media_server().await;
+        for (path, live) in [
+            ("/stream?stream", true),
+            ("/video.mp4?stream", true),
+            ("/video.flv", false),
+        ] {
             let (player, mut commands) = player();
             let task = tokio::spawn({
                 let player = player.clone();
-                async move {
-                    player
-                        .load(
-                            &format!("https://example.invalid/video.{extension}"),
-                            42,
-                            true,
-                        )
-                        .await
-                }
+                let source = source.clone();
+                async move { player.load(&format!("{source}{path}"), 42, true).await }
             });
             let loading = commands.recv().await.unwrap();
             player
@@ -524,7 +543,7 @@ mod tests {
                 .unwrap();
             let loaded = commands.recv().await.unwrap();
             let LocalAction::Load {
-                url,
+                media_type,
                 live: actual_live,
                 position,
                 ..
@@ -534,11 +553,19 @@ mod tests {
             };
             assert_eq!(*actual_live, live);
             assert_eq!(*position, if live { 0 } else { 42 });
-            assert_eq!(url.ends_with("/video.flv"), live);
+            assert_eq!(
+                *media_type,
+                if live {
+                    PlaybackMediaType::Flv
+                } else {
+                    PlaybackMediaType::Native
+                }
+            );
             player.report_local_playback(report(&loaded, true)).unwrap();
             task.await.unwrap().unwrap();
             assert_eq!(player.is_live(), live);
             assert_eq!(player.capabilities().seek, !live);
         }
+        server.stop(true).await;
     }
 }

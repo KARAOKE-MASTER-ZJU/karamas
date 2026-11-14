@@ -70,39 +70,3 @@ impl LiveMedia {
         }
     }
 }
-
-pub(crate) fn valid_resource(name: &str) -> bool {
-    matches!(
-        name,
-        "master.m3u8" | "video.m3u8" | "audio.m3u8" | "video-init.mp4" | "audio-init.mp4"
-    ) || ["video-", "audio-"].iter().any(|prefix| {
-        name.strip_prefix(prefix)
-            .and_then(|n| n.strip_suffix(".m4s"))
-            .is_some_and(number)
-    }) || name
-        .strip_prefix("resource-")
-        .and_then(|name| name.split_once('.'))
-        .is_some_and(|(id, extension)| {
-            number(id)
-                && matches!(
-                    extension,
-                    "m3u8"
-                        | "ts"
-                        | "m4s"
-                        | "mp4"
-                        | "aac"
-                        | "ac3"
-                        | "ec3"
-                        | "vtt"
-                        | "webvtt"
-                        | "key"
-                        | "bin"
-                )
-        })
-}
-
-fn number(value: &str) -> bool {
-    !value.is_empty()
-        && value.bytes().all(|byte| byte.is_ascii_digit())
-        && value.parse::<u64>().is_ok()
-}

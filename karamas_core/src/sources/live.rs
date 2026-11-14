@@ -60,7 +60,7 @@ pub(crate) async fn fetch(
     Ok((effective, read_body(response, limit).await?))
 }
 
-async fn read_body(response: reqwest::Response, limit: usize) -> io::Result<bytes::Bytes> {
+pub(super) async fn read_body(response: reqwest::Response, limit: usize) -> io::Result<bytes::Bytes> {
     let mut stream = response.bytes_stream();
     let mut data = bytes::BytesMut::new();
     while let Some(chunk) = stream.next().await {
@@ -149,13 +149,17 @@ pub(crate) async fn resolve(client: &reqwest::Client, value: &str) -> io::Result
     // 配置中的相对地址以最终页面为基准，支持换域名和重定向后的房间路径。
     let page = response.url().clone();
     let body = read_body(response, 4 * 1024 * 1024).await?;
-    let html = std::str::from_utf8(&body).map_err(|_| invalid("直播页面不是 UTF-8"))?;
+    resolve_page(&page, &body).map(Some)
+}
+
+pub(super) fn resolve_page(page: &Url, body: &[u8]) -> io::Result<Resolved> {
+    let html = std::str::from_utf8(body).map_err(|_| invalid("直播页面不是 UTF-8"))?;
     let config = page_config(html).ok_or_else(|| invalid("网页没有支持的直播播放配置"))?;
-    let source = source(&page, &config)?;
-    Ok(Some(Resolved {
+    let source = source(page, &config)?;
+    Ok(Resolved {
         source,
         referer: format!("{}/", page.origin().ascii_serialization()),
-    }))
+    })
 }
 
 fn source(page: &Url, config: &Value) -> io::Result<Source> {

@@ -1,5 +1,6 @@
 use super::SharedState;
 use crate::media::mp4::duration::get_mp4_duration;
+use crate::media::session::SessionMedia;
 use crate::sources::bilibili::{BilibiliMedia, get_bilibili_media_with_format};
 use actix_web::{HttpRequest, HttpResponse, route, web};
 use futures_util::StreamExt;
@@ -45,13 +46,20 @@ pub async fn proxy_handler(
                 return Err(actix_web::error::ErrorBadGateway(error));
             }
         };
+        if matches!(media.as_ref(), SessionMedia::Direct(_) | SessionMedia::Flv(_) | SessionMedia::Seekable { .. })
+            && origin_url != session.path()
+        {
+            return Ok(super::hls::cors(&mut HttpResponse::NotFound()).finish());
+        }
+        let name = origin_url
+            .strip_prefix("__ktv_media/")
+            .and_then(|path| path.split_once('/'))
+            .map_or("", |(_, name)| name);
         match media.as_ref() {
-            crate::media::session::SessionMedia::Live(live) => {
-                let name = origin_url.rsplit('/').next().unwrap_or_default();
+            SessionMedia::Live(live) => {
                 return super::live::serve(&req, client.get_ref(), session.clone(), live, name).await;
             }
-            crate::media::session::SessionMedia::Hls(playlists) => {
-                let name = origin_url.rsplit('/').next().unwrap_or_default();
+            SessionMedia::Hls(playlists) => {
                 if let Some(source) = playlists.proxy_source(name) {
                     return super::hls::serve_track(&req, client.get_ref(), session.clone(), source).await;
                 }
@@ -69,18 +77,16 @@ pub async fn proxy_handler(
                 }
                 return Ok(response.body(playlist.to_owned()));
             }
-            crate::media::session::SessionMedia::Seekable { mp4, cache } => {
+            SessionMedia::Seekable { mp4, cache } => {
                 return Ok(crate::media::mp4::http::serve(&req, mp4.clone(), cache.clone(), session.generation));
             }
-            crate::media::session::SessionMedia::Direct(url) => {
-                if origin_url.ends_with("/video.flv") {
-                    let url = url::Url::parse(url)
-                        .map_err(actix_web::error::ErrorBadGateway)?;
-                    let referer = format!("{}/", url.origin().ascii_serialization());
-                    return super::hls::serve_track_with_referer(
-                        &req, client.get_ref(), session.clone(), url.as_str(), &referer,
-                    ).await;
-                }
+            SessionMedia::Flv(url) => {
+                let referer = format!("{}/", url.origin().ascii_serialization());
+                return super::hls::serve_track_with_referer(
+                    &req, client.get_ref(), session.clone(), url.as_str(), &referer,
+                ).await;
+            }
+            SessionMedia::Direct(url) => {
                 // Progress reads durations by playlist song, including its page suffix.
                 duration_cache_key = Some(session.song.clone());
                 origin_url = url.clone();

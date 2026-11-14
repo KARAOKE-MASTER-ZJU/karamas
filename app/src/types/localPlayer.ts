@@ -6,6 +6,7 @@ export interface LocalCommand {
     | {
         kind: "load";
         url: string;
+        mediaType: "native" | "hls" | "flv";
         live: boolean;
         position: number;
         playing: boolean;

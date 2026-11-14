@@ -52,14 +52,33 @@ fn stopped() -> io::Error {
     io::Error::new(io::ErrorKind::Interrupted, "obsolete media session")
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PlaybackMediaType {
+    Native,
+    Hls,
+    Flv,
+}
+
 pub enum SessionMedia {
     Direct(String),
+    Flv(url::Url),
     Hls(crate::media::hls::Playlists),
     Live(crate::media::live::LiveMedia),
     Seekable {
         mp4: Arc<VirtualMp4>,
         cache: Arc<SongCache>,
     },
+}
+
+impl SessionMedia {
+    pub fn playback_type(&self) -> PlaybackMediaType {
+        match self {
+            Self::Direct(_) | Self::Seekable { .. } => PlaybackMediaType::Native,
+            Self::Hls(_) | Self::Live(_) => PlaybackMediaType::Hls,
+            Self::Flv(_) => PlaybackMediaType::Flv,
+        }
+    }
 }
 
 pub struct MediaSession {
@@ -69,6 +88,7 @@ pub struct MediaSession {
     pub format: MediaFormat,
     allowed_formats: Vec<MediaFormat>,
     hls_direct: bool,
+    local: bool,
     resolved_quality: Mutex<Option<(Quality, MediaFormat)>>,
     stopped: watch::Sender<bool>,
     ready: OnceCell<Arc<SessionMedia>>,
@@ -79,6 +99,9 @@ impl MediaSession {
     /// 返回当前会话识别出的直播属性；尚未识别时返回 false。
     pub fn is_live(&self) -> bool {
         self.live_source.get().is_some_and(Option::is_some)
+            || self.ready.get().is_some_and(|media| {
+                matches!(media.as_ref(), SessionMedia::Live(_) | SessionMedia::Flv(_))
+            })
     }
 
     pub(crate) async fn detect_live(&self, client: &reqwest::Client) -> io::Result<bool> {
@@ -100,7 +123,9 @@ impl MediaSession {
     /// 生成包含当前会话代次的媒体路径。
     pub fn path(&self) -> String {
         let format = self.resolved_quality().1;
-        if format == MediaFormat::Hls {
+        if self.local && format != MediaFormat::Hls {
+            format!("__ktv_media/{}/source", self.generation)
+        } else if format == MediaFormat::Hls {
             format!("__ktv_media/{}/master.m3u8", self.generation)
         } else {
             format!("__ktv_media/{}.mp4", self.generation)
@@ -213,6 +238,31 @@ impl MediaSession {
 
     /// 解析歌曲媒体源，按需准备可定位的 DASH 媒体。
     async fn resolve(&self, client: &reqwest::Client) -> io::Result<SessionMedia> {
+        if self.local
+            && url::Url::parse(&self.song).is_ok_and(|url| matches!(url.scheme(), "http" | "https"))
+            && !crate::sources::youtube::is_youtube_url(&self.song)
+            && parse_bilibili_video(&self.song).is_err()
+        {
+            use crate::sources::http::Source;
+            let media = match crate::sources::http::resolve(client, &self.song).await? {
+                Source::Native(url) => SessionMedia::Direct(url.into()),
+                Source::Flv(url) => SessionMedia::Flv(url),
+                Source::Live(source) => SessionMedia::Live(
+                    crate::media::live::LiveMedia::prepare(client, source, self.quality).await?,
+                ),
+            };
+            let format = if media.playback_type() == PlaybackMediaType::Hls {
+                MediaFormat::Hls
+            } else {
+                MediaFormat::Mp4
+            };
+            let quality = match &media {
+                SessionMedia::Live(media) => media.quality(),
+                _ => self.quality,
+            };
+            *self.resolved_quality.lock().unwrap() = Some((quality, format));
+            return Ok(media);
+        }
         // 直播页先取源，再进入通用 HTTP 直链分支，避免把网页 HTML 当作 MP4 转发。
         if self.detect_live(client).await? {
             let source = self.live_source.get().and_then(Option::as_ref).unwrap().clone();
@@ -371,6 +421,22 @@ impl MediaSessions {
         )
     }
 
+    pub fn activate_local_with_format(
+        &self,
+        song: &str,
+        quality: Quality,
+        format: MediaFormat,
+    ) -> Arc<MediaSession> {
+        self.activate(
+            song,
+            quality,
+            format,
+            &[MediaFormat::Mp4, MediaFormat::Dash, MediaFormat::Hls],
+            false,
+            true,
+        )
+    }
+
     /// 限定当前播放端允许的模式，避免回退到已关闭的模式。
     pub(crate) fn activate_with_formats(
         &self,
@@ -379,7 +445,7 @@ impl MediaSessions {
         format: MediaFormat,
         allowed_formats: &[MediaFormat],
     ) -> Arc<MediaSession> {
-        self.activate(song, quality, format, allowed_formats, false)
+        self.activate(song, quality, format, allowed_formats, false, false)
     }
 
     pub fn activate_hls_with_format(
@@ -394,6 +460,7 @@ impl MediaSessions {
             format,
             &[MediaFormat::Mp4, MediaFormat::Hls],
             true,
+            false,
         )
     }
 
@@ -404,6 +471,7 @@ impl MediaSessions {
         format: MediaFormat,
         allowed_formats: &[MediaFormat],
         hls_direct: bool,
+        local: bool,
     ) -> Arc<MediaSession> {
         let session = Arc::new(MediaSession {
             generation: NEXT_GENERATION.fetch_add(1, Ordering::Relaxed),
@@ -412,6 +480,7 @@ impl MediaSessions {
             format,
             allowed_formats: allowed_formats.to_vec(),
             hls_direct,
+            local,
             resolved_quality: Mutex::new(None),
             stopped: watch::channel(false).0,
             ready: OnceCell::new(),
@@ -451,14 +520,8 @@ impl Drop for MediaSessions {
 /// 从媒体路径中解析会话代次。
 pub fn generation_from_path(path: &str) -> Option<u64> {
     let path = path.strip_prefix("__ktv_media/")?;
-    if let Some((generation, name)) = path.split_once('/') {
-        (matches!(name, "master.m3u8" | "video.m3u8" | "audio.m3u8" | "video.mp4" | "audio.mp4" | "video.flv")
-            || crate::media::live::valid_resource(name))
-            .then(|| generation.parse().ok())
-            .flatten()
-    } else {
-        path.strip_suffix(".mp4")?.parse().ok()
-    }
+    let (generation, _) = path.split_once('/').or_else(|| path.split_once('.'))?;
+    generation.parse().ok()
 }
 
 #[cfg(test)]

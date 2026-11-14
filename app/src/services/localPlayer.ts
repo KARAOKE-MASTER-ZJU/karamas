@@ -99,12 +99,16 @@ export function createLocalPlayer(
   let hls: Hls | undefined;
   let flv: Mpegts.Player | undefined;
 
-  async function loadSource(url: string, signal: AbortSignal) {
-    const isHls = new URL(url).pathname.endsWith(".m3u8");
+  async function loadSource(
+    action: Extract<LocalCommand["action"], { kind: "load" }>,
+    signal: AbortSignal,
+  ) {
+    const { url, mediaType } = action;
+    const isHls = mediaType === "hls";
     // 原生 HLS 需要通过 CORS 读取本机代理上的跨域字节范围分片。
     if (isHls) video.crossOrigin = "anonymous";
     else video.removeAttribute("crossorigin");
-    if (new URL(url).pathname.endsWith(".flv")) {
+    if (mediaType === "flv") {
       const { default: mpegts } = await import("mpegts.js");
       if (signal.aborted) return;
       if (!mpegts.getFeatureList().mseLivePlayback)
@@ -249,7 +253,7 @@ export function createLocalPlayer(
           element.muted = action.muted;
           state.hasMedia = true;
           notifyState();
-          await loadSource(action.url, signal);
+          await loadSource(action, signal);
           if (signal.aborted) return;
           // 直播由播放器选择起播点，不能用点播的零秒位置覆盖。
           if (!action.live) await seekTo(element, action.position, signal);
