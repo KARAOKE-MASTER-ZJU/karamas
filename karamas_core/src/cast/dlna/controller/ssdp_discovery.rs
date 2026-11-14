@@ -1,5 +1,5 @@
 //! 在各个可用 IPv4 网卡上并行发送 M-SEARCH，逐个通知新发现的地址。
-use super::discovery_endpoint;
+use super::discovery::discovery_endpoint;
 use getifaddrs::{Interface, InterfaceFlags};
 use socket2::SockRef;
 use std::collections::BTreeSet;

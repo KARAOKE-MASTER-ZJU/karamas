@@ -1,4 +1,6 @@
 use super::*;
+use super::super::{AV_TRANSPORT, DlnaController, xml_escape};
+use rupnp::Device;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[tokio::test]
