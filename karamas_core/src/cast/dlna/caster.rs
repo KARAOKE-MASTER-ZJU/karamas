@@ -472,6 +472,52 @@ impl Caster for DlnaCaster {
         }
     }
 
+    fn audio_delay_ms(&self) -> Option<i32> {
+        let session = self.sessions.as_ref()?.current()?;
+        if session.generation
+            != self
+                .loaded_generation
+                .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return None;
+        }
+        session.audio_delay_ms()
+    }
+
+    async fn set_audio_delay_ms(&self, milliseconds: i32) -> Result<(), CastError> {
+        let previous = self.audio_delay_ms().ok_or(CastError::Unsupported)?;
+        if previous == milliseconds {
+            return Ok(());
+        }
+        if crate::cast::dlna::settings::get_dlna_direct() && !self.is_live() {
+            return Err(CastError::Device("请先开启媒体代理，再调整声音偏移".into()));
+        }
+        let song = self
+            .current_song
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or(CastError::Unsupported)?;
+        let snapshot = self
+            .playback_snapshot()
+            .ok_or_else(|| CastError::Device("尚未取得播放进度，请稍后再调整声音偏移".into()))?;
+        let sessions = self.sessions.as_ref().ok_or(CastError::Unsupported)?;
+        sessions
+            .set_audio_delay_ms(milliseconds)
+            .map_err(|error| CastError::Device(error.to_string()))?;
+        if let Err(error) = self
+            .reload_song_at(&song, snapshot.progress.current_secs, "声音偏移调整")
+            .await
+        {
+            let _ = sessions.set_audio_delay_ms(previous);
+            return Err(error);
+        }
+        if !snapshot.is_playing {
+            self.pause().await?;
+        }
+        Ok(())
+    }
+
     /// 设置音量
     async fn set_volume(&self, volume: u32) -> Result<(), CastError> {
         self.controller

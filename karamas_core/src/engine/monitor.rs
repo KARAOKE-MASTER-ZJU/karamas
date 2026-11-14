@@ -21,6 +21,7 @@ pub struct EnginePlaybackState {
     pub quality_qn: Option<u32>,
     pub quality_format: Option<cast::MediaFormat>,
     pub danmaku: Option<bool>,
+    pub audio_delay_ms: Option<i32>,
     pub capabilities: cast::Capabilities,
 }
 
@@ -106,6 +107,7 @@ impl EngineContext {
             quality_qn: self.caster.get_quality().ok().map(|q| q.as_qn()),
             quality_format: self.caster.get_media_format(),
             danmaku: self.caster.get_danmaku().ok(),
+            audio_delay_ms: self.caster.audio_delay_ms(),
             capabilities: self.caster.capabilities(),
         }
     }

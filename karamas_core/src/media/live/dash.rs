@@ -28,6 +28,7 @@ pub(super) struct Dash {
     url: Url,
     referer: String,
     requested: Quality,
+    audio_delay_ms: i32,
     quality: Quality,
     keys: Arc<Keys>,
     tracks: [Track; 2],
@@ -50,6 +51,7 @@ impl Dash {
         referer: &str,
         keys: Keys,
         quality: Quality,
+        audio_delay_ms: i32,
     ) -> io::Result<Self> {
         let (effective, xml) = fetch(client, &url, referer, 2 * 1024 * 1024).await?;
         let manifest = manifest::parse(&xml, &effective, quality)?;
@@ -94,6 +96,7 @@ impl Dash {
             url,
             referer: referer.into(),
             requested: quality,
+            audio_delay_ms,
             quality: actual,
             keys: Arc::new(keys),
             tracks: [video, audio],
@@ -207,7 +210,20 @@ impl Dash {
                 let (_, data) = fetch(client, &url, &self.referer, 32 * 1024 * 1024).await?;
                 let crypto = self.tracks[track].crypto.clone();
                 let keys = self.keys.clone();
-                tokio::task::spawn_blocking(move || file(&crypto.decrypt(&data, &keys)?))
+                let delay_ms = if track == 1 {
+                    self.audio_delay_ms.max(0) as u32
+                } else {
+                    self.audio_delay_ms.min(0).unsigned_abs()
+                };
+                tokio::task::spawn_blocking(move || {
+                    let data = crypto.decrypt(&data, &keys)?;
+                    let data = crate::media::mp4::fragmented::delay_fragment(
+                        &data,
+                        crypto.timescale,
+                        delay_ms,
+                    )?;
+                    file(&data)
+                })
                     .await
                     .map_err(io::Error::other)?
             })

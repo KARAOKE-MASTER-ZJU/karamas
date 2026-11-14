@@ -40,6 +40,7 @@ export interface PlaybackState {
   qualityQn: number | null;
   qualityFormat: MediaFormat | null;
   danmaku: boolean | null;
+  audioDelayMs: number | null;
   capabilities: {
     absoluteVolume: boolean;
     seek: boolean;

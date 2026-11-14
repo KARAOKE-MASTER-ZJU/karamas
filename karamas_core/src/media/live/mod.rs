@@ -31,6 +31,7 @@ impl LiveMedia {
         client: &reqwest::Client,
         resolved: Resolved,
         quality: Quality,
+        audio_delay_ms: i32,
     ) -> io::Result<Self> {
         let Resolved { source, referer } = resolved;
         let (kind, actual) = match source {
@@ -39,7 +40,9 @@ impl LiveMedia {
                 quality,
             ),
             Source::Dash { manifest, keys } => {
-                let media = dash::Dash::new(client, manifest, &referer, keys, quality).await?;
+                let media =
+                    dash::Dash::new(client, manifest, &referer, keys, quality, audio_delay_ms)
+                        .await?;
                 let actual = media.quality();
                 (Kind::Dash(Box::new(media)), actual)
             }
@@ -49,6 +52,10 @@ impl LiveMedia {
             referer,
             quality: actual,
         })
+    }
+
+    pub(crate) fn supports_audio_delay(&self) -> bool {
+        matches!(self.kind, Kind::Dash(_))
     }
 
     pub fn quality(&self) -> Quality {

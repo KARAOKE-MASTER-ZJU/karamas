@@ -166,6 +166,8 @@ export const castingApi = {
     call<boolean>("select_current_bilibili_part", { songId, pageIndex }),
   seek: (seconds: number) => call<void>("seek", { seconds }),
   getVolume: () => call<number>("get_volume"),
+  setAudioDelay: (milliseconds: number) =>
+    call<number>("set_audio_delay", { milliseconds }),
   setVolume: (volume: number) => call<number>("set_volume", { volume }),
   changeVolume: (increase: boolean) =>
     call<void>("change_volume", { step: 5, increase }),

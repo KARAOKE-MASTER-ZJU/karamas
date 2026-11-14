@@ -309,6 +309,15 @@ pub async fn prepare(
     video_url: &str,
     audio_url: &str,
 ) -> io::Result<PreparedDash> {
+    prepare_with_audio_delay(client, video_url, audio_url, 0).await
+}
+
+pub(crate) async fn prepare_with_audio_delay(
+    client: &reqwest::Client,
+    video_url: &str,
+    audio_url: &str,
+    audio_delay_ms: i32,
+) -> io::Result<PreparedDash> {
     let started = Instant::now();
     let (video, audio) = tokio::try_join!(
         load_source(client, video_url, "video"),
@@ -325,6 +334,7 @@ pub async fn prepare(
     for (offset, moof, media) in audio.fragments {
         builder.add_fragment_in_media(1, offset, &moof, media)?;
     }
+    builder.set_audio_delay_ms(audio_delay_ms);
     let mp4 = builder.finish()?;
     mp4.validate_sources(&[video.len, audio.len])?;
     log::info!(target: "DLNA1080", "可定位 MP4 索引准备完成: elapsed_ms={}, fetch_ms={}, build_ms={}, fragments={}, header_bytes={}, file_bytes={}", started.elapsed().as_millis(), fetch_ms, build_started.elapsed().as_millis(), fragment_count, mp4.prefix.len(), mp4.len);

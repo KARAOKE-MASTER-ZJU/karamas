@@ -140,6 +140,21 @@ pub async fn get_volume_core() -> Result<u32, CoreError> {
     Ok(v.unwrap_or(0))
 }
 
+/// 应用声音偏移，媒体重载期间暂停采样和自动切歌。
+pub async fn set_audio_delay_core(milliseconds: i32) -> Result<i32, CoreError> {
+    let ctx = {
+        let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
+        guard.as_ref().cloned().ok_or("Engine not initialized")?
+    };
+    let _control = ctx.begin_progress_control().await?;
+    let _playback = ctx.playback_lock.lock().await;
+    ctx.caster.set_audio_delay_ms(milliseconds).await?;
+    super::remote::wake();
+    ctx.caster
+        .audio_delay_ms()
+        .ok_or(cast::CastError::Unsupported.into())
+}
+
 /// 相对调高音量，返回设置后的值
 pub async fn volume_up_core(step: u32) -> Result<(), CoreError> {
     let ctx = {

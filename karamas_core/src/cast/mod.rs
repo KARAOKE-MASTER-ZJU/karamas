@@ -206,6 +206,15 @@ pub trait Caster: Send + Sync {
     fn can_auto_advance(&self) -> bool {
         true
     }
+    /// 返回当前媒体的声音偏移；None 表示当前媒体不支持。
+    fn audio_delay_ms(&self) -> Option<i32> {
+        None
+    }
+
+    async fn set_audio_delay_ms(&self, _milliseconds: i32) -> Result<(), CastError> {
+        Err(CastError::Unsupported)
+    }
+
     async fn set_volume(&self, volume: u32) -> Result<(), CastError>;
     async fn get_volume(&self) -> Result<Option<u32>, CastError>;
 

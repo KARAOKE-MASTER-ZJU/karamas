@@ -41,6 +41,8 @@ export function usePlaybackControls() {
     setVolume: (volume: number) => run(() => casting.setVolume(volume)),
     setQuality: (selection: PlaybackQuality) =>
       run(() => casting.setQuality(selection)),
+    setAudioDelay: (milliseconds: number) =>
+      run(() => casting.setAudioDelay(milliseconds)),
     setDanmaku: (enabled: boolean) => run(() => casting.setDanmaku(enabled)),
   };
 }

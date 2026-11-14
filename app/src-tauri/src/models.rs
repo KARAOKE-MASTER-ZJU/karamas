@@ -81,6 +81,7 @@ pub struct PlaybackState {
     pub quality_format: Option<karamas_core::cast::MediaFormat>,
     /// 弹幕状态，设备不支持或查询失败时为 null。
     pub danmaku: Option<bool>,
+    pub audio_delay_ms: Option<i32>,
     pub capabilities: DeviceCapabilities,
 }
 

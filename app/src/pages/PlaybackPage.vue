@@ -7,6 +7,7 @@ import LocalPlayer from "@/components/playback/LocalPlayer.vue";
 import NowPlaying from "@/components/playback/NowPlaying.vue";
 import PlaybackProgress from "@/components/playback/PlaybackProgress.vue";
 import PlaybackTransport from "@/components/playback/PlaybackTransport.vue";
+import AudioDelayControl from "@/components/playback/AudioDelayControl.vue";
 import VolumeControl from "@/components/playback/VolumeControl.vue";
 import PlaybackOptions from "@/components/playback/PlaybackOptions.vue";
 import PlaybackOutputControl from "@/components/playback/PlaybackOutputControl.vue";
@@ -165,30 +166,51 @@ useVideoLayout(
           @change="controls.changeVolume"
           @set-volume="controls.setVolume"
         />
-        <PlaybackOptions
-          v-if="activeDevice && !playback?.isLive"
-          :mode="activeDevice.kind"
-          :song-id="playback?.songId ?? null"
-          :song-url="playback?.songUrl ?? null"
-          :dlna-proxy-enabled="casting.dlnaProxyEnabled"
-          :dlna-hls-direct-enabled="casting.dlnaHlsDirectEnabled"
-          :quality-qn="playback?.qualityQn ?? null"
-          :quality-format="playback?.qualityFormat ?? null"
-          :media-qualities="casting.mediaQualities"
-          :media-qualities-loading="casting.mediaQualitiesLoading"
-          :media-qualities-error="casting.mediaQualitiesError"
-          :danmaku="playback?.danmaku ?? null"
-          :disabled="!casting.connected || playbackBusy"
-          @quality="controls.setQuality"
-          @refresh-media-qualities="casting.refreshMediaQualities"
-          @danmaku="controls.setDanmaku"
-        />
+        <div
+          v-if="
+            activeDevice &&
+            (activeDevice.kind !== 'bilibili' || !playback?.isLive)
+          "
+          class="playback-settings"
+        >
+          <AudioDelayControl
+            v-if="activeDevice.kind !== 'bilibili'"
+            :key="playback?.songUrl ?? activeDevice.kind"
+            :value="playback?.audioDelayMs ?? null"
+            :disabled="casting.busy || playbackBusy"
+            :pending="casting.applyingAudioDelay"
+            @set-delay="controls.setAudioDelay"
+          />
+          <PlaybackOptions
+            v-if="!playback?.isLive"
+            :mode="activeDevice.kind"
+            :song-id="playback?.songId ?? null"
+            :song-url="playback?.songUrl ?? null"
+            :dlna-proxy-enabled="casting.dlnaProxyEnabled"
+            :dlna-hls-direct-enabled="casting.dlnaHlsDirectEnabled"
+            :quality-qn="playback?.qualityQn ?? null"
+            :quality-format="playback?.qualityFormat ?? null"
+            :media-qualities="casting.mediaQualities"
+            :media-qualities-loading="casting.mediaQualitiesLoading"
+            :media-qualities-error="casting.mediaQualitiesError"
+            :danmaku="playback?.danmaku ?? null"
+            :audio-delay-ms="playback?.audioDelayMs ?? null"
+            :disabled="!casting.connected || playbackBusy"
+            @quality="controls.setQuality"
+            @refresh-media-qualities="casting.refreshMediaQualities"
+            @danmaku="controls.setDanmaku"
+          />
+        </div>
       </template>
     </section>
   </div>
 </template>
 
 <style scoped>
+.playback-settings {
+  margin-top: 24px;
+  border-top: 1px solid var(--line);
+}
 .playback-page.video-only .player-section {
   margin: 0;
   padding: 0;

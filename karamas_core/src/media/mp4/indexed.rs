@@ -208,6 +208,7 @@ pub struct Mp4Builder {
     mvhd: Vec<u8>,
     tracks: Vec<Track>,
     sample_count: usize,
+    audio_delay_ms: i32,
 }
 
 impl Mp4Builder {
@@ -218,9 +219,15 @@ impl Mp4Builder {
             mvhd: child(moov, b"mvhd")?.to_vec(),
             tracks: Vec::new(),
             sample_count: 0,
+            audio_delay_ms: 0,
         };
         result.add_source(moov, source)?;
         Ok(result)
+    }
+
+    /// 正值延迟音频，负值延迟视频；使用 edit list 保留编码数据。
+    pub fn set_audio_delay_ms(&mut self, milliseconds: i32) {
+        self.audio_delay_ms = milliseconds;
     }
 
     /// 添加媒体源的轨道信息和默认采样参数。
@@ -383,7 +390,8 @@ impl Mp4Builder {
             .filter(|(_, s)| s.sync)
             .map(|(i, s)| {
                 (
-                    (s.decode_time as u128 * 1000 / self.tracks[video].timescale as u128) as u64,
+                    (s.decode_time as u128 * 1000 / self.tracks[video].timescale as u128) as u64
+                        + u64::from(self.audio_delay_ms.min(0).unsigned_abs()),
                     offsets[video][i],
                 )
             })
@@ -414,8 +422,24 @@ impl Mp4Builder {
                 (track_duration as u128 * movie_scale as u128).div_ceil(t.timescale as u128),
             )
             .map_err(|_| invalid("duration overflow"))?;
-            movie_duration = movie_duration.max(scaled);
             let mdia = child(&t.trak, b"mdia")?;
+            let delayed = if self.audio_delay_ms != 0 {
+                let handler = child(mdia, b"hdlr")?;
+                (self.audio_delay_ms > 0 && handler.get(16..20) == Some(b"soun"))
+                    || (self.audio_delay_ms < 0 && handler.get(16..20) == Some(b"vide"))
+            } else {
+                false
+            };
+            let delay = if delayed {
+                (u64::from(self.audio_delay_ms.unsigned_abs()) * u64::from(movie_scale))
+                    .div_ceil(1000)
+            } else {
+                0
+            };
+            let presentation_duration = scaled
+                .checked_add(delay)
+                .ok_or_else(|| invalid("presentation duration overflow"))?;
+            movie_duration = movie_duration.max(presentation_duration);
             let minf = child(mdia, b"minf")?;
             let stbl = child(minf, b"stbl")?;
             let mut tables = child(stbl, b"stsd")?.to_vec(); // preserve codec configuration verbatim
@@ -495,7 +519,46 @@ impl Mp4Builder {
                 }
                 trak = replace(&trak, b"edts", &replace(edts, b"elst", &edit)?)?;
             }
-            let mut tkhd = duration(child(&trak, b"tkhd")?, scaled, true)?;
+            if delay != 0 {
+                let previous = children(&trak)?.into_iter().find(|c| &c[4..8] == b"edts");
+                let (edit_duration, media_time, rate) = if let Some(edts) = previous {
+                    let elst = child(edts, b"elst")?;
+                    let h = header(elst)?;
+                    let p = h + 8;
+                    if elst[h] == 1 {
+                        (
+                            u64_at(elst, p)?,
+                            u64_at(elst, p + 8)? as i64,
+                            u32_at(elst, p + 16)?,
+                        )
+                    } else {
+                        (
+                            u64::from(u32_at(elst, p)?),
+                            i64::from(u32_at(elst, p + 4)? as i32),
+                            u32_at(elst, p + 8)?,
+                        )
+                    }
+                } else {
+                    (scaled, 0, 0x00010000)
+                };
+                let mut edits = vec![1, 0, 0, 0];
+                edits.extend_from_slice(&2u32.to_be_bytes());
+                edits.extend_from_slice(&delay.to_be_bytes());
+                edits.extend_from_slice(&(-1i64).to_be_bytes());
+                edits.extend_from_slice(&0x00010000u32.to_be_bytes());
+                edits.extend_from_slice(&edit_duration.to_be_bytes());
+                edits.extend_from_slice(&media_time.to_be_bytes());
+                edits.extend_from_slice(&rate.to_be_bytes());
+                let edts = atom(b"edts", &atom(b"elst", &edits)?)?;
+                trak = if previous.is_some() {
+                    replace(&trak, b"edts", &edts)?
+                } else {
+                    let mut content = trak[header(&trak)?..].to_vec();
+                    content.extend_from_slice(&edts);
+                    atom(b"trak", &content)?
+                };
+            }
+            let mut tkhd = duration(child(&trak, b"tkhd")?, presentation_duration, true)?;
             let h = header(&tkhd)?;
             let p = h + if tkhd[h] == 1 { 20 } else { 12 };
             tkhd[p..p + 4].copy_from_slice(&(index as u32 + 1).to_be_bytes());

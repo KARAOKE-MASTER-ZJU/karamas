@@ -79,7 +79,11 @@ pub(super) async fn sample_progress(ctx: &EngineContext) -> (i32, i32) {
             {
                 p.total_secs
             } else if cached_total > 0 {
-                cached_total
+                cached_total.saturating_add(
+                    ctx.caster
+                        .audio_delay_ms()
+                        .map_or(0, |ms| ms.unsigned_abs().div_ceil(1000)),
+                )
             } else {
                 p.total_secs
             } as i32;

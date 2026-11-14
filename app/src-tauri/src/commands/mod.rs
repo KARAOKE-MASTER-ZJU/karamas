@@ -62,6 +62,7 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         playback::seek,
         playback::get_volume,
         playback::set_volume,
+        playback::set_audio_delay,
         playback::change_volume,
         playback::set_danmaku,
         playback::set_quality,

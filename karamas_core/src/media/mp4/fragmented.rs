@@ -553,6 +553,53 @@ fn patch_moof(moof: &Bytes, track_id: u32, sequence: u32) -> io::Result<Bytes> {
 }
 
 /// 读取分片的起始解码时间。
+pub(crate) fn delay_fragment(data: &[u8], timescale: u32, milliseconds: u32) -> io::Result<Bytes> {
+    if milliseconds == 0 {
+        return Ok(Bytes::copy_from_slice(data));
+    }
+    if timescale == 0 {
+        return Err(invalid("zero track timescale"));
+    }
+    let ticks = (u64::from(milliseconds) * u64::from(timescale)).div_ceil(1000);
+    let mut output = data.to_vec();
+    let mut found = false;
+    for moof in super::boxes::boxes(data)? {
+        if &moof[4..8] != b"moof" {
+            continue;
+        }
+        for traf in super::boxes::children(moof)? {
+            if &traf[4..8] != b"traf" {
+                continue;
+            }
+            let tfdt = super::boxes::child(traf, b"tfdt")?;
+            let h = super::boxes::header(tfdt)?;
+            let offset = tfdt.as_ptr() as usize - data.as_ptr() as usize + h + 4;
+            match tfdt.get(h) {
+                Some(0) => {
+                    let time = read_u32(data, offset)?
+                        .checked_add(
+                            u32::try_from(ticks).map_err(|_| invalid("timestamp overflow"))?,
+                        )
+                        .ok_or_else(|| invalid("timestamp overflow"))?;
+                    patch_at(&mut output, offset, time)?;
+                }
+                Some(1) => {
+                    let time = read_u64(data, offset)?
+                        .checked_add(ticks)
+                        .ok_or_else(|| invalid("timestamp overflow"))?;
+                    patch_u64(&mut output, offset, time)?;
+                }
+                _ => return Err(invalid("invalid tfdt version")),
+            }
+            found = true;
+        }
+    }
+    if !found {
+        return Err(invalid("missing fragment timestamps"));
+    }
+    Ok(Bytes::from(output))
+}
+
 fn fragment_decode_time(moof: &[u8]) -> io::Result<u64> {
     let traf = child_range(moof, 0..moof.len(), b"traf")?;
     let tfdt = child_range(moof, traf, b"tfdt")?;

@@ -16,16 +16,14 @@ pub use cast::dlna::{
 pub use config::{API_TIMEOUT, PROXY_CONNECT_TIMEOUT, SOAP_TIMEOUT};
 pub use engine::{
     CurrentBilibiliParts, ENGINE_STATE, EngineContext, EnginePlaybackState, RemoteClient,
-    connect_dlna_device,
-    connect_room, cycle_quality_core, default_remote_name, get_current_bilibili_parts_core,
-    get_current_progress,
-    get_current_song_id_core, get_current_song_title_core, get_danmaku_core, get_quality_core,
-    get_total_duration, get_volume_core, jump_to_secs, pause_core, play_core, recast_current_song,
-    reset_engine, select_current_bilibili_part_core, set_danmaku_core, set_media_quality_core,
-    set_remote_control_enabled_core,
-    set_quality_core, set_volume_core, start_bilibili_engine_core, start_engine_core,
-    start_local_engine_core, toggle_danmaku_core, toggle_pause_core, trigger_next_song,
-    trigger_prev_song, volume_down_core, volume_up_core,
+    connect_dlna_device, connect_room, cycle_quality_core, default_remote_name,
+    get_current_bilibili_parts_core, get_current_progress, get_current_song_id_core,
+    get_current_song_title_core, get_danmaku_core, get_quality_core, get_total_duration,
+    get_volume_core, jump_to_secs, pause_core, play_core, recast_current_song, reset_engine,
+    select_current_bilibili_part_core, set_audio_delay_core, set_danmaku_core,
+    set_media_quality_core, set_quality_core, set_remote_control_enabled_core, set_volume_core,
+    start_bilibili_engine_core, start_engine_core, start_local_engine_core, toggle_danmaku_core,
+    toggle_pause_core, trigger_next_song, trigger_prev_song, volume_down_core, volume_up_core,
 };
 pub use error::CoreError;
 pub use media::server::SharedState;

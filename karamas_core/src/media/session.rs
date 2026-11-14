@@ -13,7 +13,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc, Mutex, RwLock,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicI32, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -97,8 +97,24 @@ pub struct MediaSession {
     ready: OnceCell<Arc<SessionMedia>>,
     live_source: OnceCell<Option<crate::sources::live::Resolved>>,
     warmup: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    audio_delay_ms: i32,
 }
 impl MediaSession {
+    pub fn audio_delay_ms(&self) -> Option<i32> {
+        let media = self.ready.get()?;
+        match media.as_ref() {
+            SessionMedia::Seekable { .. } => Some(self.audio_delay_ms),
+            SessionMedia::Direct(_) | SessionMedia::Hls(_)
+                if parse_bilibili_video(&self.song).is_ok()
+                    || crate::sources::youtube::is_youtube_url(&self.song) =>
+            {
+                Some(0)
+            }
+            SessionMedia::Live(media) if media.supports_audio_delay() => Some(self.audio_delay_ms),
+            _ => None,
+        }
+    }
+
     /// 返回当前会话识别出的直播属性；尚未识别时返回 false。
     pub fn is_live(&self) -> bool {
         self.live_source.get().is_some_and(Option::is_some)
@@ -249,7 +265,13 @@ impl MediaSession {
                 Source::Native(url) => SessionMedia::Direct(url.into()),
                 Source::Flv { url, filesize } => SessionMedia::Flv { url, filesize },
                 Source::Live(source) => SessionMedia::Live(
-                    crate::media::live::LiveMedia::prepare(client, source, self.quality).await?,
+                    crate::media::live::LiveMedia::prepare(
+                        client,
+                        source,
+                        self.quality,
+                        self.audio_delay_ms,
+                    )
+                    .await?,
                 ),
             };
             let format = if media.playback_type() == PlaybackMediaType::Hls {
@@ -266,8 +288,19 @@ impl MediaSession {
         }
         // 直播页先取源，再进入通用 HTTP 直链分支，避免把网页 HTML 当作 MP4 转发。
         if self.detect_live(client).await? {
-            let source = self.live_source.get().and_then(Option::as_ref).unwrap().clone();
-            let media = crate::media::live::LiveMedia::prepare(client, source, self.quality).await?;
+            let source = self
+                .live_source
+                .get()
+                .and_then(Option::as_ref)
+                .unwrap()
+                .clone();
+            let media = crate::media::live::LiveMedia::prepare(
+                client,
+                source,
+                self.quality,
+                self.audio_delay_ms,
+            )
+            .await?;
             *self.resolved_quality.lock().unwrap() = Some((media.quality(), MediaFormat::Hls));
             return Ok(SessionMedia::Live(media));
         }
@@ -357,7 +390,7 @@ impl MediaSession {
         }
         let prepared = tokio::time::timeout(
             Duration::from_secs(60),
-            dash::prepare(client, video_url, audio_url),
+            dash::prepare_with_audio_delay(client, video_url, audio_url, self.audio_delay_ms),
         )
         .await
         .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "MP4 preparation timeout"))??;
@@ -377,16 +410,29 @@ impl MediaSession {
 pub struct MediaSessions {
     current: Mutex<Option<Arc<MediaSession>>>,
     proxy_token: String,
+    audio_delay_ms: AtomicI32,
 }
 impl Default for MediaSessions {
     fn default() -> Self {
         Self {
             current: Mutex::new(None),
             proxy_token: uuid::Uuid::new_v4().simple().to_string(),
+            audio_delay_ms: AtomicI32::new(0),
         }
     }
 }
 impl MediaSessions {
+    pub fn set_audio_delay_ms(&self, milliseconds: i32) -> io::Result<()> {
+        if !(-5000..=5000).contains(&milliseconds) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "声音偏移须在 -5000 到 5000 毫秒之间",
+            ));
+        }
+        self.audio_delay_ms.store(milliseconds, Ordering::Relaxed);
+        Ok(())
+    }
+
     /// 为代理资源添加当前连接的访问 token，保留资源路径和查询参数。
     pub fn proxy_path(&self, resource: &str) -> String {
         format!("{}/{resource}", self.proxy_token)
@@ -474,19 +520,28 @@ impl MediaSessions {
         hls_direct: bool,
         local: bool,
     ) -> Arc<MediaSession> {
+        let audio_delay_ms = self.audio_delay_ms.load(Ordering::Relaxed);
+        let remux = audio_delay_ms != 0
+            && (parse_bilibili_video(song).is_ok()
+                || crate::sources::youtube::is_youtube_url(song));
         let session = Arc::new(MediaSession {
             generation: NEXT_GENERATION.fetch_add(1, Ordering::Relaxed),
             song: song.into(),
             quality,
-            format,
-            allowed_formats: allowed_formats.to_vec(),
-            hls_direct,
+            format: if remux { MediaFormat::Dash } else { format },
+            allowed_formats: if remux {
+                vec![MediaFormat::Dash]
+            } else {
+                allowed_formats.to_vec()
+            },
+            hls_direct: hls_direct && !remux,
             local,
             resolved_quality: Mutex::new(None),
             stopped: watch::channel(false).0,
             ready: OnceCell::new(),
             live_source: OnceCell::new(),
             warmup: Mutex::new(None),
+            audio_delay_ms,
         });
         let previous = self.current.lock().unwrap().replace(session.clone());
         if let Some(previous) = previous {

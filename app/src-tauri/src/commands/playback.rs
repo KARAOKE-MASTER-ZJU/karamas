@@ -29,6 +29,7 @@ pub async fn poll_playback() -> CommandResult<Option<PlaybackState>> {
         quality_qn: playback.quality_qn,
         quality_format: playback.quality_format,
         danmaku: playback.danmaku,
+        audio_delay_ms: playback.audio_delay_ms,
         capabilities: playback.capabilities.into(),
     };
     // 重连期间不把旧会话的结果返回给界面。
@@ -93,6 +94,11 @@ pub async fn seek(seconds: u32) -> CommandResult<()> {
 #[tauri::command]
 pub async fn set_volume(volume: u32) -> CommandResult<u32> {
     Ok(karamas_core::set_volume_core(volume).await?)
+}
+
+#[tauri::command]
+pub async fn set_audio_delay(milliseconds: i32) -> CommandResult<i32> {
+    Ok(karamas_core::set_audio_delay_core(milliseconds).await?)
 }
 
 /// 读取支持绝对音量的设备音量。

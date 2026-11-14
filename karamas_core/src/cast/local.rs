@@ -343,6 +343,37 @@ impl Caster for LocalCaster {
     async fn get_progress(&self) -> Result<Progress, CastError> {
         Ok(self.playback_snapshot().unwrap().progress)
     }
+    fn audio_delay_ms(&self) -> Option<i32> {
+        self.sessions.current()?.audio_delay_ms()
+    }
+
+    async fn set_audio_delay_ms(&self, milliseconds: i32) -> Result<(), CastError> {
+        let _control = self.control.lock().await;
+        let previous = self.audio_delay_ms().ok_or(CastError::Unsupported)?;
+        if previous == milliseconds {
+            return Ok(());
+        }
+        let (song, position, playing) = {
+            let state = self.state.lock().unwrap();
+            let report = Self::fresh_report(&state).ok_or_else(|| {
+                CastError::Device("尚未取得播放进度，请稍后再调整声音偏移".into())
+            })?;
+            (
+                state.song.clone().ok_or(CastError::Unsupported)?,
+                report.current_secs as u32,
+                !report.paused && !report.ended,
+            )
+        };
+        self.sessions
+            .set_audio_delay_ms(milliseconds)
+            .map_err(|error| CastError::Device(error.to_string()))?;
+        if let Err(error) = self.load(&song, position, playing).await {
+            let _ = self.sessions.set_audio_delay_ms(previous);
+            return Err(error);
+        }
+        Ok(())
+    }
+
     async fn set_volume(&self, value: u32) -> Result<(), CastError> {
         let _control = self.control.lock().await;
         self.command(LocalAction::Volume {

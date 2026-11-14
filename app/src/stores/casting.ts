@@ -100,6 +100,7 @@ export const useCastingStore = defineStore("casting", () => {
   const enteringRoom = ref(false);
   const controlling = ref(false);
   const recasting = ref(false);
+  const applyingAudioDelay = ref(false);
   const connected = computed(
     () => activeDevice.value !== null || playback.value !== null,
   );
@@ -437,6 +438,17 @@ export const useCastingStore = defineStore("casting", () => {
         throw new Error("清晰度已切换，但偏好保存失败，请检查本地存储。");
     });
   }
+  async function setAudioDelay(milliseconds: number) {
+    await control(async () => {
+      applyingAudioDelay.value = true;
+      try {
+        const value = await castingApi.setAudioDelay(milliseconds);
+        if (playback.value) playback.value.audioDelayMs = value;
+      } finally {
+        applyingAudioDelay.value = false;
+      }
+    });
+  }
   async function setDanmaku(enabled: boolean) {
     await control(async () => {
       const danmaku = await castingApi.setDanmaku(enabled);
@@ -552,6 +564,7 @@ export const useCastingStore = defineStore("casting", () => {
     enteringRoom,
     controlling,
     recasting,
+    applyingAudioDelay,
     connected,
     sessionBusy,
     busy,
@@ -570,6 +583,7 @@ export const useCastingStore = defineStore("casting", () => {
     seek,
     setQuality,
     setDanmaku,
+    setAudioDelay,
   };
 });
 if (import.meta.hot)
