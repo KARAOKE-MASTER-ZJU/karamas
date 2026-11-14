@@ -134,7 +134,7 @@ pub(super) fn fragment_decode_time(moof: &[u8]) -> io::Result<u64> {
 }
 
 /// 读取轨道的时间刻度。
-pub(super) fn track_timescale(moov: &[u8]) -> io::Result<u32> {
+pub(crate) fn track_timescale(moov: &[u8]) -> io::Result<u32> {
     let trak = child_range(moov, 0..moov.len(), b"trak")?;
     let mdia = child_range(moov, trak, b"mdia")?;
     let mdhd = child_range(moov, mdia, b"mdhd")?;

@@ -38,6 +38,11 @@ const videoContainer = ref<HTMLElement | null>(null);
 const playbackBusy = computed(
   () => casting.sessionBusy || playbackOutput.state.switching,
 );
+const showAudioDelay = computed(
+  () =>
+    activeDevice.value?.kind === "local" ||
+    (activeDevice.value?.kind === "dlna" && casting.dlnaProxyEnabled),
+);
 function handlePlaybackOutputChange(outputId: string) {
   void controls.run(async () => {
     await setPlaybackOutput(outputId);
@@ -167,14 +172,11 @@ useVideoLayout(
           @set-volume="controls.setVolume"
         />
         <div
-          v-if="
-            activeDevice &&
-            (activeDevice.kind !== 'bilibili' || !playback?.isLive)
-          "
+          v-if="activeDevice && (showAudioDelay || !playback?.isLive)"
           class="playback-settings"
         >
           <AudioDelayControl
-            v-if="activeDevice.kind !== 'bilibili'"
+            v-if="showAudioDelay"
             :key="playback?.songUrl ?? activeDevice.kind"
             :value="playback?.audioDelayMs ?? null"
             :disabled="casting.busy || playbackBusy"
@@ -194,7 +196,6 @@ useVideoLayout(
             :media-qualities-loading="casting.mediaQualitiesLoading"
             :media-qualities-error="casting.mediaQualitiesError"
             :danmaku="playback?.danmaku ?? null"
-            :audio-delay-ms="playback?.audioDelayMs ?? null"
             :disabled="!casting.connected || playbackBusy"
             @quality="controls.setQuality"
             @refresh-media-qualities="casting.refreshMediaQualities"

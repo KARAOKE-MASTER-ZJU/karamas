@@ -2,7 +2,6 @@
 use crate::{
     cast::{MediaFormat, Quality},
     media::{cache::SongCache, mp4::indexed::VirtualMp4},
-    sources::bilibili::parse_bilibili_video,
 };
 use futures_util::StreamExt;
 use std::{
@@ -59,6 +58,7 @@ pub enum PlaybackMediaType {
 
 pub enum SessionMedia {
     Direct(String),
+    Mp4(String),
     Flv {
         url: url::Url,
         filesize: Option<u64>,
@@ -74,7 +74,7 @@ pub enum SessionMedia {
 impl SessionMedia {
     pub fn playback_type(&self) -> PlaybackMediaType {
         match self {
-            Self::Direct(_) | Self::Seekable { .. } => PlaybackMediaType::Native,
+            Self::Direct(_) | Self::Mp4(_) | Self::Seekable { .. } => PlaybackMediaType::Native,
             Self::Hls(_) | Self::Live(_) => PlaybackMediaType::Hls,
             Self::Flv { .. } => PlaybackMediaType::Flv,
         }
@@ -101,12 +101,8 @@ impl MediaSession {
         let media = self.ready.get()?;
         match media.as_ref() {
             SessionMedia::Seekable { .. } => Some(self.audio_delay_ms),
-            SessionMedia::Direct(_) | SessionMedia::Hls(_)
-                if parse_bilibili_video(&self.song).is_ok()
-                    || crate::sources::youtube::is_youtube_url(&self.song) =>
-            {
-                Some(0)
-            }
+            SessionMedia::Mp4(_) => Some(0),
+            SessionMedia::Hls(_) => Some(if self.hls_direct { 0 } else { self.audio_delay_ms }),
             SessionMedia::Live(media) if media.supports_audio_delay() => Some(self.audio_delay_ms),
             _ => None,
         }

@@ -136,15 +136,22 @@ pub(crate) struct Source {
     track: Mutex<Track>,
     pub(crate) total: u64,
     index: Vec<u8>,
+    patches: Vec<crate::media::mp4::dash::TimestampPatch>,
 }
 
 impl Source {
-    pub(crate) fn new(track: Track, total: u64, index: Vec<u8>) -> Self {
+    pub(crate) fn new(
+        track: Track,
+        total: u64,
+        index: Vec<u8>,
+        patches: Vec<crate::media::mp4::dash::TimestampPatch>,
+    ) -> Self {
         Self {
             url: track.urls[0].clone(),
             track: Mutex::new(track),
             total,
             index,
+            patches,
         }
     }
 
@@ -156,7 +163,7 @@ impl Source {
         // 每次只读一个有界块；同轨道共用成功的 CDN 和刷新结果。
         let mut track = self.track.lock().await;
         let original = track.clone();
-        track
+        let bytes = track
             .recover(Duration::from_secs(20), |url, refreshed| {
                 let range = range.clone();
                 let original = &original;
@@ -175,7 +182,25 @@ impl Source {
                     .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "读取 HLS 媒体超时"))?
                 }
             })
-            .await
+            .await?;
+        if self.patches.is_empty() {
+            return Ok(bytes);
+        }
+        let mut output = bytes.to_vec();
+        for patch in &self.patches {
+            let start = range.start.max(patch.offset);
+            let end = range.end.min(patch.offset + patch.before.len() as u64);
+            if start >= end {
+                continue;
+            }
+            let target = (start - range.start) as usize..(end - range.start) as usize;
+            let source = (start - patch.offset) as usize..(end - patch.offset) as usize;
+            if bytes[target.clone()] != patch.before[source.clone()] {
+                return Err(invalid("HLS 分片时间戳已变化，请重新播放"));
+            }
+            output[target].copy_from_slice(&patch.after[source]);
+        }
+        Ok(Bytes::from(output))
     }
 }
 

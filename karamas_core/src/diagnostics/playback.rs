@@ -114,7 +114,7 @@ impl PlaybackTester {
                 );
                 let media_url = if direct {
                     match media.as_ref() {
-                        SessionMedia::Direct(url) => url.clone(),
+                        SessionMedia::Direct(url) | SessionMedia::Mp4(url) => url.clone(),
                         SessionMedia::Hls(playlists) => {
                             format!("{proxy_url}|{}", playlists.request_headers())
                         }

@@ -5,6 +5,7 @@ use url::Url;
 
 pub(crate) enum Source {
     Native(Url),
+    Mp4(Url),
     Flv { url: Url, filesize: Option<u64> },
     Live(Resolved),
 }
@@ -66,6 +67,7 @@ pub(crate) async fn resolve(client: &reqwest::Client, value: &str) -> io::Result
             referer,
         }));
     }
+    if prefix.get(4..8) == Some(b"ftyp") { return Ok(Source::Mp4(url)); }
     Ok(Source::Native(url))
 }
 

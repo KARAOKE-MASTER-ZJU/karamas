@@ -8,8 +8,8 @@ mod boxes;
 mod metadata;
 mod source;
 
-pub(crate) use metadata::delay_fragment;
-use metadata::{merge_initialization, patch_moof, track_timescale};
+pub(crate) use metadata::{delay_fragment, track_timescale};
+use metadata::{merge_initialization, patch_moof};
 use source::TrackSource;
 
 const VIDEO_TRACK_ID: u32 = 1;

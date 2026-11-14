@@ -4,7 +4,7 @@ use crate::media::mp4::boxes::{atom, child, children, header, invalid, u32_at, u
 use std::io;
 
 /// 替换指定类型的直接子 box，并重建容器。
-fn replace(b: &[u8], kind: &[u8; 4], replacement: &[u8]) -> io::Result<Vec<u8>> {
+pub(super) fn replace(b: &[u8], kind: &[u8; 4], replacement: &[u8]) -> io::Result<Vec<u8>> {
     let mut body = Vec::new();
     for c in children(b)? {
         body.extend_from_slice(if &c[4..8] == kind { replacement } else { c });
@@ -25,7 +25,7 @@ pub(super) fn time_scale(b: &[u8]) -> io::Result<u32> {
     Ok(value)
 }
 /// 复制头部并更新影片、媒体或轨道时长。
-fn duration(b: &[u8], value: u64, track: bool) -> io::Result<Vec<u8>> {
+pub(super) fn duration(b: &[u8], value: u64, track: bool) -> io::Result<Vec<u8>> {
     let mut out = b.to_vec();
     let h = header(b)?;
     let version = *b.get(h).ok_or_else(|| invalid("short duration box"))?;
@@ -48,6 +48,65 @@ fn duration(b: &[u8], value: u64, track: bool) -> io::Result<Vec<u8>> {
         .ok_or_else(|| invalid("short duration"))?
         .copy_from_slice(&bytes);
     Ok(out)
+}
+
+/// 在原 edit list 前加入空白时间，保留编码器裁剪和播放速率。
+pub(super) fn delay_track(trak: &[u8], delay: u64, presentation: u64) -> io::Result<Vec<u8>> {
+    let previous = children(trak)?.into_iter().find(|c| &c[4..8] == b"edts");
+    let mut entries = Vec::new();
+    if let Some(edts) = previous {
+        let elst = child(edts, b"elst")?;
+        let h = header(elst)?;
+        let version = *elst.get(h).ok_or_else(|| invalid("short edit list"))?;
+        let width = match version {
+            0 => 12,
+            1 => 20,
+            _ => return Err(invalid("edit list 版本不受支持")),
+        };
+        let count = u32_at(elst, h + 4)? as usize;
+        let remaining = elst.len() - h - 8;
+        if count != remaining / width || remaining % width != 0 {
+            return Err(invalid("edit list 长度无效"));
+        }
+        for n in 0..count {
+            let p = h + 8 + n * width;
+            let (duration, time, rate) = if version == 1 {
+                (
+                    u64_at(elst, p)?,
+                    u64_at(elst, p + 8)? as i64,
+                    u32_at(elst, p + 16)?,
+                )
+            } else {
+                (
+                    u64::from(u32_at(elst, p)?),
+                    i64::from(u32_at(elst, p + 4)? as i32),
+                    u32_at(elst, p + 8)?,
+                )
+            };
+            entries.push((duration, time, rate));
+        }
+    } else {
+        entries.push((presentation, 0, 0x00010000));
+    }
+    let mut edits = vec![1, 0, 0, 0];
+    edits.extend_from_slice(
+        &u32::try_from(entries.len() + 1)
+            .map_err(|_| invalid("edit list 条目过多"))?
+            .to_be_bytes(),
+    );
+    for (duration, time, rate) in std::iter::once((delay, -1i64, 0x00010000)).chain(entries) {
+        edits.extend_from_slice(&duration.to_be_bytes());
+        edits.extend_from_slice(&time.to_be_bytes());
+        edits.extend_from_slice(&rate.to_be_bytes());
+    }
+    let elst = atom(b"elst", &edits)?;
+    if let Some(edts) = previous {
+        replace(trak, b"edts", &replace(edts, b"elst", &elst)?)
+    } else {
+        let mut body = trak[header(trak)?..].to_vec();
+        body.extend_from_slice(&atom(b"edts", &elst)?);
+        atom(b"trak", &body)
+    }
 }
 
 impl Mp4Builder {
@@ -161,43 +220,7 @@ impl Mp4Builder {
                 trak = replace(&trak, b"edts", &replace(edts, b"elst", &edit)?)?;
             }
             if delay != 0 {
-                let previous = children(&trak)?.into_iter().find(|c| &c[4..8] == b"edts");
-                let (edit_duration, media_time, rate) = if let Some(edts) = previous {
-                    let elst = child(edts, b"elst")?;
-                    let h = header(elst)?;
-                    let p = h + 8;
-                    if elst[h] == 1 {
-                        (
-                            u64_at(elst, p)?,
-                            u64_at(elst, p + 8)? as i64,
-                            u32_at(elst, p + 16)?,
-                        )
-                    } else {
-                        (
-                            u64::from(u32_at(elst, p)?),
-                            i64::from(u32_at(elst, p + 4)? as i32),
-                            u32_at(elst, p + 8)?,
-                        )
-                    }
-                } else {
-                    (scaled, 0, 0x00010000)
-                };
-                let mut edits = vec![1, 0, 0, 0];
-                edits.extend_from_slice(&2u32.to_be_bytes());
-                edits.extend_from_slice(&delay.to_be_bytes());
-                edits.extend_from_slice(&(-1i64).to_be_bytes());
-                edits.extend_from_slice(&0x00010000u32.to_be_bytes());
-                edits.extend_from_slice(&edit_duration.to_be_bytes());
-                edits.extend_from_slice(&media_time.to_be_bytes());
-                edits.extend_from_slice(&rate.to_be_bytes());
-                let edts = atom(b"edts", &atom(b"elst", &edits)?)?;
-                trak = if previous.is_some() {
-                    replace(&trak, b"edts", &edts)?
-                } else {
-                    let mut content = trak[header(&trak)?..].to_vec();
-                    content.extend_from_slice(&edts);
-                    atom(b"trak", &content)?
-                };
+                trak = delay_track(&trak, delay, scaled)?;
             }
             let mut tkhd = duration(child(&trak, b"tkhd")?, presentation_duration, true)?;
             let h = header(&tkhd)?;

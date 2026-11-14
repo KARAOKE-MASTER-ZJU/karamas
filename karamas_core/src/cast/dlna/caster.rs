@@ -132,7 +132,8 @@ impl DlnaCaster {
             selected = Some(actual_quality);
             if hls_direct {
                 match media.as_ref() {
-                    crate::media::session::SessionMedia::Direct(url) => url.clone(),
+                    crate::media::session::SessionMedia::Direct(url)
+                    | crate::media::session::SessionMedia::Mp4(url) => url.clone(),
                     crate::media::session::SessionMedia::Hls(playlists) => format!(
                         "http://{}/{}|{}",
                         std::net::SocketAddr::new(self.server_ip, self.server_port),

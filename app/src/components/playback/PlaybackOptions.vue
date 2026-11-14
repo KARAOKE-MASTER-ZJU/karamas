@@ -21,7 +21,6 @@ const props = defineProps<{
   mediaQualitiesLoading: boolean;
   mediaQualitiesError: string;
   danmaku: boolean | null;
-  audioDelayMs: number | null;
   disabled: boolean;
 }>();
 const emit = defineEmits<{
@@ -51,7 +50,6 @@ const canMux = computed(
     props.dlnaHlsDirectEnabled,
 );
 const splitFormats = computed<MediaFormat[]>(() => {
-  if (props.audioDelayMs) return ["dash"];
   if (props.mode === "local") return ["hls", "dash"];
   if (props.mode === "dlna" && props.dlnaProxyEnabled)
     return props.dlnaHlsDirectEnabled ? ["hls", "dash"] : ["dash"];
@@ -70,7 +68,7 @@ const options = computed<QualityOption[]>(() => {
   const result: QualityOption[] = [];
   for (const quality of props.mediaQualities) {
     const label = quality.label.replace(/\s+/g, "");
-    if (quality.directMp4 === true && !props.audioDelayMs)
+    if (quality.directMp4 === true)
       result.push({
         qn: quality.qn,
         format: "mp4",

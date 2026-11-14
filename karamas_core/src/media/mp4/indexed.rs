@@ -11,6 +11,8 @@ use moov::time_scale;
 
 mod layout;
 mod moov;
+mod progressive;
+pub(crate) use progressive::prepare as prepare_progressive;
 pub use layout::{ReadPart, VirtualMp4};
 
 struct Track {

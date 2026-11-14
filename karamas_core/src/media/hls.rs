@@ -101,11 +101,30 @@ impl Playlists {
         video: &Track,
         audio: &Track,
         proxy: bool,
+        audio_delay_ms: i32,
     ) -> io::Result<Self> {
         let started = std::time::Instant::now();
         let (video_playlist, audio_playlist) = tokio::try_join!(
-            load_playlist(client, video, proxy.then_some("video.mp4")),
-            load_playlist(client, audio, proxy.then_some("audio.mp4")),
+            load_playlist(
+                client,
+                video,
+                proxy.then_some("video.mp4"),
+                if proxy && audio_delay_ms < 0 {
+                    audio_delay_ms.unsigned_abs()
+                } else {
+                    0
+                }
+            ),
+            load_playlist(
+                client,
+                audio,
+                proxy.then_some("audio.mp4"),
+                if proxy && audio_delay_ms > 0 {
+                    audio_delay_ms as u32
+                } else {
+                    0
+                }
+            ),
         )?;
         let master = master_playlist(
             &video.codecs,
@@ -131,18 +150,29 @@ async fn load_playlist(
     client: &reqwest::Client,
     track: &Track,
     media_url: Option<&str>,
+    delay_ms: u32,
 ) -> io::Result<(String, Source)> {
     let mut selected = track.clone();
-    let (data, total, segments) = selected
+    let (data, total, segments, patches) = selected
         .recover(Duration::from_secs(60), |url, _| async move {
             let (data, total) = load_index(client, track, &url).await?;
             let segments = parse_index(&data, track.index.start, total)?;
-            Ok((data, total, segments))
+            let patches = if delay_ms == 0 {
+                Vec::new()
+            } else {
+                let (length, patches) =
+                    super::mp4::dash::timestamp_patches(client, &url, delay_ms).await?;
+                if length != total {
+                    return Err(invalid("HLS 媒体长度已变化"));
+                }
+                patches
+            };
+            Ok((data, total, segments, patches))
         })
         .await?;
     let media_url = media_url.unwrap_or(&selected.urls[0]);
     let playlist = track.playlist(media_url, segments);
-    Ok((playlist, Source::new(selected, total, data)))
+    Ok((playlist, Source::new(selected, total, data, patches)))
 }
 
 fn network_error(error: reqwest::Error) -> io::Error {
@@ -389,7 +419,7 @@ mod tests {
         let backup = format!("http://{address}/backup");
         track.urls.push(backup.clone());
         let client = reqwest::Client::new();
-        let proxy = Playlists::prepare(&client, &track, &track, true)
+        let proxy = Playlists::prepare(&client, &track, &track, true, 0)
             .await
             .unwrap();
         assert_eq!(proxy.source("video.mp4"), Some(backup.as_str()));
@@ -399,7 +429,7 @@ mod tests {
                 .unwrap()
                 .contains("URI=\"video.mp4\"")
         );
-        let direct = Playlists::prepare(&client, &track, &track, false)
+        let direct = Playlists::prepare(&client, &track, &track, false, 0)
             .await
             .unwrap();
         assert!(direct.playlist("video.m3u8").unwrap().contains(&backup));
@@ -467,7 +497,7 @@ mod tests {
         };
         let (video, audio) = (track("video"), track("audio"));
         let client = reqwest::Client::new();
-        let proxy = Playlists::prepare(&client, &video, &audio, true)
+        let proxy = Playlists::prepare(&client, &video, &audio, true, 0)
             .await
             .unwrap();
         assert_eq!(proxy.source("video.mp4"), Some(video.urls[0].as_str()));
@@ -478,7 +508,7 @@ mod tests {
             assert!(playlist.contains(&format!("URI=\"{path}\"")));
             assert!(!playlist.contains("token=private"));
         }
-        let direct = Playlists::prepare(&client, &video, &audio, false)
+        let direct = Playlists::prepare(&client, &video, &audio, false, 0)
             .await
             .unwrap();
         assert!(direct.source("video.mp4").is_none());

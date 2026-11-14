@@ -46,7 +46,7 @@ pub async fn proxy_handler(
                 return Err(actix_web::error::ErrorBadGateway(error));
             }
         };
-        if matches!(media.as_ref(), SessionMedia::Direct(_) | SessionMedia::Flv { .. } | SessionMedia::Seekable { .. })
+        if matches!(media.as_ref(), SessionMedia::Direct(_) | SessionMedia::Mp4(_) | SessionMedia::Flv { .. } | SessionMedia::Seekable { .. })
             && origin_url != session.path()
         {
             return Ok(super::hls::cors(&mut HttpResponse::NotFound()).finish());
@@ -86,7 +86,7 @@ pub async fn proxy_handler(
                     &req, client.get_ref(), session.clone(), url.as_str(), &referer,
                 ).await;
             }
-            SessionMedia::Direct(url) => {
+            SessionMedia::Direct(url) | SessionMedia::Mp4(url) => {
                 // Progress reads durations by playlist song, including its page suffix.
                 duration_cache_key = Some(session.song.clone());
                 origin_url = url.clone();

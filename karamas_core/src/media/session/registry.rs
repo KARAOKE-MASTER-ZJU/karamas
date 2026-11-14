@@ -1,9 +1,6 @@
 //! 当前会话的切换与失效、代次标识和代理资源路径。
 use super::MediaSession;
-use crate::{
-    cast::{MediaFormat, Quality},
-    sources::bilibili::parse_bilibili_video,
-};
+use crate::cast::{MediaFormat, Quality};
 use std::{
     io,
     sync::{
@@ -129,20 +126,13 @@ impl MediaSessions {
         local: bool,
     ) -> Arc<MediaSession> {
         let audio_delay_ms = self.audio_delay_ms.load(Ordering::Relaxed);
-        let remux = audio_delay_ms != 0
-            && (parse_bilibili_video(song).is_ok()
-                || crate::sources::youtube::is_youtube_url(song));
         let session = Arc::new(MediaSession {
             generation: NEXT_GENERATION.fetch_add(1, Ordering::Relaxed),
             song: song.into(),
             quality,
-            format: if remux { MediaFormat::Dash } else { format },
-            allowed_formats: if remux {
-                vec![MediaFormat::Dash]
-            } else {
-                allowed_formats.to_vec()
-            },
-            hls_direct: hls_direct && !remux,
+            format,
+            allowed_formats: allowed_formats.to_vec(),
+            hls_direct,
             local,
             resolved_quality: Mutex::new(None),
             stopped: watch::channel(false).0,

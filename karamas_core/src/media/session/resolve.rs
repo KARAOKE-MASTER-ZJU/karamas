@@ -20,14 +20,14 @@ impl MediaSession {
 
     /// 解析歌曲媒体源，按需准备可定位的 DASH 媒体。
     pub(super) async fn resolve(&self, client: &reqwest::Client) -> io::Result<SessionMedia> {
-        if self.local
-            && url::Url::parse(&self.song).is_ok_and(|url| matches!(url.scheme(), "http" | "https"))
+        if url::Url::parse(&self.song).is_ok_and(|url| matches!(url.scheme(), "http" | "https"))
             && !crate::sources::youtube::is_youtube_url(&self.song)
             && parse_bilibili_video(&self.song).is_err()
         {
             use crate::sources::http::Source;
             let media = match crate::sources::http::resolve(client, &self.song).await? {
                 Source::Native(url) => SessionMedia::Direct(url.into()),
+                Source::Mp4(url) => self.prepare_mp4(client, url.into()).await?,
                 Source::Flv { url, filesize } => SessionMedia::Flv { url, filesize },
                 Source::Live(source) => SessionMedia::Live(
                     crate::media::live::LiveMedia::prepare(
@@ -100,12 +100,6 @@ impl MediaSession {
             return Ok(media);
         }
         let bilibili = parse_bilibili_video(&self.song);
-        if bilibili.is_err()
-            && (self.song.starts_with("http://") || self.song.starts_with("https://"))
-        {
-            *self.resolved_quality.lock().unwrap() = Some((self.quality, MediaFormat::Mp4));
-            return Ok(SessionMedia::Direct(self.song.clone()));
-        }
         let (bvid, page) = bilibili.map_err(io::Error::other)?;
         let resolved = get_bilibili_media_with_formats(
             &bvid,
@@ -117,7 +111,7 @@ impl MediaSession {
         .await
         .map_err(io::Error::other)?;
         let media = match resolved.media {
-            BilibiliMedia::Direct { url } => SessionMedia::Direct(url),
+            BilibiliMedia::Direct { url } => self.prepare_mp4(client, url).await?,
             BilibiliMedia::Dash {
                 video_url,
                 audio_url,
@@ -150,8 +144,18 @@ impl MediaSession {
             let (video, audio) =
                 hls_tracks.ok_or_else(|| io::Error::other("媒体源缺少 HLS 所需的分段信息"))?;
             return Ok(SessionMedia::Hls(
-                crate::media::hls::Playlists::prepare(client, video, audio, !self.hls_direct)
-                    .await?,
+                crate::media::hls::Playlists::prepare(
+                    client,
+                    video,
+                    audio,
+                    !self.hls_direct,
+                    if self.hls_direct {
+                        0
+                    } else {
+                        self.audio_delay_ms
+                    },
+                )
+                .await?,
             ));
         }
         let prepared = tokio::time::timeout(
@@ -160,15 +164,32 @@ impl MediaSession {
         )
         .await
         .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "MP4 preparation timeout"))??;
-        let cache = Arc::new(SongCache::new(
-            &cache_root()?,
-            client.clone(),
-            prepared.sources,
-            256 * 1024 * 1024,
-        )?);
-        Ok(SessionMedia::Seekable {
-            mp4: Arc::new(prepared.mp4),
-            cache,
-        })
+        cache_media(client, prepared)
     }
+
+    async fn prepare_mp4(&self, client: &reqwest::Client, url: String) -> io::Result<SessionMedia> {
+        if self.audio_delay_ms == 0 || self.hls_direct {
+            return Ok(SessionMedia::Mp4(url));
+        }
+        let prepared = tokio::time::timeout(
+            Duration::from_secs(60),
+            crate::media::mp4::indexed::prepare_progressive(client, &url, self.audio_delay_ms),
+        )
+        .await
+        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "MP4 偏移处理超时"))??;
+        cache_media(client, prepared)
+    }
+}
+
+fn cache_media(client: &reqwest::Client, prepared: dash::PreparedDash) -> io::Result<SessionMedia> {
+    let cache = Arc::new(SongCache::new(
+        &cache_root()?,
+        client.clone(),
+        prepared.sources,
+        256 * 1024 * 1024,
+    )?);
+    Ok(SessionMedia::Seekable {
+        mp4: Arc::new(prepared.mp4),
+        cache,
+    })
 }
