@@ -2,8 +2,9 @@
 //! Futures are structured (no detached tasks), so dropping preparation cancels
 //! every outstanding upstream request when the current song changes.
 use crate::{
-    media::cache::{RemoteSource, fetch_range},
+    media::cache::RemoteSource,
     media::mp4::indexed::{Mp4Builder, VirtualMp4},
+    media::upstream::fetch_range,
 };
 use bytes::{Bytes, BytesMut};
 use futures_util::{StreamExt, TryStreamExt};

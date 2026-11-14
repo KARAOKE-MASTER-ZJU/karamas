@@ -1,25 +1,22 @@
-//! Own one current song/quality representation. URLs carry a generation so an
-//! old renderer request can never recreate a previous song's cache.
+//! 单个媒体会话的生命周期、准备结果共享和 seek 预取。
 use crate::{
-    cast::{MediaFormat, Quality, select_media_quality},
-    media::cache::SongCache,
-    media::mp4::dash,
-    media::mp4::indexed::VirtualMp4,
-    sources::bilibili::{BilibiliMedia, get_bilibili_media_with_formats, parse_bilibili_video},
+    cast::{MediaFormat, Quality},
+    media::{cache::SongCache, mp4::indexed::VirtualMp4},
+    sources::bilibili::parse_bilibili_video,
 };
 use futures_util::StreamExt;
 use std::{
     io,
     path::PathBuf,
-    sync::{
-        Arc, Mutex, RwLock,
-        atomic::{AtomicI32, AtomicU64, Ordering},
-    },
-    time::{Duration, Instant},
+    sync::{Arc, Mutex, RwLock},
+    time::Instant,
 };
 use tokio::sync::{OnceCell, watch};
 
-static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
+mod registry;
+mod resolve;
+pub use registry::{MediaSessions, generation_from_path};
+
 static CACHE_ROOT: RwLock<Option<PathBuf>> = RwLock::new(None);
 
 /// 设置并创建媒体缓存根目录。
@@ -118,17 +115,10 @@ impl MediaSession {
     /// 返回当前会话识别出的直播属性；尚未识别时返回 false。
     pub fn is_live(&self) -> bool {
         self.live_source.get().is_some_and(Option::is_some)
-            || self.ready.get().is_some_and(|media| matches!(media.as_ref(), SessionMedia::Live(_)))
-    }
-
-    pub(crate) async fn detect_live(&self, client: &reqwest::Client) -> io::Result<bool> {
-        tokio::select! {
-            biased;
-            _ = self.cancelled() => Err(stopped()),
-            result = self.live_source.get_or_try_init(|| crate::sources::live::resolve(client, &self.song)) => {
-                result.map(|source| source.is_some())
-            }
-        }
+            || self
+                .ready
+                .get()
+                .is_some_and(|media| matches!(media.as_ref(), SessionMedia::Live(_)))
     }
 
     pub fn resolved_quality(&self) -> (Quality, MediaFormat) {
@@ -252,332 +242,6 @@ impl MediaSession {
         }
         Ok(result.clone())
     }
-
-    /// 解析歌曲媒体源，按需准备可定位的 DASH 媒体。
-    async fn resolve(&self, client: &reqwest::Client) -> io::Result<SessionMedia> {
-        if self.local
-            && url::Url::parse(&self.song).is_ok_and(|url| matches!(url.scheme(), "http" | "https"))
-            && !crate::sources::youtube::is_youtube_url(&self.song)
-            && parse_bilibili_video(&self.song).is_err()
-        {
-            use crate::sources::http::Source;
-            let media = match crate::sources::http::resolve(client, &self.song).await? {
-                Source::Native(url) => SessionMedia::Direct(url.into()),
-                Source::Flv { url, filesize } => SessionMedia::Flv { url, filesize },
-                Source::Live(source) => SessionMedia::Live(
-                    crate::media::live::LiveMedia::prepare(
-                        client,
-                        source,
-                        self.quality,
-                        self.audio_delay_ms,
-                    )
-                    .await?,
-                ),
-            };
-            let format = if media.playback_type() == PlaybackMediaType::Hls {
-                MediaFormat::Hls
-            } else {
-                MediaFormat::Mp4
-            };
-            let quality = match &media {
-                SessionMedia::Live(media) => media.quality(),
-                _ => self.quality,
-            };
-            *self.resolved_quality.lock().unwrap() = Some((quality, format));
-            return Ok(media);
-        }
-        // 直播页先取源，再进入通用 HTTP 直链分支，避免把网页 HTML 当作 MP4 转发。
-        if self.detect_live(client).await? {
-            let source = self
-                .live_source
-                .get()
-                .and_then(Option::as_ref)
-                .unwrap()
-                .clone();
-            let media = crate::media::live::LiveMedia::prepare(
-                client,
-                source,
-                self.quality,
-                self.audio_delay_ms,
-            )
-            .await?;
-            *self.resolved_quality.lock().unwrap() = Some((media.quality(), MediaFormat::Hls));
-            return Ok(SessionMedia::Live(media));
-        }
-        if crate::sources::youtube::is_youtube_url(&self.song) {
-            let selected = select_media_quality(
-                (self.quality, self.format),
-                self.allowed_formats
-                    .iter()
-                    .copied()
-                    .filter(|format| *format != MediaFormat::Mp4)
-                    .flat_map(|format| {
-                        [Quality::P720, Quality::P1080].map(|quality| (quality, format))
-                    }),
-            )
-            .ok_or_else(|| io::Error::other("YouTube 没有符合目标的可选清晰度"))?;
-            let max_height = match selected.0 {
-                Quality::P1080 => 1080,
-                _ => 720,
-            };
-            let tracks = crate::sources::youtube::resolve(&self.song, max_height).await?;
-            log::info!(target: "DLNA1080", "YouTube 双轨就绪: generation={}, duration={}s", self.generation, tracks.duration_secs);
-            let media = self
-                .prepare_dash(
-                    client,
-                    &tracks.video_url,
-                    &tracks.audio_url,
-                    tracks.hls_tracks.as_ref(),
-                    selected.1,
-                )
-                .await?;
-            *self.resolved_quality.lock().unwrap() = Some(selected);
-            return Ok(media);
-        }
-        let bilibili = parse_bilibili_video(&self.song);
-        if bilibili.is_err()
-            && (self.song.starts_with("http://") || self.song.starts_with("https://"))
-        {
-            *self.resolved_quality.lock().unwrap() = Some((self.quality, MediaFormat::Mp4));
-            return Ok(SessionMedia::Direct(self.song.clone()));
-        }
-        let (bvid, page) = bilibili.map_err(io::Error::other)?;
-        let resolved = get_bilibili_media_with_formats(
-            &bvid,
-            Some(page),
-            self.quality.as_qn(),
-            self.format,
-            &self.allowed_formats,
-        )
-        .await
-        .map_err(io::Error::other)?;
-        let media = match resolved.media {
-            BilibiliMedia::Direct { url } => SessionMedia::Direct(url),
-            BilibiliMedia::Dash {
-                video_url,
-                audio_url,
-                ..
-            } => {
-                self.prepare_dash(
-                    client,
-                    &video_url,
-                    &audio_url,
-                    resolved.hls_tracks.as_ref(),
-                    resolved.format,
-                )
-                .await?
-            }
-        };
-        *self.resolved_quality.lock().unwrap() = Some((resolved.quality, resolved.format));
-        Ok(media)
-    }
-
-    /// 构建 DASH 媒体的 MP4 索引和歌曲缓存。
-    async fn prepare_dash(
-        &self,
-        client: &reqwest::Client,
-        video_url: &str,
-        audio_url: &str,
-        hls_tracks: Option<&(crate::media::hls::Track, crate::media::hls::Track)>,
-        format: MediaFormat,
-    ) -> io::Result<SessionMedia> {
-        if format == MediaFormat::Hls {
-            let (video, audio) =
-                hls_tracks.ok_or_else(|| io::Error::other("媒体源缺少 HLS 所需的分段信息"))?;
-            return Ok(SessionMedia::Hls(
-                crate::media::hls::Playlists::prepare(client, video, audio, !self.hls_direct).await?,
-            ));
-        }
-        let prepared = tokio::time::timeout(
-            Duration::from_secs(60),
-            dash::prepare_with_audio_delay(client, video_url, audio_url, self.audio_delay_ms),
-        )
-        .await
-        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "MP4 preparation timeout"))??;
-        let cache = Arc::new(SongCache::new(
-            &cache_root()?,
-            client.clone(),
-            prepared.sources,
-            256 * 1024 * 1024,
-        )?);
-        Ok(SessionMedia::Seekable {
-            mp4: Arc::new(prepared.mp4),
-            cache,
-        })
-    }
-}
-
-pub struct MediaSessions {
-    current: Mutex<Option<Arc<MediaSession>>>,
-    proxy_token: String,
-    audio_delay_ms: AtomicI32,
-}
-impl Default for MediaSessions {
-    fn default() -> Self {
-        Self {
-            current: Mutex::new(None),
-            proxy_token: uuid::Uuid::new_v4().simple().to_string(),
-            audio_delay_ms: AtomicI32::new(0),
-        }
-    }
-}
-impl MediaSessions {
-    pub fn set_audio_delay_ms(&self, milliseconds: i32) -> io::Result<()> {
-        if !(-5000..=5000).contains(&milliseconds) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "声音偏移须在 -5000 到 5000 毫秒之间",
-            ));
-        }
-        self.audio_delay_ms.store(milliseconds, Ordering::Relaxed);
-        Ok(())
-    }
-
-    /// 为代理资源添加当前连接的访问 token，保留资源路径和查询参数。
-    pub fn proxy_path(&self, resource: &str) -> String {
-        format!("{}/{resource}", self.proxy_token)
-    }
-
-    /// 校验路径前缀，返回原来的资源路径。
-    pub(crate) fn resource_path<'a>(&self, path: &'a str) -> Option<&'a str> {
-        let (token, resource) = path.split_once('/')?;
-        (token == self.proxy_token).then_some(resource)
-    }
-
-    /// 获取尚未失效的当前媒体会话。
-    pub fn current(&self) -> Option<Arc<MediaSession>> {
-        self.current
-            .lock()
-            .ok()?
-            .as_ref()
-            .filter(|s| !s.is_stopped())
-            .cloned()
-    }
-    /// 按保存的偏好创建媒体会话；实际选档由当前曲目的可用点决定。
-    pub fn activate_with_format(
-        &self,
-        song: &str,
-        quality: Quality,
-        format: MediaFormat,
-    ) -> Arc<MediaSession> {
-        self.activate_with_formats(
-            song,
-            quality,
-            format,
-            &[MediaFormat::Mp4, MediaFormat::Dash, MediaFormat::Hls],
-        )
-    }
-
-    pub fn activate_local_with_format(
-        &self,
-        song: &str,
-        quality: Quality,
-        format: MediaFormat,
-    ) -> Arc<MediaSession> {
-        self.activate(
-            song,
-            quality,
-            format,
-            &[MediaFormat::Mp4, MediaFormat::Dash, MediaFormat::Hls],
-            false,
-            true,
-        )
-    }
-
-    /// 限定当前播放端允许的模式，避免回退到已关闭的模式。
-    pub(crate) fn activate_with_formats(
-        &self,
-        song: &str,
-        quality: Quality,
-        format: MediaFormat,
-        allowed_formats: &[MediaFormat],
-    ) -> Arc<MediaSession> {
-        self.activate(song, quality, format, allowed_formats, false, false)
-    }
-
-    pub fn activate_hls_with_format(
-        &self,
-        song: &str,
-        quality: Quality,
-        format: MediaFormat,
-    ) -> Arc<MediaSession> {
-        self.activate(
-            song,
-            quality,
-            format,
-            &[MediaFormat::Mp4, MediaFormat::Hls],
-            true,
-            false,
-        )
-    }
-
-    fn activate(
-        &self,
-        song: &str,
-        quality: Quality,
-        format: MediaFormat,
-        allowed_formats: &[MediaFormat],
-        hls_direct: bool,
-        local: bool,
-    ) -> Arc<MediaSession> {
-        let audio_delay_ms = self.audio_delay_ms.load(Ordering::Relaxed);
-        let remux = audio_delay_ms != 0
-            && (parse_bilibili_video(song).is_ok()
-                || crate::sources::youtube::is_youtube_url(song));
-        let session = Arc::new(MediaSession {
-            generation: NEXT_GENERATION.fetch_add(1, Ordering::Relaxed),
-            song: song.into(),
-            quality,
-            format: if remux { MediaFormat::Dash } else { format },
-            allowed_formats: if remux {
-                vec![MediaFormat::Dash]
-            } else {
-                allowed_formats.to_vec()
-            },
-            hls_direct: hls_direct && !remux,
-            local,
-            resolved_quality: Mutex::new(None),
-            stopped: watch::channel(false).0,
-            ready: OnceCell::new(),
-            live_source: OnceCell::new(),
-            warmup: Mutex::new(None),
-            audio_delay_ms,
-        });
-        let previous = self.current.lock().unwrap().replace(session.clone());
-        if let Some(previous) = previous {
-            previous.cancel();
-        }
-        log::info!(target: "DLNA1080", "切换当前曲目媒体会话: generation={}, quality={}", session.generation, quality.label());
-        session
-    }
-    /// 按代次获取仍有效的当前媒体会话。
-    pub fn get(&self, generation: u64) -> Option<Arc<MediaSession>> {
-        self.current
-            .lock()
-            .ok()?
-            .as_ref()
-            .filter(|s| s.generation == generation && !s.is_stopped())
-            .cloned()
-    }
-    /// 移除并取消当前媒体会话。
-    pub fn clear(&self) {
-        if let Some(previous) = self.current.lock().unwrap().take() {
-            previous.cancel();
-        }
-    }
-}
-impl Drop for MediaSessions {
-    /// 销毁会话集合时清理当前会话。
-    fn drop(&mut self) {
-        self.clear();
-    }
-}
-
-/// 从媒体路径中解析会话代次。
-pub fn generation_from_path(path: &str) -> Option<u64> {
-    let path = path.strip_prefix("__ktv_media/")?;
-    let (generation, _) = path.split_once('/').or_else(|| path.split_once('.'))?;
-    generation.parse().ok()
 }
 
 #[cfg(test)]
@@ -614,17 +278,5 @@ mod tests {
         );
         sessions.clear();
         assert!(second.is_stopped());
-    }
-    #[tokio::test]
-    async fn repeated_prepare_shares_one_immutable_representation() {
-        let sessions = MediaSessions::default();
-        let s = sessions.activate_with_format(
-            "https://example.invalid/test.mp4",
-            Quality::P720,
-            MediaFormat::Mp4,
-        );
-        let client = reqwest::Client::new();
-        let (a, b) = tokio::join!(s.prepare(&client), s.prepare(&client));
-        assert!(Arc::ptr_eq(&a.unwrap(), &b.unwrap()));
     }
 }

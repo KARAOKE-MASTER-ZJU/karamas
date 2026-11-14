@@ -169,7 +169,7 @@ impl Source {
                                 return Err(invalid("重新取源后的 HLS 索引已变化，请重新播放"));
                             }
                         }
-                        crate::media::cache::fetch_range(client, &url, range, self.total).await
+                        crate::media::upstream::fetch_range(client, &url, range, self.total).await
                     })
                     .await
                     .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "读取 HLS 媒体超时"))?

@@ -1,4 +1,9 @@
-//! Source-specific request headers for media fetched by the local DLNA proxy.
+//! 媒体上游客户端、来源请求头及严格的 HTTP Range 读取。
+use bytes::{Bytes, BytesMut};
+use futures_util::StreamExt;
+use std::{io, ops::Range, time::Duration};
+
+const MAX_RANGE_BYTES: u64 = 16 * 1024 * 1024;
 
 /// 媒体请求自行指定来源 Referer，CDN 重定向时继续保留该请求头。
 pub fn client() -> Result<reqwest::Client, reqwest::Error> {
@@ -17,6 +22,69 @@ pub fn user_agent(url: &str) -> &'static str {
     } else {
         "Mozilla/5.0"
     }
+}
+
+/// 严格读取指定字节范围，拒绝忽略 Range、文件大小不匹配及响应不完整的上游。
+pub async fn fetch_range(
+    client: &reqwest::Client,
+    url: &str,
+    range: Range<u64>,
+    total: u64,
+) -> io::Result<Bytes> {
+    if range.start >= range.end || range.end > total || range.end - range.start > MAX_RANGE_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid upstream range",
+        ));
+    }
+    let response = client
+        .get(url)
+        .header("User-Agent", crate::media::upstream::user_agent(url))
+        .header("Referer", crate::media::upstream::referer(url))
+        .header("Accept-Encoding", "identity")
+        .header("Range", format!("bytes={}-{}", range.start, range.end - 1))
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| io::Error::other(e.without_url()))?;
+    let expected = format!("bytes {}-{}/{}", range.start, range.end - 1, total);
+    if !response.status().is_success() {
+        return Err(io::Error::other(format!(
+            "upstream HTTP {} while requesting {expected}",
+            response.status()
+        )));
+    }
+    if response.status() != reqwest::StatusCode::PARTIAL_CONTENT
+        || response
+            .headers()
+            .get("Content-Range")
+            .and_then(|v| v.to_str().ok())
+            != Some(expected.as_str())
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "upstream did not return the exact requested range",
+        ));
+    }
+    let mut result = BytesMut::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| io::Error::other(e.without_url()))?;
+        if result.len() as u64 + chunk.len() as u64 > range.end - range.start {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "oversized upstream range",
+            ));
+        }
+        result.extend_from_slice(&chunk);
+    }
+    if result.len() as u64 != range.end - range.start {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "truncated upstream range",
+        ));
+    }
+    Ok(result.freeze())
 }
 
 #[cfg(test)]
