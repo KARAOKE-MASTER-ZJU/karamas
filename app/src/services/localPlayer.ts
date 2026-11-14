@@ -64,13 +64,14 @@ async function seekTo(
   element: HTMLVideoElement,
   seconds: number,
   signal: AbortSignal,
+  player?: Mpegts.Player,
 ) {
   const target = Number.isFinite(element.duration)
     ? Math.min(seconds, element.duration)
     : seconds;
   if (Math.abs(element.currentTime - target) < 0.05) return;
   const settled = waitFor(element, "seeked", signal);
-  element.currentTime = target;
+  (player ?? element).currentTime = target;
   await settled;
 }
 
@@ -111,17 +112,45 @@ export function createLocalPlayer(
     if (mediaType === "flv") {
       const { default: mpegts } = await import("mpegts.js");
       if (signal.aborted) return;
-      if (!mpegts.getFeatureList().mseLivePlayback)
-        throw new Error("当前播放器不支持 FLV 直播，请更新系统或 WebView。");
-      const instance = mpegts.createPlayer({ type: "flv", isLive: true, url });
+      const features = mpegts.getFeatureList();
+      if (!features.msePlayback || !features.networkStreamIO)
+        throw new Error("当前播放器不支持 FLV，请更新系统或 WebView。");
+      const live = action.live;
+      const instance = mpegts.createPlayer({
+        type: "flv",
+        isLive: live,
+        filesize: action.filesize ?? undefined,
+        url,
+      });
       flv = instance;
+      let complete = false;
+      const updateLive = () => {
+        if (flv !== instance) return;
+        const duration = instance.mediaInfo?.duration;
+        action.live =
+          !complete &&
+          action.filesize == null &&
+          !(
+            typeof duration === "number" &&
+            Number.isFinite(duration) &&
+            duration > 0
+          );
+        void sendStatus();
+      };
+      instance.on(mpegts.Events.MEDIA_INFO, updateLive);
+      instance.on(mpegts.Events.LOADING_COMPLETE, () => {
+        if (flv !== instance) return;
+        complete = true;
+        updateLive();
+      });
       instance.on(mpegts.Events.ERROR, (type: string, detail: string) => {
         if (flv !== instance) return;
+        instance.detachMediaElement();
         instance.unload();
         video.dispatchEvent(
           new CustomEvent(PLAYER_ERROR, {
             detail: new Error(
-              `FLV 直播加载失败（${type}：${detail}），请重新播放。`,
+              `FLV 加载失败（${type}：${detail}），请重新播放。`,
             ),
           }),
         );
@@ -130,6 +159,14 @@ export function createLocalPlayer(
       instance.attachMediaElement(video);
       instance.load();
       await ready;
+      updateLive();
+      if (!signal.aborted && !live && action.live) {
+        // 元数据确认直播后重建一次，让库启用持续拉流和缓冲清理。
+        flv = undefined;
+        instance.detachMediaElement();
+        instance.destroy();
+        await loadSource(action, signal);
+      }
     } else if (isHls && !video.canPlayType("application/vnd.apple.mpegurl")) {
       const { default: Hls } = await import("hls.js");
       if (signal.aborted) return;
@@ -165,6 +202,8 @@ export function createLocalPlayer(
     activePointer = null;
     hls?.destroy();
     hls = undefined;
+    // 先解除 SourceBuffer 回调，再销毁下载控制器，避免库的清理回调访问空对象。
+    flv?.detachMediaElement();
     flv?.destroy();
     flv = undefined;
     video.pause();
@@ -197,6 +236,7 @@ export function createLocalPlayer(
         !source?.live && Number.isFinite(element.duration)
           ? element.duration
           : 0,
+      live: source?.live ?? false,
       paused: element.paused,
       seeking: element.seeking || activePointer !== null,
       muted: element.muted,
@@ -256,7 +296,7 @@ export function createLocalPlayer(
           await loadSource(action, signal);
           if (signal.aborted) return;
           // 直播由播放器选择起播点，不能用点播的零秒位置覆盖。
-          if (!action.live) await seekTo(element, action.position, signal);
+          if (!action.live) await seekTo(element, action.position, signal, flv);
           if (action.playing)
             await waitFor(element, () => element.play(), signal);
           if (signal.aborted) return;
@@ -273,7 +313,7 @@ export function createLocalPlayer(
           break;
         case "seek":
           if (!state.hasMedia) throw new Error("视频尚未就绪，无法调整进度。");
-          await seekTo(element, action.seconds, signal);
+          await seekTo(element, action.seconds, signal, flv);
           break;
         case "volume":
           element.muted = false;

@@ -473,6 +473,7 @@ fn local_report(command: &crate::cast::local::LocalCommand) -> crate::cast::loca
         command_id: command.command_id,
         current_secs: 180.0,
         total_secs: 180.0,
+        live: false,
         paused: true,
         seeking: false,
         muted: false,

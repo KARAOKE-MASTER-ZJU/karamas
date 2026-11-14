@@ -20,6 +20,7 @@ pub enum LocalAction {
     Load {
         url: String,
         media_type: PlaybackMediaType,
+        filesize: Option<u64>,
         live: bool,
         position: u32,
         playing: bool,
@@ -55,6 +56,7 @@ pub struct LocalReport {
     pub command_id: u64,
     pub current_secs: f64,
     pub total_secs: f64,
+    pub live: bool,
     pub paused: bool,
     /// 媒体正在定位，或用户尚未松开播放器中的拖动操作。
     pub seeking: bool,
@@ -201,6 +203,10 @@ impl LocalCaster {
                 self.sessions.proxy_path(&session.path()),
             ),
             media_type: media.playback_type(),
+            filesize: match media.as_ref() {
+                crate::media::session::SessionMedia::Flv { filesize, .. } => *filesize,
+                _ => None,
+            },
             live,
             position: if live { 0 } else { position },
             playing,
@@ -276,6 +282,7 @@ impl Caster for LocalCaster {
         }
         state.volume = report.volume;
         state.muted = report.muted;
+        state.live = report.live;
         state.report = Some((report, Instant::now()));
         Ok(true)
     }
@@ -326,7 +333,9 @@ impl Caster for LocalCaster {
     }
     async fn seek(&self, seconds: u32) -> Result<(), CastError> {
         if !self.capabilities().seek {
-            return Err(CastError::Device("直播暂不支持调整进度，请使用重新播放回到直播".into()));
+            return Err(CastError::Device(
+                "直播暂不支持调整进度，请使用重新播放回到直播".into(),
+            ));
         }
         let _control = self.control.lock().await;
         self.command(LocalAction::Seek { seconds }).await
@@ -408,8 +417,20 @@ mod tests {
         let server = HttpServer::new(|| {
             App::new().default_service(web::to(|request: HttpRequest| async move {
                 if request.query_string() == "stream" {
+                    use futures_util::StreamExt;
                     HttpResponse::Ok()
                         .content_type("application/octet-stream")
+                        .streaming(
+                            futures_util::stream::once(async {
+                                Ok::<_, std::io::Error>(bytes::Bytes::from_static(
+                                    b"FLV\x01\x05\x00\x00\x00\x09",
+                                ))
+                            })
+                            .chain(futures_util::stream::pending()),
+                        )
+                } else if request.query_string() == "vod" {
+                    HttpResponse::Ok()
+                        .content_type("video/x-flv")
                         .body(&b"FLV\x01\x05\x00\x00\x00\x09"[..])
                 } else {
                     HttpResponse::Ok()
@@ -447,6 +468,7 @@ mod tests {
             command_id: command.command_id,
             current_secs: 20.0,
             total_secs: 90.0,
+            live: false,
             paused: false,
             seeking: false,
             muted: false,
@@ -522,14 +544,14 @@ mod tests {
         server.stop(true).await;
     }
 
-    // 播放方式由实际媒体决定；无扩展名或扩展名误导时，直播和定位能力仍须正确。
+    // 格式不决定直播属性；播放器确认后再更新直播和定位能力。
     #[actix_web::test]
     async fn local_media_load_preserves_live_and_seek_contracts() {
         let (source, server) = media_server().await;
-        for (path, live) in [
-            ("/stream?stream", true),
-            ("/video.mp4?stream", true),
-            ("/video.flv", false),
+        for (path, flv, live, length) in [
+            ("/stream?stream", true, true, None),
+            ("/video.mp4?vod", true, false, Some(9)),
+            ("/video.flv", false, false, None),
         ] {
             let (player, mut commands) = player();
             let task = tokio::spawn({
@@ -544,6 +566,7 @@ mod tests {
             let loaded = commands.recv().await.unwrap();
             let LocalAction::Load {
                 media_type,
+                filesize,
                 live: actual_live,
                 position,
                 ..
@@ -551,21 +574,25 @@ mod tests {
             else {
                 panic!("expected load command");
             };
-            assert_eq!(*actual_live, live);
-            assert_eq!(*position, if live { 0 } else { 42 });
+            assert!(!*actual_live);
+            assert_eq!(*filesize, length);
+            assert_eq!(*position, 42);
             assert_eq!(
                 *media_type,
-                if live {
+                if flv {
                     PlaybackMediaType::Flv
                 } else {
                     PlaybackMediaType::Native
                 }
             );
-            player.report_local_playback(report(&loaded, true)).unwrap();
+            let mut playback = report(&loaded, true);
+            playback.live = live;
+            playback.total_secs = if live { 0.0 } else { 90.0 };
+            player.report_local_playback(playback).unwrap();
             task.await.unwrap().unwrap();
             assert_eq!(player.is_live(), live);
             assert_eq!(player.capabilities().seek, !live);
         }
-        server.stop(true).await;
+        server.stop(false).await;
     }
 }

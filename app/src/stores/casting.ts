@@ -43,6 +43,8 @@ export const useCastingStore = defineStore("casting", () => {
       return;
     volume.value = localReport.muted ? 0 : localReport.volume;
     if (playback.value) {
+      playback.value.isLive = localReport.live;
+      playback.value.capabilities.seek = !localReport.live;
       playback.value.isPlaying =
         !localReport.paused && !localReport.ended && !localReport.error;
       playback.value.currentSecs =

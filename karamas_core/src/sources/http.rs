@@ -5,7 +5,7 @@ use url::Url;
 
 pub(crate) enum Source {
     Native(Url),
-    Flv(Url),
+    Flv { url: Url, filesize: Option<u64> },
     Live(Resolved),
 }
 
@@ -25,6 +25,7 @@ pub(crate) async fn resolve(client: &reqwest::Client, value: &str) -> io::Result
         .error_for_status()
         .map_err(|error| io::Error::other(error.without_url()))?;
     let effective = response.url().clone();
+    let filesize = response.content_length();
     let content_type = response
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
@@ -52,8 +53,7 @@ pub(crate) async fn resolve(client: &reqwest::Client, value: &str) -> io::Result
         prefix.extend_from_slice(&chunk[..chunk.len().min(9 - prefix.len())]);
     }
     if prefix.starts_with(b"FLV\x01") {
-        // shortcut: HTTP-FLV 按直播播放；支持点播 FLV 时需解析时长和定位信息。
-        return Ok(Source::Flv(url));
+        return Ok(Source::Flv { url, filesize });
     }
     if prefix.starts_with(b"#EXTM3U")
         || matches!(
@@ -111,7 +111,7 @@ mod tests {
         .await
         .unwrap()
         .unwrap();
-        assert!(matches!(source, Source::Flv(_)));
+        assert!(matches!(source, Source::Flv { filesize: None, .. }));
         let source = resolve(&client, &format!("http://{address}/playlist"))
             .await
             .unwrap();

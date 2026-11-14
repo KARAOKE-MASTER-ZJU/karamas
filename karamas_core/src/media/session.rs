@@ -62,7 +62,10 @@ pub enum PlaybackMediaType {
 
 pub enum SessionMedia {
     Direct(String),
-    Flv(url::Url),
+    Flv {
+        url: url::Url,
+        filesize: Option<u64>,
+    },
     Hls(crate::media::hls::Playlists),
     Live(crate::media::live::LiveMedia),
     Seekable {
@@ -76,7 +79,7 @@ impl SessionMedia {
         match self {
             Self::Direct(_) | Self::Seekable { .. } => PlaybackMediaType::Native,
             Self::Hls(_) | Self::Live(_) => PlaybackMediaType::Hls,
-            Self::Flv(_) => PlaybackMediaType::Flv,
+            Self::Flv { .. } => PlaybackMediaType::Flv,
         }
     }
 }
@@ -99,9 +102,7 @@ impl MediaSession {
     /// 返回当前会话识别出的直播属性；尚未识别时返回 false。
     pub fn is_live(&self) -> bool {
         self.live_source.get().is_some_and(Option::is_some)
-            || self.ready.get().is_some_and(|media| {
-                matches!(media.as_ref(), SessionMedia::Live(_) | SessionMedia::Flv(_))
-            })
+            || self.ready.get().is_some_and(|media| matches!(media.as_ref(), SessionMedia::Live(_)))
     }
 
     pub(crate) async fn detect_live(&self, client: &reqwest::Client) -> io::Result<bool> {
@@ -246,7 +247,7 @@ impl MediaSession {
             use crate::sources::http::Source;
             let media = match crate::sources::http::resolve(client, &self.song).await? {
                 Source::Native(url) => SessionMedia::Direct(url.into()),
-                Source::Flv(url) => SessionMedia::Flv(url),
+                Source::Flv { url, filesize } => SessionMedia::Flv { url, filesize },
                 Source::Live(source) => SessionMedia::Live(
                     crate::media::live::LiveMedia::prepare(client, source, self.quality).await?,
                 ),

@@ -46,7 +46,7 @@ pub async fn proxy_handler(
                 return Err(actix_web::error::ErrorBadGateway(error));
             }
         };
-        if matches!(media.as_ref(), SessionMedia::Direct(_) | SessionMedia::Flv(_) | SessionMedia::Seekable { .. })
+        if matches!(media.as_ref(), SessionMedia::Direct(_) | SessionMedia::Flv { .. } | SessionMedia::Seekable { .. })
             && origin_url != session.path()
         {
             return Ok(super::hls::cors(&mut HttpResponse::NotFound()).finish());
@@ -80,7 +80,7 @@ pub async fn proxy_handler(
             SessionMedia::Seekable { mp4, cache } => {
                 return Ok(crate::media::mp4::http::serve(&req, mp4.clone(), cache.clone(), session.generation));
             }
-            SessionMedia::Flv(url) => {
+            SessionMedia::Flv { url, .. } => {
                 let referer = format!("{}/", url.origin().ascii_serialization());
                 return super::hls::serve_track_with_referer(
                     &req, client.get_ref(), session.clone(), url.as_str(), &referer,

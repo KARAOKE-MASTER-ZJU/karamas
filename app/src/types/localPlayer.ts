@@ -7,6 +7,7 @@ export interface LocalCommand {
         kind: "load";
         url: string;
         mediaType: "native" | "hls" | "flv";
+        filesize: number | null;
         live: boolean;
         position: number;
         playing: boolean;
@@ -22,6 +23,7 @@ export interface LocalReport {
   commandId: number;
   currentSecs: number;
   totalSecs: number;
+  live: boolean;
   paused: boolean;
   /** 媒体正在定位，或用户尚未松开播放器中的拖动操作。 */
   seeking: boolean;
