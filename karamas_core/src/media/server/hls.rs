@@ -87,7 +87,7 @@ pub(super) async fn serve_track(
             let end = range.end.min(
                 range
                     .start
-                    .saturating_add(crate::media::cache::DEFAULT_CACHE_BLOCK_BYTES),
+                    .saturating_add(crate::media::cache::BLOCK_BYTES),
             );
             let data = source.read(&client, range.start..end).await?;
             Ok::<_, std::io::Error>(Some((data, end..range.end)))
