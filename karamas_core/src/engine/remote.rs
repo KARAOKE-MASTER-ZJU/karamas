@@ -3,21 +3,20 @@ use super::{
 };
 use crate::{
     cast::{
-        dlna::settings::{get_dlna_direct, get_dlna_hls_direct},
         MediaFormat, Quality,
+        dlna::settings::{get_dlna_direct, get_dlna_hls_direct},
     },
     error::CoreError,
     playlist::RemoteSync,
     sources::bilibili::BilibiliMediaQuality,
 };
-use futures_util::FutureExt;
 use log::{debug, info, warn};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
     sync::{Arc, Mutex, Weak},
     time::Duration,
 };
-use tokio::sync::{mpsc, Notify};
+use tokio::sync::{Notify, mpsc, watch};
 /// 无变化时的完整上报间隔，覆盖设备侧变化等没有事件来源的情况。
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 
@@ -37,12 +36,14 @@ pub(crate) fn wake() {
 
 /// 宿主传入的客户端标识；名字由用户在设置里决定。
 pub struct RemoteClient {
+    pub enabled: bool,
     pub app_id: String,
     pub name: String,
 }
 
 /// 注册时上报的执行端身份。
 pub struct RemoteIdentity {
+    pub enabled: bool,
     pub app_id: String,
     pub name: String,
     pub mode: &'static str,
@@ -50,7 +51,13 @@ pub struct RemoteIdentity {
 }
 
 impl RemoteIdentity {
-    pub fn new(app_id: String, name: String, mode: &'static str, target_name: String) -> Self {
+    pub fn new(
+        enabled: bool,
+        app_id: String,
+        name: String,
+        mode: &'static str,
+        target_name: String,
+    ) -> Self {
         // 名字只用于展示：留空回退到平台名，超出协议上限就截断。
         let name = name.trim();
         let name = if name.is_empty() {
@@ -59,6 +66,7 @@ impl RemoteIdentity {
             name.chars().take(80).collect()
         };
         Self {
+            enabled,
             app_id,
             name,
             mode,
@@ -100,44 +108,188 @@ struct QualityCache {
     items: Vec<BilibiliMediaQuality>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum RemoteStatus {
+    Disconnected,
+    Pending,
+    Disabled,
+    Registered(String),
+    Failed(String),
+}
+
+pub(crate) struct RemoteControl {
+    pub enabled: watch::Sender<bool>,
+    pub status: watch::Sender<RemoteStatus>,
+}
+
+impl RemoteControl {
+    pub fn new(enabled: bool) -> Self {
+        Self {
+            enabled: watch::channel(enabled).0,
+            status: watch::channel(RemoteStatus::Disconnected).0,
+        }
+    }
+
+    pub fn accepts_session(&self, session_id: &str) -> bool {
+        *self.enabled.borrow()
+            && matches!(&*self.status.borrow(), RemoteStatus::Registered(current) if current == session_id)
+    }
+
+    async fn set_enabled(&self, enabled: bool) -> Result<(), CoreError> {
+        let mut status = self.status.subscribe();
+        if *self.enabled.borrow() == enabled
+            && matches!(&*status.borrow(), RemoteStatus::Registered(_) if enabled)
+        {
+            return Ok(());
+        }
+        let disconnected = *status.borrow() == RemoteStatus::Disconnected;
+        if !disconnected {
+            self.status.send_replace(RemoteStatus::Pending);
+        }
+        self.enabled.send_replace(enabled);
+        if disconnected {
+            return Ok(());
+        }
+        let result = tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                match status.borrow_and_update().clone() {
+                    RemoteStatus::Disconnected => return Ok(()),
+                    RemoteStatus::Disabled if !enabled => return Ok(()),
+                    RemoteStatus::Registered(_) if enabled => return Ok(()),
+                    RemoteStatus::Failed(message) => return Err(CoreError::from(message)),
+                    _ => {}
+                }
+                status
+                    .changed()
+                    .await
+                    .map_err(|_| CoreError::from("遥控任务已结束"))?;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| Err("等待网页遥控服务端确认超时".into()));
+        if result.is_err() && enabled {
+            self.status.send_replace(RemoteStatus::Pending);
+            self.enabled.send_replace(false);
+        }
+        result
+    }
+}
+
+/// 修改当前会话的遥控开关；未连接时由宿主保存偏好。
+pub async fn set_remote_control_enabled_core(enabled: bool) -> Result<(), CoreError> {
+    let ctx = super::state::ENGINE_STATE
+        .read()
+        .map_err(|_| "无法读取引擎状态")?
+        .clone();
+    let Some(ctx) = ctx else { return Ok(()) };
+    let control = ctx
+        .remote_control
+        .as_ref()
+        .ok_or("当前会话未接入网页遥控")?;
+    if enabled
+        && std::env::var("KTV_SYNC_MODE").is_ok_and(|mode| mode.eq_ignore_ascii_case("POLLING"))
+    {
+        return Err("HTTP 轮询模式不支持网页遥控".into());
+    }
+    control.set_enabled(enabled).await
+}
+
 /// 启动遥控任务，返回歌单同步循环使用的通道。
 pub(crate) fn start_remote(
     ctx: &Arc<EngineContext>,
     identity: RemoteIdentity,
 ) -> Result<RemoteSync, CoreError> {
-    let (command_tx, mut command_rx) = mpsc::unbounded_channel();
-    let (playback_tx, playback_rx) = mpsc::unbounded_channel();
+    let control = ctx
+        .remote_control
+        .as_ref()
+        .ok_or("当前会话未接入网页遥控")?
+        .clone();
+    let (command_tx, mut command_rx) = mpsc::unbounded_channel::<Value>();
+    // 断线或停用期间只保留最新快照，不积压过期状态。
+    let (playback_tx, playback_rx) = watch::channel(None);
     let wake = Arc::new(Notify::new());
     *WAKE.lock().unwrap_or_else(|error| error.into_inner()) = Some(wake.clone());
-    let session: Weak<EngineContext> = Arc::downgrade(ctx);
-    let mode = identity.mode;
-
+    let session = Arc::downgrade(ctx);
+    let commands_control = control.clone();
     ctx.spawn_task(async move {
-        let mut seq = 0_u64;
-        let mut cache = QualityCache::default();
-        // 连接建立后先推一帧，之后由状态变化和心跳驱动。
-        {
-            let Some(ctx) = session.upgrade() else { return };
-            if !report_once(&ctx, mode, &mut cache, &mut seq, &playback_tx).await {
-                return;
-            }
-        }
-        let mut heartbeat = tokio::time::interval(HEARTBEAT_INTERVAL);
-        heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        heartbeat.tick().await;
+        let mut status = commands_control.status.subscribe();
         loop {
             tokio::select! {
-                Some(command) = command_rx.recv() => {
+                biased;
+                changed = status.changed() => {
+                    if changed.is_err() { break; }
+                    if !matches!(&*status.borrow(), RemoteStatus::Registered(_)) {
+                        while command_rx.try_recv().is_ok() {}
+                    }
+                }
+                command = command_rx.recv() => {
+                    let Some(command) = command else { break };
+                    if !command["sessionId"].as_str().is_some_and(|id| commands_control.accepts_session(id)) {
+                        continue;
+                    }
                     let Some(ctx) = session.upgrade() else { break };
                     execute(&ctx, &command).await;
-                    // 命令执行自己会回报，丢弃执行期间产生的唤醒。
-                    let _ = wake.notified().now_or_never();
                 }
-                _ = wake.notified() => {}
-                _ = heartbeat.tick() => {}
             }
-            let Some(ctx) = session.upgrade() else { break };
-            if !report_once(&ctx, mode, &mut cache, &mut seq, &playback_tx).await {
+        }
+    })?;
+
+    let session: Weak<EngineContext> = Arc::downgrade(ctx);
+    let reporting_control = control.clone();
+    let mode = identity.mode;
+    ctx.spawn_task(async move {
+        let mut status = reporting_control.status.subscribe();
+        let mut seq = 0_u64;
+        let mut cache = QualityCache::default();
+        loop {
+            let current = status.borrow_and_update().clone();
+            if let RemoteStatus::Registered(session_id) = current {
+                let report = async {
+                    // 首帧只读取已有状态，音量和清晰度查询随后补齐。
+                    {
+                        let Some(ctx) = session.upgrade() else { return };
+                        let state = ctx.playback_state().await;
+                        if cache.song != state.song_url {
+                            cache = QualityCache::default();
+                        }
+                        seq += 1;
+                        playback_tx.send_replace(Some((
+                            session_id.clone(),
+                            playback_frame(&state, mode, &cache, None, seq),
+                        )));
+                    }
+                    let mut heartbeat = tokio::time::interval(HEARTBEAT_INTERVAL);
+                    heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                    heartbeat.tick().await;
+                    loop {
+                        {
+                            let Some(ctx) = session.upgrade() else { return };
+                            let state = ctx.playback_state().await;
+                            let volume = ctx.caster.get_volume().await.ok().flatten();
+                            refresh_qualities(&mut cache, state.song_url.as_deref()).await;
+                            let state = ctx.playback_state().await;
+                            if cache.song != state.song_url {
+                                cache = QualityCache::default();
+                            }
+                            seq += 1;
+                            playback_tx.send_replace(Some((
+                                session_id.clone(),
+                                playback_frame(&state, mode, &cache, volume, seq),
+                            )));
+                        }
+                        tokio::select! {
+                            _ = wake.notified() => {}
+                            _ = heartbeat.tick() => {}
+                        }
+                    }
+                };
+                tokio::select! {
+                    biased;
+                    _ = status.changed() => {}
+                    _ = report => { break; }
+                }
+                playback_tx.send_replace(None);
+            } else if status.changed().await.is_err() {
                 break;
             }
         }
@@ -148,23 +300,9 @@ pub(crate) fn start_remote(
         registration: registration_frame(&identity),
         commands: command_tx,
         playback: playback_rx,
+        enabled: control.enabled.subscribe(),
+        control,
     })
-}
-
-/// 生成并投递一帧状态；返回 false 表示接收端已经关闭。
-async fn report_once(
-    ctx: &Arc<EngineContext>,
-    mode: &str,
-    cache: &mut QualityCache,
-    seq: &mut u64,
-    playback_tx: &mpsc::UnboundedSender<String>,
-) -> bool {
-    *seq += 1;
-    let state = ctx.playback_state().await;
-    let Some(frame) = playback_frame(ctx, &state, mode, cache, *seq).await else {
-        return true;
-    };
-    playback_tx.send(frame).is_ok()
 }
 
 async fn execute(ctx: &Arc<EngineContext>, message: &Value) {
@@ -226,15 +364,13 @@ async fn set_quality(payload: &Value) -> Result<(), CoreError> {
     }
 }
 
-async fn playback_frame(
-    ctx: &Arc<EngineContext>,
+fn playback_frame(
     state: &EnginePlaybackState,
     mode: &str,
-    cache: &mut QualityCache,
+    cache: &QualityCache,
+    volume: Option<u32>,
     seq: u64,
-) -> Option<String> {
-    let volume = ctx.caster.get_volume().await.ok().flatten();
-    refresh_qualities(cache, state.song_url.as_deref()).await;
+) -> String {
     let qualities = quality_options(
         mode,
         cache,
@@ -243,26 +379,24 @@ async fn playback_frame(
     );
     let quality_supported = !qualities.is_empty();
 
-    Some(
-        json!({
-            "v": 1,
-            "type": "remote:playback",
-            "playback": {
-                "seq": seq,
-                "position": state.current_secs,
-                "duration": state.total_secs,
-                "volume": volume,
-                "isPlaying": state.is_playing,
-                "qualities": qualities,
-                "capabilities": {
-                    "absoluteVolume": state.capabilities.absolute_volume,
-                    "seek": state.capabilities.seek,
-                    "quality": quality_supported,
-                },
+    json!({
+        "v": 1,
+        "type": "remote:playback",
+        "playback": {
+            "seq": seq,
+            "position": state.current_secs,
+            "duration": state.total_secs,
+            "volume": volume,
+            "isPlaying": state.is_playing,
+            "qualities": qualities,
+            "capabilities": {
+                "absoluteVolume": state.capabilities.absolute_volume,
+                "seek": state.capabilities.seek,
+                "quality": quality_supported,
             },
-        })
-        .to_string(),
-    )
+        },
+    })
+    .to_string()
 }
 
 /// 清晰度来自视频源，与投屏设备无关；按歌曲缓存，切歌时才重新查询。
@@ -270,13 +404,19 @@ async fn refresh_qualities(cache: &mut QualityCache, song: Option<&str>) {
     if cache.song.as_deref() == song {
         return;
     }
+    let items = match song {
+        Some(song) => match crate::sources::bilibili::get_bilibili_media_qualities(song).await {
+            Ok(items) => items,
+            Err(error) => {
+                debug!("查询遥控清晰度失败: {}", error);
+                Vec::new()
+            }
+        },
+        None => Vec::new(),
+    };
+    // 查询取消时不记为已缓存，下次启用仍能补齐清晰度。
     cache.song = song.map(str::to_owned);
-    cache.items.clear();
-    let Some(song) = song else { return };
-    match crate::sources::bilibili::get_bilibili_media_qualities(song).await {
-        Ok(items) => cache.items = items,
-        Err(error) => debug!("查询遥控清晰度失败: {}", error),
-    }
+    cache.items = items;
 }
 
 fn quality_options(

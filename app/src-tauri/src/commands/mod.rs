@@ -45,6 +45,7 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         diagnostics::diagnostic_latency,
         session::start_casting,
         session::default_device_name,
+        session::set_remote_control_enabled,
         session::disconnect_casting,
         session::get_dlna_direct,
         session::set_dlna_direct,

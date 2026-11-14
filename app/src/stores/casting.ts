@@ -71,6 +71,10 @@ export const useCastingStore = defineStore("casting", () => {
     preferences.preferences.dlnaHlsDirectEnabled,
   );
   const changingDlnaProxy = ref(false);
+  const remoteControlEnabled = ref(
+    preferences.preferences.remoteControlEnabled,
+  );
+  const changingRemoteControl = ref(false);
   const proxyDeviceOnly = ref(preferences.preferences.proxyDeviceOnly);
   const room = ref<ConnectionConfig | null>(null);
   const selectedDevice = ref<CastDevice | null>(null);
@@ -98,7 +102,11 @@ export const useCastingStore = defineStore("casting", () => {
     () => activeDevice.value !== null || playback.value !== null,
   );
   const sessionBusy = computed(
-    () => connecting.value || enteringRoom.value || changingDlnaProxy.value,
+    () =>
+      connecting.value ||
+      enteringRoom.value ||
+      changingDlnaProxy.value ||
+      changingRemoteControl.value,
   );
   const busy = computed(() => sessionBusy.value || controlling.value);
   const auth = useBilibiliStore();
@@ -165,6 +173,25 @@ export const useCastingStore = defineStore("casting", () => {
     }
   }
 
+  async function setRemoteControlEnabled(enabled: boolean) {
+    if (sessionBusy.value) return;
+    changingRemoteControl.value = true;
+    try {
+      if (isTauri()) await castingApi.setRemoteControlEnabled(enabled);
+      remoteControlEnabled.value = enabled;
+      return preferences.saveRemoteControlEnabled(enabled);
+    } catch (error) {
+      // 关闭失败只表示服务端尚未确认，本地已停止接收命令。
+      if (!enabled) {
+        remoteControlEnabled.value = false;
+        preferences.saveRemoteControlEnabled(false);
+      }
+      throw error;
+    } finally {
+      changingRemoteControl.value = false;
+    }
+  }
+
   function requireSession(device: CastDevice) {
     const session = auth.session;
     if (
@@ -197,7 +224,7 @@ export const useCastingStore = defineStore("casting", () => {
         {
           appId: preferences.ensureAppId(),
           name: preferences.preferences.deviceName,
-          enabled: preferences.preferences.remoteControlEnabled,
+          enabled: remoteControlEnabled.value,
         },
         device.kind === "dlna"
           ? { kind: "dlna", location: device.location }
@@ -485,6 +512,12 @@ export const useCastingStore = defineStore("casting", () => {
       proxyDeviceOnly.value = value;
     },
   );
+  watch(
+    () => preferences.preferences.remoteControlEnabled,
+    (value) => {
+      remoteControlEnabled.value = value;
+    },
+  );
   onScopeDispose(() => {
     disposed = true;
     connection?.dispose();
@@ -497,6 +530,9 @@ export const useCastingStore = defineStore("casting", () => {
     dlnaHlsDirectEnabled,
     proxyDeviceOnly,
     changingDlnaProxy,
+    remoteControlEnabled,
+    changingRemoteControl,
+    setRemoteControlEnabled,
     initializeDlnaProxy,
     setDlnaProxyEnabled,
     setDlnaHlsDirectEnabled,

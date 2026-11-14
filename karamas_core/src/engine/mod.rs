@@ -6,7 +6,7 @@ mod parts;
 mod playback;
 pub(crate) mod remote;
 
-pub use remote::{RemoteClient, default_remote_name};
+pub use remote::{RemoteClient, default_remote_name, set_remote_control_enabled_core};
 mod state;
 
 pub use controls::{

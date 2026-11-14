@@ -24,6 +24,7 @@ pub struct EngineContext {
     pub rt: tokio::runtime::Handle,
     pub(super) tasks: std::sync::Mutex<Vec<tokio::task::AbortHandle>>,
     pub(super) stopped: AtomicBool,
+    pub(crate) remote_control: Option<Arc<super::remote::RemoteControl>>,
 }
 
 impl EngineContext {

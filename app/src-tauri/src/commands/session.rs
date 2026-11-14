@@ -49,7 +49,8 @@ pub async fn start_casting<R: tauri::Runtime>(
         return Err(CommandError::new("INVALID_ARGUMENT", "客户端标识无效"));
     }
     // 名字只用于展示，留空时由核心库回退到平台默认名。
-    let remote = remote_control.then(|| karamas_core::RemoteClient {
+    let remote = Some(karamas_core::RemoteClient {
+        enabled: remote_control,
         app_id,
         name: remote_name.trim().chars().take(80).collect(),
     });
@@ -148,6 +149,17 @@ pub async fn disconnect_casting<R: tauri::Runtime>(
     )
     .map_err(|error| CommandError::new("LOCAL_COMMAND", error.to_string()))?;
     crate::platform::stop_casting_service(&app).await
+}
+
+/// 动态更新网页遥控；与启动、断开共用会话锁。
+#[tauri::command]
+pub async fn set_remote_control_enabled(
+    state: State<'_, BridgeState>,
+    enabled: bool,
+) -> CommandResult<()> {
+    let _lifecycle = state.lifecycle.lock().await;
+    karamas_core::set_remote_control_enabled_core(enabled).await?;
+    Ok(())
 }
 
 /// 设置 DLNA 后续媒体加载使用的直连模式。

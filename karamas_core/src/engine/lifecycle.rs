@@ -49,11 +49,19 @@ pub async fn start_engine_core(
         connect_dlna_device(loc_str, handle).await?;
 
     let target_name = device.friendly_name.clone();
-    let caster: Arc<dyn cast::Caster> =
-        Arc::new(DlnaCaster::new(controller, device, local_ip_addr, port)
-            .with_sessions(shared_state.media_sessions.clone()));
-    let identity =
-        remote.map(|client| RemoteIdentity::new(client.app_id, client.name, "dlna", target_name));
+    let caster: Arc<dyn cast::Caster> = Arc::new(
+        DlnaCaster::new(controller, device, local_ip_addr, port)
+            .with_sessions(shared_state.media_sessions.clone()),
+    );
+    let identity = remote.map(|client| {
+        RemoteIdentity::new(
+            client.enabled,
+            client.app_id,
+            client.name,
+            "dlna",
+            target_name,
+        )
+    });
 
     connect_room(
         base_url_str,
@@ -142,6 +150,9 @@ pub async fn connect_room(
         rt,
         tasks: std::sync::Mutex::new(vec![]),
         stopped: AtomicBool::new(false),
+        remote_control: remote_identity
+            .as_ref()
+            .map(|identity| Arc::new(remote::RemoteControl::new(identity.enabled))),
     });
 
     // 遥控与歌单同步共用同一条 WS 连接。
@@ -193,7 +204,13 @@ pub async fn start_bilibili_engine_core(
     caster.start_broadcast();
     let cache = Arc::new(Mutex::new(std::collections::HashMap::new()));
     let identity = remote.map(|client| {
-        RemoteIdentity::new(client.app_id, client.name, "bilibili", "小电视".to_owned())
+        RemoteIdentity::new(
+            client.enabled,
+            client.app_id,
+            client.name,
+            "bilibili",
+            "小电视".to_owned(),
+        )
     });
     connect_room(
         base_url_str,
@@ -229,7 +246,13 @@ pub async fn start_local_engine_core(
         .set_media_quality(initial_quality.0, initial_quality.1)
         .await?;
     let identity = remote.map(|client| {
-        RemoteIdentity::new(client.app_id, client.name, "local", "本机播放".to_owned())
+        RemoteIdentity::new(
+            client.enabled,
+            client.app_id,
+            client.name,
+            "local",
+            "本机播放".to_owned(),
+        )
     });
     connect_room(base_url, room_id, caster, ip, port, cache, rt, identity).await
 }

@@ -136,6 +136,8 @@ export const castingApi = {
       initialQuality,
     });
   },
+  setRemoteControlEnabled: (enabled: boolean) =>
+    call<void>("set_remote_control_enabled", { enabled }),
   defaultDeviceName: () => call<string>("default_device_name"),
   reportLocalPlayback: (report: LocalReport) =>
     call<boolean>("report_local_playback", { report }),

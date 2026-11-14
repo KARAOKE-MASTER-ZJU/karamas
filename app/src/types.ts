@@ -16,7 +16,7 @@ export interface ConnectionConfig {
 export interface Preferences extends ConnectionConfig {
   /** 遥控注册使用的安装标识，首次启动生成后保持不变。 */
   appId: string;
-  /** 是否允许网页遥控，默认关闭；下次连接生效。 */
+  /** 是否允许网页遥控，默认关闭；修改后立即生效。 */
   remoteControlEnabled: boolean;
   /** 网页遥控列表里显示的名字，留空使用系统默认。 */
   deviceName: string;

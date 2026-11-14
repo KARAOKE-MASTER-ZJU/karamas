@@ -76,9 +76,18 @@ onMounted(async () => {
     defaultDeviceName.value = "";
   }
 });
-function updateRemoteControl(enabled: boolean) {
-  if (!store.saveRemoteControlEnabled(enabled))
-    notify("无法保存网页遥控设置，请检查本机存储是否可用。", "error");
+async function updateRemoteControl(enabled: boolean) {
+  try {
+    if ((await casting.setRemoteControlEnabled(enabled)) === false)
+      notify("网页遥控设置已生效，但无法保存本机配置。", "warning");
+  } catch (error) {
+    notify(
+      enabled
+        ? `开启网页遥控失败：${errorMessage(error)}`
+        : `本地遥控已关闭，服务端清理未确认：${errorMessage(error)}`,
+      "error",
+    );
+  }
 }
 async function updateProxyDeviceOnly() {
   try {
@@ -192,8 +201,10 @@ async function logout() {
       />
       <SettingSwitch
         label="网页遥控"
-        description="允许同一房间的网页调节音量、进度、清晰度和播放状态。修改后下次连接生效。"
-        :checked="preferences.remoteControlEnabled"
+        description="允许同一房间的网页调节音量、进度、清晰度和播放状态。修改后立即生效。"
+        :checked="casting.remoteControlEnabled"
+        :busy="casting.changingRemoteControl"
+        :disabled="casting.changingRemoteControl || casting.sessionBusy"
         @change="updateRemoteControl"
       />
     </section>

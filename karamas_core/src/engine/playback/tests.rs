@@ -335,6 +335,7 @@ fn context(caster: Arc<dyn Caster>) -> EngineContext {
         rt: tokio::runtime::Handle::current(),
         tasks: std::sync::Mutex::new(vec![]),
         stopped: AtomicBool::new(false),
+        remote_control: None,
     }
 }
 

@@ -1,9 +1,11 @@
 use super::PlaylistManager;
+use crate::engine::remote::{RemoteControl, RemoteStatus};
 use futures_util::{SinkExt, StreamExt};
 use log::{debug, error, info, warn};
 use serde_json::Value;
+use std::sync::Arc;
 use std::{env, future::Future, pin::Pin, time::Duration};
-use tokio::sync::mpsc;
+use tokio::sync::{Notify, mpsc, watch};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use url::Url;
 
@@ -14,7 +16,9 @@ const PLAYLIST_RETRY_INTERVAL: Duration = Duration::from_secs(1);
 pub struct RemoteSync {
     pub registration: String,
     pub commands: mpsc::UnboundedSender<Value>,
-    pub playback: mpsc::UnboundedReceiver<String>,
+    pub playback: watch::Receiver<Option<(String, String)>>,
+    pub enabled: watch::Receiver<bool>,
+    pub(crate) control: Arc<RemoteControl>,
 }
 
 impl PlaylistManager {
@@ -35,7 +39,7 @@ impl PlaylistManager {
         if mode.to_uppercase() != "POLLING" {
             self.start_ws_update(runtime, f_on_update, remote)
         } else {
-            if remote.is_some() {
+            if remote.as_ref().is_some_and(|remote| *remote.control.enabled.borrow()) {
                 warn!("HTTP 轮询模式不承载遥控协议，网页遥控不可用");
             }
             self.start_periodic_update(runtime, f_on_update)
@@ -104,16 +108,31 @@ impl PlaylistManager {
             info!("心跳间隔: {} 秒", interval_secs);
             // Keep the last handled song across reconnects as well as heartbeat/WS updates.
             let mut song_playing_cached = None;
+            let sync_requested = Notify::new();
+            // 歌单与起播仍串行处理，耗时操作不挡住同一连接上的遥控消息。
+            let playlist_sync = async {
+                loop {
+                    sync_requested.notified().await;
+                    if let Err(error) = self_clone.sync_playlist(&mut song_playing_cached, &mut f_on_update).await {
+                        error!("同步歌单失败: {}", error);
+                    }
+                }
+            };
+            tokio::pin!(playlist_sync);
             // 遥控通道跨重连复用；注册帧每次连接后重发。
-            let (registration, command_tx, mut playback_rx) = match remote {
+            let (mut connection, command_tx, mut playback_rx, mut enabled_rx) = match remote {
                 Some(remote) => (
-                    Some(remote.registration),
+                    Some(RemoteConnection::new(remote.registration, remote.control)),
                     Some(remote.commands),
                     Some(remote.playback),
+                    Some(remote.enabled),
                 ),
-                None => (None, None, None),
+                None => (None, None, None, None),
             };
             loop {
+                if let Some(connection) = &connection {
+                    connection.control.status.send_replace(RemoteStatus::Disconnected);
+                }
                 // 构造 WS URL （将 http(s) -> ws(s)）
                 let nickname = env::var("KTV_NICKNAME").unwrap_or_default();
                 let mut ws_url = format!(
@@ -133,97 +152,6 @@ impl PlaylistManager {
 
                 info!("WebSocket Connecting: {}", ws_url);
 
-                // 调试用代码
-                /* let url = match url::Url::parse(&ws_url) {
-                    Ok(u) => u,
-                    Err(e) => {
-                        error!("URL 解析失败: {}", e);
-                        break;
-                    }
-                };
-                let host = url.host_str().unwrap_or_default().to_string();
-                let port = url.port_or_known_default().unwrap_or(443);
-
-                // 异步 DNS 解析
-                let addrs = match tokio::task::spawn_blocking(move || {
-                    use std::net::ToSocketAddrs;
-                    (host.as_str(), port).to_socket_addrs()
-                })
-                .await
-                {
-                    Ok(Ok(addr_iter)) => addr_iter,
-                    _ => {
-                        error!("DNS 解析失败");
-                        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-                        continue;
-                    }
-                };
-
-                let addr = match addrs.into_iter().next() {
-                    Some(a) => a,
-                    None => {
-                        error!("DNS 未找到记录");
-                        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-                        continue;
-                    }
-                };
-
-                info!("DNS 解析成功: {}", addr);
-
-                // 建立 TCP 连接
-                let stream = match tokio::time::timeout(
-                    tokio::time::Duration::from_secs(10),
-                    tokio::net::TcpStream::connect(addr),
-                )
-                .await
-                {
-                    Ok(Ok(s)) => s,
-                    _ => {
-                        error!("TCP 连接超时或拒绝");
-                        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-                        continue;
-                    }
-                };
-
-                info!("TCP 已连接，准备 WS 握手...");
-
-                // WebSocket 握手
-
-                // 加载 webpki 根证书
-                let mut root_store = rustls::RootCertStore::empty();
-                root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-
-                // 2. 创建配置 (支持 TLS 1.2 和 1.3)
-                let config = rustls::ClientConfig::builder()
-                    .with_root_certificates(root_store)
-                    .with_no_client_auth();
-
-                let connector = tokio_tungstenite::Connector::Rustls(std::sync::Arc::new(config));
-
-                let (mut ws_stream, _) = match tokio::time::timeout(
-                    tokio::time::Duration::from_secs(10),
-                    tokio_tungstenite::client_async_tls_with_config(
-                        ws_url.clone(),
-                        stream,
-                        None,
-                        Some(connector),
-                    ),
-                )
-                .await
-                {
-                    Ok(Ok(val)) => val,
-                    Ok(Err(e)) => {
-                        error!("WS 握手报错: {:?}", e);
-                        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-                        continue;
-                    }
-                    Err(_) => {
-                        error!("WS 握手超时");
-                        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-                        continue;
-                    }
-                }; */
-
                 let (ws_stream, _) = match connect_async(ws_url).await {
                     Ok(val) => val,
                     Err(e) => {
@@ -236,20 +164,17 @@ impl PlaylistManager {
 
                 info!("WebSocket connected for room {}", self_clone.room_id);
 
-                if let Err(e) = self_clone.sync_playlist(&mut song_playing_cached, &mut f_on_update).await {
-                    error!("初始化拉取失败: {}", e);
-                }
+                sync_requested.notify_one();
                 let (mut write, mut read) = ws_stream.split();
 
-                // 每次连接后重新注册遥控身份。
-                if let Some(registration) = &registration {
-                    if let Err(error) = write
-                        .send(Message::Text(registration.clone().into()))
-                        .await
-                    {
-                        warn!("发送遥控注册失败: {}，准备重连", error);
-                        tokio::time::sleep(Duration::from_secs(3)).await;
-                        continue;
+                if let Some(connection) = &mut connection {
+                    connection.phase = RemotePhase::Disabled;
+                    connection.control.status.send_replace(RemoteStatus::Disabled);
+                    if let Some(frame) = connection.update() {
+                        if let Err(error) = write.send(Message::Text(frame.into())).await {
+                            warn!("发送遥控注册失败: {}，准备重连", error);
+                            continue;
+                        }
                     }
                 }
 
@@ -262,15 +187,27 @@ impl PlaylistManager {
 
                 loop {
                     tokio::select! {
-                        // 分支 C：遥控状态帧
+                        _ = &mut playlist_sync => break,
+                        changed = remote_enabled_changed(&mut enabled_rx) => {
+                            if !changed { break; }
+                            if let Some(connection) = &mut connection {
+                                if let Some(frame) = connection.update() {
+                                    if let Err(error) = write.send(Message::Text(frame.into())).await {
+                                        warn!("更新网页遥控失败: {}", error);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        // 只发送当前已注册会话的最新快照。
                         frame = next_remote_frame(&mut playback_rx) => {
-                            let Some(frame) = frame else {
-                                debug!("遥控通道已关闭");
-                                break;
-                            };
-                            if let Err(error) = write.send(Message::Text(frame.into())).await {
-                                warn!("发送遥控状态失败: {}，准备重连", error);
-                                break;
+                            if let Some((session_id, frame)) = frame {
+                                if connection.as_ref().is_some_and(|connection| connection.control.accepts_session(&session_id)) {
+                                    if let Err(error) = write.send(Message::Text(frame.into())).await {
+                                        warn!("发送遥控状态失败: {}，准备重连", error);
+                                        break;
+                                    }
+                                }
                             }
                         }
 
@@ -282,11 +219,7 @@ impl PlaylistManager {
                                 break;
                             }
 
-                            // Reuse HTTP connections and recover missed WS updates through
-                            // the same serial sync path, including device playback.
-                            if let Err(e) = self_clone.sync_playlist(&mut song_playing_cached, &mut f_on_update).await {
-                                debug!("心跳同步歌单失败: {}", e);
-                            }
+                            sync_requested.notify_one();
                         }
 
                         // 分支 B：接收 WS 消息
@@ -305,11 +238,18 @@ impl PlaylistManager {
                                     };
                                     let kind = v["type"].as_str().unwrap_or("");
                                     if kind != "UPDATE" {
-                                        // 遥控命令交给引擎执行，其余消息与本客户端无关。
-                                        if kind == "remote:command" {
-                                            if let Some(commands) = &command_tx {
-                                                if commands.send(v).is_err() {
-                                                    debug!("遥控命令通道已关闭");
+                                        if let Some(connection) = &mut connection {
+                                            if let Some(frame) = connection.receive(&v) {
+                                                if let Err(error) = write.send(Message::Text(frame.into())).await {
+                                                    warn!("更新网页遥控失败: {}", error);
+                                                    break;
+                                                }
+                                            }
+                                            if kind == "remote:command"
+                                                && v["sessionId"].as_str().is_some_and(|id| connection.control.accepts_session(id))
+                                            {
+                                                if let Some(commands) = &command_tx {
+                                                    let _ = commands.send(v);
                                                 }
                                             }
                                         }
@@ -321,9 +261,7 @@ impl PlaylistManager {
                                     if incoming_hash == current_hash { continue; }
 
                                     debug!("[WS UPDATE]: {} -> {}", current_hash, incoming_hash);
-                                    if let Err(e) = self_clone.sync_playlist(&mut song_playing_cached, &mut f_on_update).await {
-                                        error!("WS 同步歌单失败: {}", e);
-                                    }
+                                    sync_requested.notify_one();
                                 }
                                 Message::Ping(p) => {
                                     let _ = write.send(Message::Pong(p)).await;
@@ -335,6 +273,9 @@ impl PlaylistManager {
                     }
                 }
 
+                if let Some(connection) = &connection {
+                    connection.control.status.send_replace(RemoteStatus::Disconnected);
+                }
                 // 等待并重连
                 tokio::time::sleep(Duration::from_secs(3)).await;
                 debug!("重连 WS...");
@@ -365,10 +306,102 @@ impl PlaylistManager {
     }
 }
 
-/// 等待遥控状态帧；未接入遥控时永久等待，避免 select 空转。
-async fn next_remote_frame(rx: &mut Option<mpsc::UnboundedReceiver<String>>) -> Option<String> {
+/// 等待遥控变化；没有接入遥控时不参与 select。
+async fn remote_enabled_changed(rx: &mut Option<watch::Receiver<bool>>) -> bool {
     match rx {
-        Some(rx) => rx.recv().await,
+        Some(rx) => rx.changed().await.is_ok(),
         None => std::future::pending().await,
+    }
+}
+
+async fn next_remote_frame(
+    rx: &mut Option<watch::Receiver<Option<(String, String)>>>,
+) -> Option<(String, String)> {
+    match rx {
+        Some(rx) => {
+            if rx.changed().await.is_err() {
+                return std::future::pending().await;
+            }
+            rx.borrow_and_update().clone()
+        }
+        None => std::future::pending().await,
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RemotePhase {
+    Disabled,
+    Registering,
+    Registered,
+    Unregistering,
+}
+
+struct RemoteConnection {
+    registration: String,
+    control: Arc<RemoteControl>,
+    phase: RemotePhase,
+}
+
+impl RemoteConnection {
+    fn new(registration: String, control: Arc<RemoteControl>) -> Self {
+        Self {
+            registration,
+            control,
+            phase: RemotePhase::Disabled,
+        }
+    }
+
+    fn update(&mut self) -> Option<String> {
+        let enabled = *self.control.enabled.borrow();
+        if enabled && self.phase == RemotePhase::Disabled {
+            self.phase = RemotePhase::Registering;
+            self.control.status.send_replace(RemoteStatus::Pending);
+            Some(self.registration.clone())
+        } else if !enabled
+            && matches!(
+                self.phase,
+                RemotePhase::Registering | RemotePhase::Registered
+            )
+        {
+            self.phase = RemotePhase::Unregistering;
+            self.control.status.send_replace(RemoteStatus::Pending);
+            Some(serde_json::json!({ "v": 1, "type": "remote:unregister" }).to_string())
+        } else {
+            if !enabled && self.phase == RemotePhase::Disabled {
+                self.control.status.send_replace(RemoteStatus::Disabled);
+            }
+            None
+        }
+    }
+
+    fn receive(&mut self, message: &Value) -> Option<String> {
+        match message["type"].as_str() {
+            Some("remote:registered") if self.phase == RemotePhase::Registering => {
+                if let Some(session_id) = message["sessionId"].as_str().filter(|id| !id.is_empty())
+                {
+                    self.phase = RemotePhase::Registered;
+                    if *self.control.enabled.borrow() {
+                        self.control
+                            .status
+                            .send_replace(RemoteStatus::Registered(session_id.to_owned()));
+                    }
+                }
+                self.update()
+            }
+            Some("remote:unregistered") if self.phase == RemotePhase::Unregistering => {
+                self.phase = RemotePhase::Disabled;
+                self.control.status.send_replace(RemoteStatus::Disabled);
+                self.update()
+            }
+            Some("remote:error") => {
+                let message = message["msg"].as_str().unwrap_or("网页遥控请求失败");
+                warn!("网页遥控请求失败: {}", message);
+                self.control
+                    .status
+                    .send_replace(RemoteStatus::Failed(message.to_owned()));
+                None
+            }
+            _ => None,
+        }
     }
 }
