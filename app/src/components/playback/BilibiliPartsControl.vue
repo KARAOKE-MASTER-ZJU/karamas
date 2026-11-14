@@ -29,7 +29,7 @@ const options = computed(() =>
 </script>
 
 <template>
-  <div class="parts-control">
+  <div v-if="options.length > 0" class="parts-control">
     <button
       class="button text-button parts-button"
       :disabled="disabled"
