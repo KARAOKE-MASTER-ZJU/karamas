@@ -14,7 +14,7 @@ fn retiring_old_streams_keeps_new_streams_active() {
             url: "http://unused.invalid/video".into(),
             len: 1024,
         }],
-        DEFAULT_CACHE_BLOCK_BYTES,
+        BLOCK_BYTES,
     )
     .unwrap();
     let (old_id, old) = cache.stream_epoch();

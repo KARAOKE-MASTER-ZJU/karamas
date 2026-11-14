@@ -18,7 +18,6 @@ use tokio::sync::{Mutex, OnceCell, Semaphore, watch};
 pub use super::upstream::fetch_range;
 
 pub const BLOCK_BYTES: u64 = 1024 * 1024;
-pub const DEFAULT_CACHE_BLOCK_BYTES: u64 = 128 * 1024;
 const HOT_BLOCKS: usize = 4;
 type Key = (usize, u64);
 static DIRECTORY_ID: AtomicU64 = AtomicU64::new(0);
@@ -89,7 +88,7 @@ impl SongCache {
         sources: Vec<RemoteSource>,
         capacity: u64,
     ) -> io::Result<Self> {
-        Self::new_with_block_size(parent, client, sources, capacity, DEFAULT_CACHE_BLOCK_BYTES)
+        Self::new_with_block_size(parent, client, sources, capacity, BLOCK_BYTES)
     }
 
     /// 按指定块大小和容量创建歌曲缓存。
