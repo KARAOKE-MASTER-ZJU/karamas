@@ -167,13 +167,24 @@ export function createLocalPlayer(
         instance.destroy();
         await loadSource(action, signal);
       }
-    } else if (isHls && !video.canPlayType("application/vnd.apple.mpegurl")) {
+    } else if (
+      isHls &&
+      (!action.live || !video.canPlayType("application/vnd.apple.mpegurl"))
+    ) {
+      // WebKit 原生 HLS 的大范围重复读取会拖慢点播 seek。
       const { default: Hls } = await import("hls.js");
       if (signal.aborted) return;
-      if (!Hls.isSupported())
-        throw new Error(
-          "当前播放器不支持 HLS，请选择 [DASH] 或 [MP4] 清晰度。",
-        );
+      if (!Hls.isSupported()) {
+        if (!video.canPlayType("application/vnd.apple.mpegurl"))
+          throw new Error(
+            "当前播放器不支持 HLS，请选择 [DASH] 或 [MP4] 清晰度。",
+          );
+        const ready = waitFor(video, "loadedmetadata", signal);
+        video.src = url;
+        video.load();
+        await ready;
+        return;
+      }
       const instance = new Hls();
       hls = instance;
       instance.on(Hls.Events.ERROR, (_event, data) => {
