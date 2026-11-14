@@ -148,9 +148,13 @@ mod tests {
         playback.begin_song();
         playback.start("https://cdn.example/video.mp4".into(), 0);
         let revision = playback.query_revision().unwrap();
-        tokio::time::advance(Duration::from_secs(1)).await;
+        let elapsed = OLD_PROGRESS_WINDOW / 2;
+        tokio::time::advance(elapsed).await;
         playback.report(revision, &position(179, 180));
-        assert_eq!(playback.snapshot().unwrap().progress.current_secs, 1);
+        assert_eq!(
+            playback.snapshot().unwrap().progress.current_secs,
+            elapsed.as_secs() as u32
+        );
         playback.report(revision, &position(0, 240));
         tokio::time::advance(Duration::from_secs(2)).await;
         let state = playback.snapshot().unwrap();

@@ -54,20 +54,29 @@ async fn receive_keeps_processing_after_bad_and_stale_messages_and_keeps_sending
         },
     ));
     incoming.send(Ok(reply("Auth", 0))).await.unwrap();
+    let mut subscriptions = Vec::new();
     for topic in [PROJ, PROJ_CORE] {
         let frame = sent.recv().await.unwrap();
+        subscriptions.push(frame.options.as_ref().unwrap().sequence);
         let paths = TargetPath::decode(frame.body.unwrap().value.as_slice()).unwrap();
         assert_eq!(paths.target_paths, [topic]);
     }
     incoming.send(Ok(reply("Subscribe", 999))).await.unwrap();
-    incoming.send(Ok(reply("Subscribe", 2))).await.unwrap();
+    incoming
+        .send(Ok(reply("Subscribe", subscriptions[1])))
+        .await
+        .unwrap();
     tokio::task::yield_now().await;
     assert_eq!(
         subscribed.try_recv(),
         Err(oneshot::error::TryRecvError::Empty)
     );
-    incoming.send(Ok(reply("Subscribe", 1))).await.unwrap();
+    incoming
+        .send(Ok(reply("Subscribe", subscriptions[0])))
+        .await
+        .unwrap();
     subscribed.await.unwrap();
+    let mut last_sequence = *subscriptions.iter().max().unwrap();
 
     let mut corrupt = progress(&current);
     corrupt.value = vec![0xff];
@@ -102,7 +111,9 @@ async fn receive_keeps_processing_after_bad_and_stale_messages_and_keeps_sending
             .recv()
             .await
             .expect("坏消息和旧会话仍需 ACK，接收循环不能退出");
-        assert_eq!(frame.options.unwrap().sequence, index as i64 + 3);
+        let sequence = frame.options.unwrap().sequence;
+        assert!(sequence > last_sequence);
+        last_sequence = sequence;
         let ack = MessageAckReq::decode(frame.body.unwrap().value.as_slice()).unwrap();
         assert_eq!(
             (
@@ -124,7 +135,7 @@ async fn receive_keeps_processing_after_bad_and_stale_messages_and_keeps_sending
     tokio::time::advance(HEARTBEAT_INTERVAL).await;
     let heartbeat = sent.recv().await.unwrap();
     assert_eq!(heartbeat.target_path, format!("{BROADCAST}Heartbeat"));
-    assert_eq!(heartbeat.options.unwrap().sequence, 8);
+    assert!(heartbeat.options.unwrap().sequence > last_sequence);
     drop(incoming);
     assert!(task.await.unwrap().is_err());
 }

@@ -379,16 +379,6 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    #[ignore = "requires public Bilibili access"]
-    async fn test_get_bilibili_direct_link() {
-        // 示例：测试获取视频直链
-        match get_bilibili_direct_link("BV1LS4MzKE8y", Some(2)).await {
-            Ok(url) => println!("视频直链: {}", url),
-            Err(e) => println!("错误: {}", e),
-        }
-    }
-
-    #[tokio::test]
     #[ignore = "public Bilibili network fixture; run manually before release"]
     async fn test_anonymous_1080_dash() {
         let media = get_bilibili_media_with_format(

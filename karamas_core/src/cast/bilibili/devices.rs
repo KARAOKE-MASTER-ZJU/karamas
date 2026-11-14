@@ -132,7 +132,7 @@ mod tests {
         }))
         .unwrap_err();
 
-        assert!(err.starts_with("auth expired:"));
+        assert!(err.contains("-101"));
         assert!(err.contains("账号未登录"));
     }
 }

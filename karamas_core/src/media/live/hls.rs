@@ -157,8 +157,8 @@ mod tests {
     use super::*;
 
     // 播放端必须只请求当前会话，清单相对地址、属性 URI 和上游签名都不能丢失。
-    #[test]
-    fn playlists_keep_signed_resources_inside_the_current_session() {
+    #[tokio::test]
+    async fn playlists_keep_signed_resources_inside_the_current_session() {
         let base = Url::parse("https://cdn.example/live/channel/index.m3u8?auth=manifest").unwrap();
         let text = "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"../key?sig=key\"\n#EXT-X-MAP:URI=\"init.mp4?sig=init\"\n#EXTINF:4,\npart.ts?sig=segment\n#EXT-X-STREAM-INF:BANDWIDTH=1000\n../variant/playlist?sig=variant\n";
         let mut resources = Resources {
@@ -168,15 +168,38 @@ mod tests {
         let output = rewrite(text, &base, &mut resources).unwrap();
         assert!(!output.contains("https://"));
         assert!(!output.contains("sig="));
-        assert!(output.contains("URI=\"resource-1.bin\""));
-        assert!(output.contains("resource-4.m3u8"));
-        assert!(output.contains("resource-3.ts"));
-        assert_eq!(
-            resources.entries[0].url.as_str(),
-            "https://cdn.example/live/key?sig=key"
-        );
-        assert_eq!(resources.entries[2].url.query(), Some("sig=segment"));
+        let paths: Vec<_> = output
+            .lines()
+            .filter_map(|line| {
+                if let Some((_, rest)) = line.split_once("URI=\"") {
+                    Some(rest.split_once('"').unwrap().0)
+                } else if !line.starts_with('#') {
+                    Some(line)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(paths.len(), 4);
+        assert!(paths[2].ends_with(".ts"));
+        assert!(paths[3].ends_with(".m3u8"));
+        assert!(paths.iter().all(|path| Url::parse(path).is_err()));
         assert_eq!(rewrite(text, &base, &mut resources).unwrap(), output);
         assert_eq!(resources.entries.len(), 4);
+        let hls = Hls {
+            root: base,
+            resources: Mutex::new(resources),
+        };
+        let client = reqwest::Client::new();
+        for (path, expected) in paths[..3].iter().zip([
+            "https://cdn.example/live/key?sig=key",
+            "https://cdn.example/live/channel/init.mp4?sig=init",
+            "https://cdn.example/live/channel/part.ts?sig=segment",
+        ]) {
+            let Resource::Remote(url) = hls.resource(&client, path, "").await.unwrap() else {
+                panic!("分片和密钥应返回上游资源地址");
+            };
+            assert_eq!(url.as_str(), expected);
+        }
     }
 }

@@ -369,7 +369,7 @@ pub async fn proxy_handler(
 #[cfg(test)]
 mod tests {
     use crate::media::server::proxy_handler;
-    use actix_web::{App, HttpServer, web};
+    use actix_web::{App, web};
     use reqwest::Client;
 
     // token 与设备 IP 共同保护会话和直链入口，转发头不能作为设备身份。
@@ -460,39 +460,4 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    #[ignore = "requires public Bilibili access"]
-    async fn test_https() {
-        let client = reqwest::Client::new();
-
-        match client
-            .get("https://www.bilibili.com/")
-            .header("User-Agent", "Mozilla/5.0 ...")
-            .send()
-            .await
-        {
-            Ok(res) => println!("成功连接! 状态码: {}", res.status()),
-            Err(e) => println!("连接失败: {:?}. 请检查网络连接。", e),
-        }
-    }
-    #[tokio::test]
-    #[ignore = "manual long-running proxy server"]
-    async fn test_proxy() -> std::io::Result<()> {
-        // 在外面创建全局唯一的 Client，内部已配置好纯 Rustls
-        let client = Client::builder()
-            .tls_backend_rustls() // 强制使用 rustls
-            .build()
-            .expect("Failed to create client");
-
-        let client_data = web::Data::new(client);
-
-        HttpServer::new(move || {
-            App::new()
-                .app_data(client_data.clone())
-                .service(proxy_handler)
-        })
-        .bind(("127.0.0.1", 8080))?
-        .run()
-        .await
-    }
 }

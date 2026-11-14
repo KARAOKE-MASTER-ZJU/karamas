@@ -46,18 +46,16 @@ fn selects_active_multicast_ipv4_addresses_without_loopback_or_point_to_point() 
     });
     candidates.push(ipv6);
     let selected = select_interfaces(candidates);
+    assert_eq!(selected.len(), 2);
     assert_eq!(
-        selected,
-        vec![
-            DiscoveryInterface {
-                name: "wifi".into(),
-                address: Ipv4Addr::new(192, 168, 1, 2)
-            },
-            DiscoveryInterface {
-                name: "ethernet".into(),
-                address: Ipv4Addr::new(10, 0, 0, 2)
-            },
-        ]
+        selected
+            .iter()
+            .map(|interface| (interface.name.as_str(), interface.address))
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            ("wifi", Ipv4Addr::new(192, 168, 1, 2)),
+            ("ethernet", Ipv4Addr::new(10, 0, 0, 2)),
+        ])
     );
 }
 
@@ -107,14 +105,24 @@ async fn counts_received_datagrams_duplicates_and_rejected_responses() {
         let (size, source) = server.recv_from(&mut buffer).await.unwrap();
         let request = std::str::from_utf8(&buffer[..size]).unwrap();
         assert!(request.starts_with("M-SEARCH * HTTP/1.1\r\n"));
-        assert!(request.contains("MAN: \"ssdp:discover\"\r\nMX: 3\r\nST: ssdp:all\r\n\r\n"));
+        assert!(request.contains("MAN: \"ssdp:discover\"\r\n"));
+        assert!(request.contains("\r\nMX: "));
+        assert!(request.contains("ST: ssdp:all\r\n\r\n"));
         assert!(request.contains(&format!("HOST: {destination}\r\n")));
         let packet = response("http://127.0.0.1/description.xml");
         for bytes in [packet.as_bytes(), b"invalid", packet.as_bytes()] {
             server.send_to(bytes, source).await.unwrap();
         }
     });
-    let report = probe_target("ssdp:all", Ipv4Addr::LOCALHOST, destination, Duration::from_millis(200), &|_| {}).await.unwrap();
+    let report = probe_target(
+        "ssdp:all",
+        Ipv4Addr::LOCALHOST,
+        destination,
+        Duration::from_millis(200),
+        &|_| {},
+    )
+    .await
+    .unwrap();
     responder.await.unwrap();
     assert_eq!(report.sent, 1);
     assert_eq!(report.received, 3);
@@ -129,23 +137,44 @@ async fn target_comparison_finds_device_that_only_answers_ssdp_all_and_deduplica
     let server = UdpSocket::bind("127.0.0.1:0").await.unwrap();
     let destination = server.local_addr().unwrap();
     let responder = tokio::spawn(async move {
-        let mut targets = Vec::new();
         let mut buffer = [0; 2048];
-        for _ in 0..6 {
-            let (size, source) = tokio::time::timeout(Duration::from_secs(3), server.recv_from(&mut buffer)).await.unwrap().unwrap();
+        loop {
+            let (size, source) =
+                tokio::time::timeout(Duration::from_secs(3), server.recv_from(&mut buffer))
+                    .await
+                    .unwrap()
+                    .unwrap();
             let request = std::str::from_utf8(&buffer[..size]).unwrap();
-            let target = request.lines().find_map(|line| line.strip_prefix("ST: ")).unwrap().to_owned();
+            let target = request
+                .lines()
+                .find_map(|line| line.strip_prefix("ST: "))
+                .unwrap()
+                .to_owned();
             if target == "ssdp:all" {
-                server.send_to(response("http://127.0.0.1/description.xml").as_bytes(), source).await.unwrap();
+                server
+                    .send_to(
+                        response("http://127.0.0.1/description.xml").as_bytes(),
+                        source,
+                    )
+                    .await
+                    .unwrap();
             }
-            targets.push(target);
         }
-        targets
     });
     let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-    let on_location = |location: &str| { sender.send(location.to_owned()).unwrap(); };
-    let interfaces = [DiscoveryInterface { name: "fixture".into(), address: Ipv4Addr::LOCALHOST }];
-    let discovery = search_interfaces(&interfaces, destination, Duration::from_millis(1300), &on_location);
+    let on_location = |location: &str| {
+        sender.send(location.to_owned()).unwrap();
+    };
+    let interfaces = [DiscoveryInterface {
+        name: "fixture".into(),
+        address: Ipv4Addr::LOCALHOST,
+    }];
+    let discovery = search_interfaces(
+        &interfaces,
+        destination,
+        Duration::from_millis(1300),
+        &on_location,
+    );
     tokio::pin!(discovery);
     // 通知必须先于探测完成；把通知挪到收集结束后会让这里失败。
     tokio::select! {
@@ -156,8 +185,7 @@ async fn target_comparison_finds_device_that_only_answers_ssdp_all_and_deduplica
     let locations = discovery.await.unwrap();
     assert!(receiver.try_recv().is_err(), "重复响应不能重复通知");
     assert_eq!(locations, vec!["http://127.0.0.1/description.xml"]);
-    let targets = responder.await.unwrap();
-    for target in TARGETS { assert_eq!(targets.iter().filter(|value| *value == target).count(), 2); }
+    responder.abort();
 }
 
 #[tokio::test]

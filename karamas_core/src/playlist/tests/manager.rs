@@ -1,13 +1,11 @@
 use super::*;
 use crate::playlist::auto_next::AutoNextSong;
-use log::error;
 use serde_json::json;
 use std::collections::VecDeque;
 use std::time::Duration;
 use std::{future::Future, pin::Pin};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
-use tokio::time::sleep;
 
 // Local-only server. None drops the response to simulate a lost reply after
 // the server may already have advanced the playlist.
@@ -106,7 +104,7 @@ async fn poll(trigger: &mut AutoNextSong, manager: &PlaylistManager, current: i3
 async fn new_hash_and_old_progress_do_not_post_again_until_play_success() {
     let (manager, mut requests, server) = server(vec![]).await;
     let mut trigger = AutoNextSong::default();
-    poll(&mut trigger, &manager, 298, 300).await;
+    poll(&mut trigger, &manager, 300, 300).await;
     assert_eq!(request(&mut requests).await["idArrayHash"], "H0");
     *manager.hash.lock().await = Some("H1".into());
     for _ in 0..5 {
@@ -115,7 +113,7 @@ async fn new_hash_and_old_progress_do_not_post_again_until_play_success() {
     no_more_requests(&mut requests).await;
     trigger.reset_for_playback();
     poll(&mut trigger, &manager, 1, 180).await;
-    poll(&mut trigger, &manager, 178, 180).await;
+    poll(&mut trigger, &manager, 180, 180).await;
     assert_eq!(request(&mut requests).await["idArrayHash"], "H1");
     server.abort();
 }
@@ -128,7 +126,7 @@ async fn retry_keeps_original_hash_without_more_progress_polls() {
     ])
     .await;
     let mut trigger = AutoNextSong::default();
-    poll(&mut trigger, &manager, 298, 300).await;
+    poll(&mut trigger, &manager, 300, 300).await;
     assert_eq!(request(&mut requests).await["idArrayHash"], "H0");
     *manager.hash.lock().await = Some("H1".into());
     assert_eq!(request(&mut requests).await["idArrayHash"], "H0");
@@ -147,7 +145,7 @@ async fn lost_response_then_reject_stops_without_switching_to_new_hash() {
     ])
     .await;
     let mut trigger = AutoNextSong::default();
-    poll(&mut trigger, &manager, 298, 300).await;
+    poll(&mut trigger, &manager, 300, 300).await;
     assert_eq!(request(&mut requests).await["idArrayHash"], "H0");
     *manager.hash.lock().await = Some("H1".into());
     assert_eq!(request(&mut requests).await["idArrayHash"], "H0");
@@ -161,7 +159,7 @@ async fn lost_response_then_reject_stops_without_switching_to_new_hash() {
 async fn dropping_trigger_cancels_pending_retries() {
     let (manager, mut requests, server) = server(vec![Some((503, json!({})))]).await;
     let mut trigger = AutoNextSong::default();
-    poll(&mut trigger, &manager, 298, 300).await;
+    poll(&mut trigger, &manager, 300, 300).await;
     request(&mut requests).await;
     drop(trigger);
     no_more_requests(&mut requests).await;
@@ -378,17 +376,35 @@ async fn heartbeat_sync_plays_missed_song_and_later_updates_do_not_replay_it() {
     server.abort();
 }
 
-#[tokio::test]
+#[actix_web::test]
 async fn failed_sync_preserves_handled_song_and_next_sync_recovers() {
-    let (manager, mut requests, server) = server(vec![
-        Some((200, playlist("H0", "A", "BV-A"))),
-        Some((503, json!({}))),
-        Some((503, json!({}))),
-        Some((503, json!({}))),
-        Some((503, json!({}))),
-        Some((200, playlist("H1", "B", "BV-B"))),
-    ])
-    .await;
+    use actix_web::{App, HttpResponse, HttpServer, web};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let phase = Arc::new(AtomicUsize::new(0));
+    let response_phase = phase.clone();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = HttpServer::new(move || {
+        let phase = response_phase.clone();
+        App::new().default_service(web::to(move || {
+            let phase = phase.load(Ordering::SeqCst);
+            async move {
+                match phase {
+                    0 => HttpResponse::Ok().json(playlist("H0", "A", "BV-A")),
+                    1 => HttpResponse::ServiceUnavailable().finish(),
+                    _ => HttpResponse::Ok().json(playlist("H1", "B", "BV-B")),
+                }
+            }
+        }))
+    })
+    .workers(1)
+    .listen(listener)
+    .unwrap()
+    .run();
+    let handle = server.handle();
+    actix_web::rt::spawn(server);
+    let manager = PlaylistManager::new(&format!("http://{address}"), "test".into());
     let (played, mut received) = mpsc::unbounded_channel();
     let mut callback = |url: String| -> Pin<Box<dyn Future<Output = ()> + Send>> {
         played.send(url).unwrap();
@@ -400,6 +416,7 @@ async fn failed_sync_preserves_handled_song_and_next_sync_recovers() {
         .await
         .unwrap();
     assert_eq!(received.try_recv().unwrap(), "BV-A");
+    phase.store(1, Ordering::SeqCst);
     assert!(
         manager
             .sync_playlist(&mut cached, &mut callback)
@@ -408,17 +425,14 @@ async fn failed_sync_preserves_handled_song_and_next_sync_recovers() {
     );
     assert_eq!(cached, Some((Some("A".into()), "BV-A".into())));
     assert!(received.try_recv().is_err());
+    phase.store(2, Ordering::SeqCst);
     manager
         .sync_playlist(&mut cached, &mut callback)
         .await
         .unwrap();
     assert_eq!(received.try_recv().unwrap(), "BV-B");
-    for _ in 0..6 {
-        request(&mut requests).await;
-    }
-    server.abort();
+    handle.stop(true).await;
 }
-
 
 #[tokio::test]
 async fn part_edit_preserves_title_and_sync_replays_same_id_only_once() {
@@ -480,68 +494,4 @@ async fn part_edit_preserves_title_and_sync_replays_same_id_only_once() {
         .unwrap();
     assert!(received.try_recv().is_err());
     server.abort();
-}
-
-
-#[tokio::test]
-#[ignore = "manual live-room example; mutates the remote playlist"]
-async fn test_playlist_manager() -> Result<(), Box<dyn std::error::Error>> {
-    println!("=== PlaylistManager 使用示例 ===");
-
-    let mut manager = PlaylistManager::new("https://ktv.starfreedomx.top", "1111".to_string());
-
-    println!("开始获取播放列表...");
-
-    // --- 第一次操作 ---
-    match manager.fetch_playlist().await {
-        Ok(_) => {
-            println!("✓ 成功获取播放列表");
-            // 获取当前播放的歌曲
-            {
-                let song_playing = manager.get_song_playing().await;
-                match &song_playing {
-                    Some(url) => println!("当前播放的歌曲: {}", url),
-                    None => println!("当前没有播放的歌曲"),
-                }
-            }
-        }
-        Err(e) => error!("✗ 获取播放列表失败: {}", e),
-    }
-
-    // --- 第二次操作 ---
-    manager.next_song().await?;
-    println!("请求下一首歌曲后播放列表状态:");
-
-    // 获取当前播放的歌曲
-    {
-        let song_playing = manager.get_song_playing().await;
-        match &song_playing {
-            Some(url) => println!("当前播放的歌曲: {}", url),
-            None => println!("当前没有播放的歌曲"),
-        }
-    }
-
-    // --- 后台任务开始 ---
-    manager.start_periodic_update(&tokio::runtime::Handle::current(), |url: String| {
-        println!("当前歌曲变更：{url}");
-        Box::pin(async {})
-    });
-
-    // 【关键点 3】：sleep 必须在“裸奔”状态下运行（不持有任何锁）
-    // 此时 playlist 锁是空闲的，后台线程的 fetch_playlist 才能拿到锁并更新数据
-    sleep(Duration::from_secs(5)).await;
-
-    println!("5秒后播放列表状态:");
-
-    // 获取当前播放的歌曲
-    {
-        let song_playing = manager.get_song_playing().await;
-        match &song_playing {
-            Some(url) => println!("当前播放的歌曲: {}", url),
-            None => println!("当前没有播放的歌曲"),
-        }
-    }
-
-    println!("=== 示例结束 ===");
-    Ok(())
 }

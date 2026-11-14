@@ -28,11 +28,16 @@ fn dlna_window_starts_at_play_success_not_playlist_update() {
     let success = now + Duration::from_secs(10);
     assert!(gate.play_succeeded(gate.revision(), true, success));
     assert_eq!(
-        sample(&mut gate, 298, 180, success + Duration::from_millis(2999)),
+        sample(
+            &mut gate,
+            298,
+            180,
+            success + OLD_PROGRESS_WINDOW.saturating_sub(Duration::from_millis(1))
+        ),
         (0, 180)
     );
     assert_eq!(
-        sample(&mut gate, 298, 180, success + Duration::from_secs(3)),
+        sample(&mut gate, 298, 180, success + OLD_PROGRESS_WINDOW),
         (298, 180)
     );
 }
@@ -92,13 +97,13 @@ fn queue_only_updates_do_not_restart_window_or_rearm_once() {
     let mut gate = playing(240, now);
     change_to_b(&mut gate);
     assert!(gate.play_succeeded(gate.revision(), true, now));
-    assert!(gate.auto_next.observe(178, 180));
+    assert!(gate.auto_next.observe(180, 180));
     let revision = gate.revision();
     change_to_b(&mut gate);
     assert_eq!(gate.revision(), revision);
-    assert!(!gate.auto_next.observe(178, 180));
+    assert!(!gate.auto_next.observe(180, 180));
     assert_eq!(
-        sample(&mut gate, 240, 300, now + Duration::from_secs(3)),
+        sample(&mut gate, 240, 300, now + OLD_PROGRESS_WINDOW),
         (240, 300)
     );
 }
@@ -113,7 +118,7 @@ fn missing_baseline_expires_and_invalid_samples_are_not_zero() {
     assert_eq!(sample(&mut gate, 0, -1, now), (-1, -1));
     assert_eq!(sample(&mut gate, 100, 300, now), (0, 300));
     assert_eq!(
-        sample(&mut gate, 100, 300, now + Duration::from_secs(3)),
+        sample(&mut gate, 100, 300, now + OLD_PROGRESS_WINDOW),
         (100, 300)
     );
 }
@@ -139,5 +144,5 @@ fn old_end_sample_after_new_playback_cannot_consume_once_or_mask_progress() {
     let (current, total) = gate.filter_at(old_query, 298, 300, now);
     assert!(!gate.auto_next.observe(current, total));
     assert_eq!(sample(&mut gate, 1, 180, now), (1, 180));
-    assert!(gate.auto_next.observe(178, 180));
+    assert!(gate.auto_next.observe(180, 180));
 }

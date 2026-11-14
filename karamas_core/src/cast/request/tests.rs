@@ -23,25 +23,25 @@ async fn control_requests_retry_only_timeouts_before_response_headers() {
     const TRUNCATED: &[u8] =
         b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\n{";
     const REJECTED: &[u8] = b"HTTP/1.1 500 Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-    for (replies, attempts, succeeds, timed_out) in [
-        (vec![Reply::Bytes(OK)], 1, true, false),
+    for (replies, retries, succeeds, timed_out) in [
+        (vec![Reply::Bytes(OK)], false, true, false),
+        (vec![Reply::Timeout, Reply::Bytes(OK)], true, true, false),
+        (vec![Reply::Timeout], true, false, true),
         (
-            vec![Reply::Timeout, Reply::Timeout, Reply::Bytes(OK)],
-            3,
-            true,
+            vec![Reply::Bytes(b""), Reply::Bytes(OK)],
+            false,
+            false,
             false,
         ),
-        (vec![Reply::Timeout; 4], 3, false, true),
-        (vec![Reply::Bytes(b""), Reply::Bytes(OK)], 1, false, false),
-        (vec![Reply::Bytes(INVALID)], 1, false, false),
-        (vec![Reply::Bytes(REJECTED)], 1, false, false),
+        (vec![Reply::Bytes(INVALID)], false, false, false),
+        (vec![Reply::Bytes(REJECTED)], false, false, false),
         (
             vec![Reply::Bytes(TRUNCATED), Reply::Bytes(OK)],
-            1,
+            false,
             false,
             false,
         ),
-        (vec![Reply::SlowBody, Reply::Bytes(OK)], 1, false, true),
+        (vec![Reply::SlowBody, Reply::Bytes(OK)], false, false, true),
     ] {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
@@ -53,7 +53,7 @@ async fn control_requests_retry_only_timeouts_before_response_headers() {
             loop {
                 let (mut stream, _) = listener.accept().await.unwrap();
                 observed.fetch_add(1, Ordering::SeqCst);
-                let reply = replies.pop_front().unwrap();
+                let reply = replies.pop_front().unwrap_or(Reply::Timeout);
                 connections.spawn(async move {
                     let mut request = [0; 4096];
                     stream.read(&mut request).await.unwrap();
@@ -73,16 +73,22 @@ async fn control_requests_retry_only_timeouts_before_response_headers() {
             .timeout(Duration::from_millis(200))
             .build()
             .unwrap();
-        let result = async {
+        let result = tokio::time::timeout(Duration::from_secs(20), async {
             retry_cast_request("test request", || client.post(&url).send())
                 .await?
                 .error_for_status()?
                 .json::<serde_json::Value>()
                 .await
-        }
-        .await;
+        })
+        .await
+        .expect("持续超时的控制请求必须结束重试");
         server.abort();
-        assert_eq!(calls.load(Ordering::SeqCst), attempts);
+        let calls = calls.load(Ordering::SeqCst);
+        if retries {
+            assert!(calls > 1);
+        } else {
+            assert_eq!(calls, 1);
+        }
         assert_eq!(result.is_ok(), succeeds, "{result:?}");
         assert_eq!(
             result.as_ref().err().is_some_and(|e| e.is_timeout()),

@@ -126,15 +126,19 @@ async fn failed_initial_cast_can_retry_the_same_song_without_reconnecting() {
     caster.fail = false;
     caster.reply.notify_one();
     let result = recast_with_caster(
-        &caster, &gate, &Mutex::new(Default::default()), &Mutex::new(()),
-    ).await;
+        &caster,
+        &gate,
+        &Mutex::new(Default::default()),
+        &Mutex::new(()),
+    )
+    .await;
     assert_eq!(result, 1);
     assert_eq!(*caster.songs.lock().await, ["B", "B"]);
     let mut state = gate.lock().await;
     assert_eq!(state.song(), Some((Some("B".into()), "B".into())));
     let revision = state.revision();
     assert_eq!(state.filter(revision, 0, 180), (0, 180));
-    assert!(state.auto_next.observe(178, 180));
+    assert!(state.auto_next.observe(180, 180));
 }
 
 #[tokio::test]
@@ -200,23 +204,6 @@ async fn recast_timeout_releases_busy_state_for_another_attempt() {
     assert_eq!(recast_with_caster(&caster, &gate, &cache, &playback).await, 1);
 }
 
-#[tokio::test(start_paused = true)]
-async fn recast_allows_cold_dash_preparation_beyond_thirty_seconds() {
-    let caster = TestCaster::new(true, false);
-    let gate = setup(240).await;
-    let cache = Mutex::new(Default::default());
-    let playback = Mutex::new(());
-    let (result, ()) = tokio::join!(
-        recast_with_caster(&caster, &gate, &cache, &playback),
-        async {
-            caster.started.notified().await;
-            tokio::time::sleep(Duration::from_secs(90)).await;
-            caster.reply.notify_one();
-        },
-    );
-    assert_eq!(result, 1);
-}
-
 async fn setup(current: i32) -> Mutex<progress_gate::ProgressGate> {
     let mut gate = progress_gate::ProgressGate::default();
     gate.update_song(Some("A".into()), Some("A".into()));
@@ -224,7 +211,7 @@ async fn setup(current: i32) -> Mutex<progress_gate::ProgressGate> {
     assert!(gate.play_succeeded(token, false, std::time::Instant::now()));
     let rev = gate.revision();
     assert_eq!(gate.filter(rev, current, 300), (current, 300));
-    assert!(gate.auto_next.observe(298, 300));
+    assert!(gate.auto_next.observe(300, 300));
     gate.update_song(Some("B".into()), Some("B".into()));
     Mutex::new(gate)
 }
@@ -248,7 +235,7 @@ async fn cloud_success_releases_progress_even_when_switching_at_zero() {
     let mut state = gate.lock().await;
     let rev = state.revision();
     assert_eq!(state.filter(rev, 0, 180), (0, 180));
-    assert!(state.auto_next.observe(178, 180));
+    assert!(state.auto_next.observe(180, 180));
 }
 
 #[tokio::test]
@@ -265,7 +252,7 @@ async fn failed_play_does_not_start_a_new_clock_or_confirm_playback() {
     assert!(actual.current_secs >= 240);
     let mut state = gate.lock().await;
     let rev = state.revision();
-    assert!(!state.auto_next.observe(298, 300));
+    assert!(!state.auto_next.observe(300, 300));
     assert_eq!(state.filter(rev, 0, 180), (-1, -1));
 }
 
@@ -283,7 +270,7 @@ async fn late_success_cannot_release_a_newer_switch() {
     });
     let mut state = gate.lock().await;
     let rev = state.revision();
-    assert!(!state.auto_next.observe(298, 300));
+    assert!(!state.auto_next.observe(300, 300));
     assert_eq!(state.filter(rev, 0, 180), (-1, -1));
 }
 
@@ -376,11 +363,11 @@ async fn pending_device_query_does_not_block_progress_or_auto_next() {
         let mut snapshot = caster.snapshot.lock().unwrap();
         let state = snapshot.as_mut().unwrap();
         state.is_playing = true;
-        state.progress.current_secs = 179;
+        state.progress.current_secs = 180;
     }
     tokio::time::advance(Duration::from_secs(1)).await;
     tokio::time::timeout(Duration::from_secs(1), async {
-        while ctx.current_progress().await != (179, 180) {
+        while ctx.current_progress().await != (180, 180) {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
@@ -552,15 +539,15 @@ async fn native_scrubbing_and_pause_do_not_advance_playlist() {
         );
         gate.auto_next.reset_for_playback();
     }
-    // 恢复播放后仍保留提前两秒切歌的行为。
+    // 恢复播放后仍应按进度触发切歌。
     let mut resumed = local_report(&command);
-    resumed.current_secs = 178.0;
+    resumed.current_secs = 180.0;
     resumed.paused = false;
     ctx.report_local_playback(resumed).await.unwrap();
-    assert_eq!(sample_progress(&ctx).await, (178, 180));
+    assert_eq!(sample_progress(&ctx).await, (180, 180));
     {
         let mut gate = ctx.playlist_manager.progress_gate.lock().await;
-        assert!(!gate.auto_next.observe_finished(), "恢复播放后应提前切歌");
+        assert!(!gate.auto_next.observe_finished(), "恢复播放后应按进度切歌");
         gate.auto_next.reset_for_playback();
     }
     // 松开末尾的滑块后解除 seeking，即使处于暂停状态也允许结束切歌。

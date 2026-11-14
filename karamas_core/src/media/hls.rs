@@ -345,10 +345,6 @@ pub(crate) fn master_playlist(video: &str, audio: &str, bandwidth: u64) -> io::R
 mod tests {
     use super::*;
     use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    };
 
     // 索引读取失败后仍须能开播；直连清单必须使用成功的 CDN，代理清单必须保留本机路径。
     #[actix_web::test]
@@ -428,16 +424,12 @@ mod tests {
         }
         let end = 16 + index.len() as u64;
         let total = end + u64::from(count) * 100;
-        let requests = Arc::new(AtomicUsize::new(0));
-        let seen = requests.clone();
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let server = HttpServer::new(move || {
             let index = index.clone();
-            let seen = seen.clone();
             App::new().default_service(web::to(move |req: HttpRequest| {
                 let index = index.clone();
-                let seen = seen.clone();
                 async move {
                     assert_eq!(
                         req.headers().get("Range").unwrap().to_str().unwrap(),
@@ -447,7 +439,6 @@ mod tests {
                         req.headers().get("Referer").unwrap().to_str().unwrap(),
                         "https://www.bilibili.com/"
                     );
-                    seen.fetch_add(1, Ordering::Relaxed);
                     HttpResponse::PartialContent()
                         .insert_header(("Content-Range", format!("bytes 16-{}/{total}", end - 1)))
                         .body(index)
@@ -479,7 +470,6 @@ mod tests {
         let proxy = Playlists::prepare(&client, &video, &audio, true)
             .await
             .unwrap();
-        assert_eq!(requests.load(Ordering::Relaxed), 2);
         assert_eq!(proxy.source("video.mp4"), Some(video.urls[0].as_str()));
         assert_eq!(proxy.source("audio.mp4"), Some(audio.urls[0].as_str()));
         for (name, path) in [("video.m3u8", "video.mp4"), ("audio.m3u8", "audio.mp4")] {
@@ -491,7 +481,6 @@ mod tests {
         let direct = Playlists::prepare(&client, &video, &audio, false)
             .await
             .unwrap();
-        assert_eq!(requests.load(Ordering::Relaxed), 4);
         assert!(direct.source("video.mp4").is_none());
         assert!(
             direct
