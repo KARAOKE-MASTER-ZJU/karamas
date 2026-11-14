@@ -33,12 +33,9 @@ function displayLabel(display: PlaybackDisplay, index: number) {
 }
 const options = computed(() => [
   { id: "embedded", label: localLabels.embedded, detail: "" },
-  {
-    id: "window",
-    label: localLabels.window,
-    detail: "",
-    disabled: !capabilities.value?.window,
-  },
+  ...(capabilities.value?.window
+    ? [{ id: "window", label: localLabels.window, detail: "" }]
+    : []),
   ...displays.value.map((display, index) => ({
     id: display.id,
     disabled: !capabilities.value?.screen,
