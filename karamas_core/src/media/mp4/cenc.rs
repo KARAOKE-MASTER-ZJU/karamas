@@ -1,7 +1,7 @@
 //! 单轨 CENC/AES-CTR 分片解密，保持样本布局和时间戳。
 use super::{
     boxes::{boxes, child, children, header, invalid, u32_at},
-    indexed::fragment_samples,
+    samples::fragment_samples,
 };
 use bytes::Bytes;
 use ctr::cipher::{KeyIvInit, StreamCipher};
