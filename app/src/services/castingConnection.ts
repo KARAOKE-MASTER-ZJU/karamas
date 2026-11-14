@@ -35,14 +35,19 @@ export async function connectCastingView(callbacks: {
     listen<LocalCommand | null>("local-playback-command", ({ payload }) => {
       if (!isPlaybackController) callbacks.localCommand(payload);
     }),
-    listen<LocalReport>("local-playback-report", ({ payload }) => {
-      if (isPlaybackController) callbacks.localReport(payload);
-    }),
   ]);
   function publish() {
     return emit(CONNECTION, { source, connection: callbacks.read() });
   }
-  if (isPlaybackController) await emit("casting-connection-request");
+  // 播放文档不订阅自己的回传，避免 macOS 派发事件时清除用户激活。
+  if (isPlaybackController) {
+    unlisten.push(
+      await listen<LocalReport>("local-playback-report", ({ payload }) => {
+        callbacks.localReport(payload);
+      }),
+    );
+    await emit("casting-connection-request");
+  }
   return { publish, dispose: () => unlisten.forEach((stop) => stop()) };
 }
 
