@@ -32,12 +32,14 @@ pub struct OutputView {
 pub struct OutputCapabilities {
     pub window: bool,
     pub screen: bool,
+    pub identify: bool,
 }
 
 pub fn capabilities() -> OutputCapabilities {
     OutputCapabilities {
         window: cfg!(desktop),
         screen: cfg!(any(desktop, target_os = "android")),
+        identify: cfg!(any(desktop, target_os = "android")),
     }
 }
 

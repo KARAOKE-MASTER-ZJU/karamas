@@ -8,7 +8,10 @@ import type {
   PlaybackOutputCapabilities,
   PlaybackOutputTarget,
 } from "@/types/playbackOutput";
-import { getPlaybackOutputCapabilities } from "@/services/playbackWindow";
+import {
+  getPlaybackOutputCapabilities,
+  identifyPlaybackDisplays,
+} from "@/services/playbackWindow";
 import { useLogsStore } from "@/stores/logs";
 
 const props = defineProps<{
@@ -21,6 +24,7 @@ const showDialog = ref(false);
 const capabilities = ref<PlaybackOutputCapabilities | null>(null);
 const displays = ref<PlaybackDisplay[]>([]);
 const loading = ref(false);
+const identifying = ref(false);
 const error = ref("");
 const refreshed = ref(false);
 const localLabels = { embedded: "本地内嵌播放", window: "独立窗口" };
@@ -102,6 +106,20 @@ async function refresh() {
   error.value = errors.join("；");
   loading.value = false;
 }
+
+async function identify() {
+  if (loading.value || identifying.value || !displays.value.length) return;
+  identifying.value = true;
+  error.value = "";
+  try {
+    await identifyPlaybackDisplays(displays.value.map((display) => display.id));
+  } catch (cause) {
+    error.value = `识别屏幕失败：${errorMessage(cause)}`;
+    void logs.recordFailure("识别屏幕失败", cause);
+  } finally {
+    identifying.value = false;
+  }
+}
 </script>
 
 <template>
@@ -134,7 +152,19 @@ async function refresh() {
       @close="showDialog = false"
       @refresh="refresh"
       @select="selectOutput"
-    />
+    >
+      <template #actions>
+        <button
+          v-if="capabilities?.identify && displays.length > 0"
+          type="button"
+          class="button text-button"
+          :disabled="disabled || loading || identifying"
+          @click="identify"
+        >
+          {{ identifying ? "正在识别…" : "识别屏幕" }}
+        </button>
+      </template>
+    </SelectionDialog>
   </div>
 </template>
 

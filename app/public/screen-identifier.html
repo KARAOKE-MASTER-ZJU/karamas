@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>屏幕编号</title>
+    <style>
+      :root {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Microsoft YaHei", sans-serif;
+        color: #e6e7eb;
+        background: #1b1c20;
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        height: 100dvh;
+        display: grid;
+        place-items: center;
+        user-select: none;
+      }
+      h1 {
+        margin: 0;
+        text-align: center;
+        font-size: 16px;
+        font-weight: 500;
+      }
+      #number {
+        display: block;
+        margin-top: 4px;
+        font-size: 80px;
+        font-weight: 700;
+        line-height: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>屏幕 <span id="number"></span></h1>
+    </main>
+    <script>
+      const number = new URLSearchParams(location.search).get("number");
+      if (number && /^[1-9]\d*$/.test(number)) {
+        document.getElementById("number").textContent = number;
+        document.title = `屏幕 ${number}`;
+      }
+    </script>
+  </body>
+</html>

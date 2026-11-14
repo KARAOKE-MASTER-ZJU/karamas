@@ -3,10 +3,14 @@ use crate::error::CommandError;
 use crate::error::CommandResult;
 use serde::{Deserialize, Serialize};
 
+#[cfg(desktop)]
+mod identifier;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "windows")]
 mod windows;
+#[cfg(desktop)]
+pub use identifier::identify;
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

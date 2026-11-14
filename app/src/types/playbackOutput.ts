@@ -19,4 +19,5 @@ export interface PlaybackOutputState {
 export interface PlaybackOutputCapabilities {
   window: boolean;
   screen: boolean;
+  identify: boolean;
 }

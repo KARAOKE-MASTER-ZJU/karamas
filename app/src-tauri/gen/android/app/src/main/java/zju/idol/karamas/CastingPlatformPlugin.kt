@@ -58,6 +58,11 @@ class CastingPlatformPlugin(private val activity: Activity) : Plugin(activity) {
         invoke.resolve()
     }
 
+    @Command
+    fun identifyPlaybackDisplays(invoke: Invoke) = playbackCommand(invoke) { args ->
+        playback.identify(args.displayIds) { invoke.resolve() }
+    }
+
     private fun playbackCommand(invoke: Invoke, action: (PlaybackOutputArgs) -> Unit) {
         try { action(invoke.parseArgs(PlaybackOutputArgs::class.java)) }
         catch (error: Exception) { invoke.reject(error.message ?: "播放窗口操作失败。", "ANDROID_PRESENTATION") }

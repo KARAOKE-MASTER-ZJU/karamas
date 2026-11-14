@@ -32,6 +32,7 @@ const emit = defineEmits<{
 <template>
   <AppDialog :title="title" :close-label="closeLabel" @close="emit('close')">
     <template #actions>
+      <slot name="actions" />
       <button
         type="button"
         class="icon-button"

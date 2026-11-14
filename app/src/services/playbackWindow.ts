@@ -10,7 +10,11 @@ export const isPlaybackController = new URLSearchParams(location.search).has(
 export function getPlaybackOutputCapabilities(): Promise<PlaybackOutputCapabilities> {
   return isTauri()
     ? invoke<PlaybackOutputCapabilities>("get_playback_output_capabilities")
-    : Promise.resolve({ window: false, screen: false });
+    : Promise.resolve({ window: false, screen: false, identify: false });
+}
+
+export function identifyPlaybackDisplays(displayIds: string[]) {
+  return invoke<void>("identify_playback_displays", { displayIds });
 }
 
 export function getPlaybackOutput() {

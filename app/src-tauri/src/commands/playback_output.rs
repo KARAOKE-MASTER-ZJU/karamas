@@ -12,6 +12,32 @@ fn authorize<R: tauri::Runtime>(webview: &tauri::Webview<R>) -> CommandResult<()
 }
 
 #[tauri::command]
+pub async fn identify_playback_displays<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    webview: tauri::Webview<R>,
+    display_ids: Vec<String>,
+) -> CommandResult<()> {
+    authorize(&webview)?;
+    #[cfg(desktop)]
+    return crate::platform::displays::identify(&app, display_ids).await;
+    #[cfg(target_os = "android")]
+    return crate::platform::android::playback_window_call(
+        &app,
+        "identifyPlaybackDisplays",
+        serde_json::json!({ "displayIds": display_ids }),
+    )
+    .await;
+    #[cfg(not(any(desktop, target_os = "android")))]
+    {
+        let _ = (app, display_ids);
+        Err(CommandError::new(
+            "DISPLAY_UNSUPPORTED",
+            "当前平台暂不支持识别屏幕。",
+        ))
+    }
+}
+
+#[tauri::command]
 pub fn get_playback_output_capabilities<R: tauri::Runtime>(
     webview: tauri::Webview<R>,
 ) -> CommandResult<playback_output::OutputCapabilities> {

@@ -4,9 +4,13 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Presentation
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.hardware.display.DisplayManager
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.view.Display
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -25,6 +29,7 @@ class PlaybackOutputArgs {
     var output: String = "embedded"
     var token: String = ""
     var message: Map<String, Any?> = emptyMap()
+    var displayIds: List<String> = emptyList()
 }
 
 // 将承载播放器的 RustWebView 迁到外接屏，Activity 中显示控制页面。
@@ -36,6 +41,21 @@ class PlaybackPresentation(private val activity: Activity) {
     private var presentation: Presentation? = null
     private var controller: WebView? = null
     private var token: String? = null
+    private val identifiers = mutableListOf<Pair<Presentation, WebView>>()
+    private val identifierHandler = Handler(Looper.getMainLooper())
+    private var identificationComplete: (() -> Unit)? = null
+    private val clearIdentifiers = Runnable {
+        val complete = identificationComplete
+        identificationComplete = null
+        identifiers.forEach { (presentation, view) ->
+            presentation.dismiss()
+            (view.parent as? ViewGroup)?.removeView(view)
+            view.stopLoading()
+            view.destroy()
+        }
+        identifiers.clear()
+        complete?.invoke()
+    }
 
     fun attach(webView: WebView) { close(); host = webView as RustWebView }
 
@@ -43,6 +63,58 @@ class PlaybackPresentation(private val activity: Activity) {
     fun displays(): List<Display> = activity.getSystemService(DisplayManager::class.java)
         .getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)
         .filter { it.isValid && it.displayId != activity.windowManager.defaultDisplay.displayId }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    fun identify(displayIds: List<String>, complete: () -> Unit) {
+        check(identifiers.isEmpty()) { "正在识别屏幕，请稍后再试。" }
+        val displays = displays()
+        check(displayIds.isNotEmpty() && displayIds == displays.map { "screen:${it.displayId}" }) {
+            "屏幕已变化，请刷新屏幕列表后重试。"
+        }
+        val host = checkNotNull(host) { "主页面尚未加载。" }
+        val page = Uri.parse(checkNotNull(host.url)).buildUpon()
+            .path("/screen-identifier.html").clearQuery().fragment(null).build()
+        val assets = RustWebViewClient(host, activity)
+        try {
+            displays.forEachIndexed { index, display ->
+                val identifier = Presentation(activity, display, android.R.style.Theme_Material_Dialog_NoActionBar)
+                val view = WebView(identifier.context)
+                identifiers.add(identifier to view)
+                val metrics = identifier.resources.displayMetrics
+                val size = (160 * metrics.density).toInt().coerceAtMost(minOf(metrics.widthPixels, metrics.heightPixels))
+                val margin = (24 * metrics.density).toInt()
+                val url = page.buildUpon().appendQueryParameter("number", "${index + 1}").build()
+                view.setBackgroundColor(Color.rgb(27, 28, 32))
+                view.settings.apply {
+                    javaScriptEnabled = true
+                    allowFileAccess = false
+                    allowContentAccess = false
+                }
+                view.webViewClient = object : WebViewClient() {
+                    override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
+                        assets.shouldInterceptRequest(host, request)
+                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+                        request.url != url
+                }
+                identifier.setContentView(view, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                val window = checkNotNull(identifier.window)
+                window.setBackgroundDrawable(ColorDrawable(Color.rgb(27, 28, 32)))
+                window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                window.addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                identifier.show()
+                window.setGravity(Gravity.TOP or Gravity.START)
+                window.attributes = window.attributes.apply {
+                    width = size
+                    height = size
+                    x = margin.coerceAtMost((metrics.widthPixels - size).coerceAtLeast(0))
+                    y = margin.coerceAtMost((metrics.heightPixels - size).coerceAtLeast(0))
+                }
+                view.loadUrl(url.toString())
+            }
+        } catch (error: Exception) { clearIdentifiers.run(); throw error }
+        identificationComplete = complete
+        identifierHandler.postDelayed(clearIdentifiers, 3000)
+    }
 
     // 先加载隐藏的控制页面，Rust 收到前端就绪通知后再调用 attachOutput。
     @SuppressLint("SetJavaScriptEnabled")
@@ -160,5 +232,10 @@ class PlaybackPresentation(private val activity: Activity) {
         // 外屏输出期间保留媒体文档的运行状态。
         if (presentation != null || foreground) host?.onResume()
     }
-    fun destroy() { close(); host = null }
+    fun destroy() {
+        identifierHandler.removeCallbacks(clearIdentifiers)
+        clearIdentifiers.run()
+        close()
+        host = null
+    }
 }
