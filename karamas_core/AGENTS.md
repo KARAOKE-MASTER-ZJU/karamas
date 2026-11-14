@@ -11,7 +11,8 @@ src/
 ├── cast/           # 设备控制接口和协议实现
 │   ├── dlna/       # DLNA 设备发现与控制
 │   └── bilibili/   # B 站认证、会话和投屏控制
-├── sources/        # B 站和 YouTube 媒体解析
+├── sources/        # 媒体地址识别及 B 站、YouTube 和直播解析
+├── diagnostics/    # DLNA 设备、功能、播放和网络诊断
 ├── media/          # 媒体会话、缓存和上游请求
 │   ├── mp4/        # MP4 索引与封装
 │   └── server/     # HTTP 媒体代理

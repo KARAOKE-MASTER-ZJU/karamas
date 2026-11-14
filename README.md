@@ -51,6 +51,8 @@ _投屏页预览_
 
 支持通过本机或 DLNA 播放 MMF 和 Nulla 直播。DLNA 接收端需支持 HLS，播放 MMF 时需支持 fMP4 HLS。
 
+本机播放器还支持 FLV 直播和点播。
+
 ### 快捷键
 
 本机播放支持以下快捷键，输入文字时不会触发：
@@ -114,6 +116,7 @@ KARAM@S 基于 Tauri 2、Vue 3、TypeScript 和 Rust 构建。环境准备、源
 - [KTV Song List Web](https://github.com/KARAOKE-MASTER-ZJU/ktv-song-web): 配套的网页点歌台。
 - [ktv-casting](https://github.com/aspromise/ktv-casting)（作者 [aspromise](https://github.com/aspromise)）及其 [KARAOKE-MASTER-ZJU 分支](https://github.com/KARAOKE-MASTER-ZJU/ktv-casting): 本项目投屏核心的来源。
 - [hls.js](https://github.com/video-dev/hls.js): 本机播放器的 HLS 播放支持。
+- [mpegts.js](https://github.com/xqq/mpegts.js)：本机播放器的 FLV 播放支持。
 - [rupnp](https://github.com/jakobhellermann/rupnp) 及其 [aspromise 分支](https://github.com/aspromise/rupnp): DLNA 设备描述解析与 UPnP 服务访问。
 - [innertube-rs](https://github.com/caya8205-2/innertube-rs): YouTube 媒体信息获取与播放地址解析。
 - [mp4-rust](https://github.com/alfg/mp4-rust): MP4 元数据与时长读取。

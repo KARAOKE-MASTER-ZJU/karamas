@@ -67,6 +67,8 @@ CI 配置见 [GitHub Actions 工作流](.github/workflows/ci.yml)。
 
 在设置页调整日志记录级别，通过“运行日志”查看和导出当前记录。历史文件保存在 Tauri 的 `app_log_dir`，Rust panic 另写入 `panics.log`。
 
+调试 DLNA 兼容性时，可在应用的“设置 → 诊断测试”中查看设备信息、测试播放控制和服务参数，并检查实际请求与响应。自动测试会控制实际设备，结束时停止播放。
+
 ## 移动端开发
 
 ### Android 构建
