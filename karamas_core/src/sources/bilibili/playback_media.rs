@@ -53,8 +53,10 @@ pub(super) async fn resolve(
     let resolved = if selected.1 != MediaFormat::Mp4 {
         let mut resolved = parse_dash(
             bvid,
+            cid,
             dash_result.as_ref().map_err(Clone::clone)?,
             selected.0.as_qn(),
+            selected.1,
         )
         .await?;
         resolved.format = selected.1;
@@ -160,16 +162,35 @@ async fn parse_mp4(bvid: &str, json: &Value) -> Result<ResolvedBilibiliMedia, St
     })
 }
 
-async fn parse_dash(bvid: &str, json: &Value, qn: u32) -> Result<ResolvedBilibiliMedia, String> {
+async fn parse_dash(
+    bvid: &str,
+    cid: &str,
+    json: &Value,
+    qn: u32,
+    format: MediaFormat,
+) -> Result<ResolvedBilibiliMedia, String> {
     let quality = Quality::from_qn(qn).ok_or("不支持的清晰度")?;
     let (video, audio) = dash_tracks(json, qn)?;
     let client = crate::media::upstream::client().map_err(|error| error.to_string())?;
-    let (video_url, audio_url) = tokio::try_join!(
-        select_media_url(&client, video),
-        select_media_url(&client, audio),
-    )?;
+    // HLS 用实际索引请求选 CDN，避免单字节探测成功后丢掉备用地址。
+    let (video_url, audio_url) = if format == MediaFormat::Hls {
+        (
+            track_url(video).ok_or("缺少视频地址")?,
+            track_url(audio).ok_or("缺少音频地址")?,
+        )
+    } else {
+        tokio::try_join!(
+            select_media_url(&client, video),
+            select_media_url(&client, audio)
+        )?
+    };
     let hls_tracks = hls_track_with_url(video, video_url.clone())
-        .zip(hls_track_with_url(audio, audio_url.clone()));
+        .zip(hls_track_with_url(audio, audio_url.clone()))
+        .map(|(mut v, mut a)| {
+            v.refresh = Some(HlsRefresh::new(bvid, cid, qn, video, false));
+            a.refresh = Some(HlsRefresh::new(bvid, cid, qn, audio, true));
+            (v, a)
+        });
     log::info!(target: "DLNA1080", "选中 DASH 轨道: bvid={}, video_id={}, codec={}, {}x{}, audio_id={}",
         bvid, qn, video["codecs"].as_str().unwrap_or("unknown"),
         video["width"].as_u64().unwrap_or(0), video["height"].as_u64().unwrap_or(0),
@@ -221,8 +242,8 @@ fn hls_track_with_url(track: &Value, url: String) -> Option<crate::media::hls::T
     let segment = track
         .get("SegmentBase")
         .or_else(|| track.get("segment_base"))?;
-    crate::media::hls::Track::new(
-        url,
+    let mut result = crate::media::hls::Track::new(
+        url.clone(),
         track["codecs"].as_str()?,
         track["bandwidth"].as_u64()?,
         segment
@@ -233,7 +254,68 @@ fn hls_track_with_url(track: &Value, url: String) -> Option<crate::media::hls::T
             .get("indexRange")
             .or_else(|| segment.get("index_range"))?
             .as_str()?,
-    )
+    )?;
+    result.urls.extend(
+        media_urls(track)
+            .into_iter()
+            .filter(|candidate| candidate != &url && !candidate.contains(['\r', '\n', '"'])),
+    );
+    Some(result)
+}
+
+#[derive(Clone)]
+pub(crate) struct HlsRefresh {
+    bvid: String,
+    cid: String,
+    qn: u32,
+    id: Option<u64>,
+    codecid: Option<u64>,
+    audio: bool,
+}
+
+impl HlsRefresh {
+    fn new(bvid: &str, cid: &str, qn: u32, track: &Value, audio: bool) -> Self {
+        Self {
+            bvid: bvid.into(),
+            cid: cid.into(),
+            qn,
+            id: track["id"].as_u64(),
+            codecid: track["codecid"].as_u64(),
+            audio,
+        }
+    }
+
+    pub(crate) async fn resolve(&self) -> Result<crate::media::hls::Track, String> {
+        let qn = self.qn.to_string();
+        let json = request_playurl(
+            &self.bvid,
+            &self.cid,
+            &[
+                ("qn", qn.as_str()),
+                ("fnval", "4048"),
+                ("fourk", "1"),
+                ("try_look", "1"),
+            ],
+            playback_session().as_ref(),
+        )
+        .await?;
+        self.track_from_response(&json)
+    }
+
+    fn track_from_response(&self, json: &Value) -> Result<crate::media::hls::Track, String> {
+        let tracks = json["data"]["dash"][if self.audio { "audio" } else { "video" }]
+            .as_array()
+            .ok_or("重新取源未返回原来的 DASH 轨道")?;
+        let track = tracks
+            .iter()
+            .find(|track| {
+                track["id"].as_u64() == self.id && track["codecid"].as_u64() == self.codecid
+            })
+            .ok_or("重新取源后原来的 DASH 轨道已不可用")?;
+        let mut track = hls_track(track).ok_or("重新取源未返回有效的 HLS 轨道")?;
+        track.refresh = Some(self.clone());
+        Ok(track)
+    }
 }
 
 fn track_url(track: &Value) -> Option<String> {
@@ -319,4 +401,33 @@ fn valid_url(value: &Value) -> Option<String> {
     let value = value.as_str()?;
     let url = url::Url::parse(value).ok()?;
     (matches!(url.scheme(), "http" | "https") && url.host_str().is_some()).then(|| value.to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // 重新取源必须保留音视频编码和轨道身份，否则原清单的 Range 会指向另一份媒体。
+    #[test]
+    fn refreshed_tracks_keep_the_original_representation_and_backups() {
+        let track = |id, codecid, name| {
+            json!({
+                "id": id, "codecid": codecid, "codecs": "avc1.640033", "bandwidth": 1000,
+                "base_url": format!("https://primary.example/{name}"),
+                "backup_url": [format!("https://backup.example/{name}")],
+                "segment_base": {"initialization": "0-15", "index_range": "16-59"}
+            })
+        };
+        let original = track(80, 7, "avc");
+        let refresh = HlsRefresh::new("BV1NTWn6aEoY", "123", 80, &original, false);
+        let response = json!({"data": {"dash": {"video": [track(80, 12, "hevc"), original]}}});
+        let fresh = refresh.track_from_response(&response).unwrap();
+        assert_eq!(
+            fresh.urls,
+            ["https://primary.example/avc", "https://backup.example/avc"]
+        );
+        let changed = json!({"data": {"dash": {"video": [track(80, 12, "hevc")]}}});
+        assert!(refresh.track_from_response(&changed).is_err());
+    }
 }

@@ -5,6 +5,7 @@ use std::sync::OnceLock;
 mod media_qualities;
 mod playback_media;
 pub use media_qualities::{BilibiliMediaQuality, get_bilibili_media_qualities};
+pub(crate) use playback_media::HlsRefresh;
 pub use playback_media::ResolvedBilibiliMedia;
 
 /// 全局共享 B站 API 客户端：连接池复用 + 超时。

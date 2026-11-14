@@ -52,8 +52,8 @@ pub async fn proxy_handler(
             }
             crate::media::session::SessionMedia::Hls(playlists) => {
                 let name = origin_url.rsplit('/').next().unwrap_or_default();
-                if let Some(url) = playlists.source(name) {
-                    return super::hls::serve_track(&req, client.get_ref(), session.clone(), url).await;
+                if let Some(source) = playlists.proxy_source(name) {
+                    return super::hls::serve_track(&req, client.get_ref(), session.clone(), source).await;
                 }
                 let Some(playlist) = playlists.playlist(name) else {
                     return Ok(HttpResponse::NotFound().finish());
