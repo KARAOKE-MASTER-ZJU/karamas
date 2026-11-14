@@ -222,6 +222,9 @@ fieldset {
   background: var(--hover);
   color: var(--text);
 }
+.icon-button:focus-visible {
+  outline-offset: -2px;
+}
 .field {
   display: flex;
   flex-direction: column;
