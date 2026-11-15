@@ -15,6 +15,7 @@ pub struct EnginePlaybackState {
     pub current_secs: Option<u32>,
     pub total_secs: Option<u32>,
     pub is_playing: bool,
+    pub volume: Option<u32>,
     pub is_live: bool,
     pub queued_count: usize,
     pub sung_count: usize,
@@ -47,10 +48,12 @@ impl EngineContext {
         let failed = report.error.is_some();
         let reported_volume = if report.muted { 0 } else { report.volume };
         let was_playing = self.is_playing.load(Ordering::SeqCst);
-        let was_volume = self.caster.get_volume().await.ok().flatten();
+        let was_volume = self.current_volume();
         if !self.caster.report_local_playback(report)? {
             return Ok(false);
         }
+        self.volume
+            .store(reported_volume.min(100), Ordering::SeqCst);
         *control += 1;
         self.is_playing.store(playing, Ordering::SeqCst);
         let mut gate = self.playlist_manager.progress_gate.lock().await;
@@ -101,6 +104,7 @@ impl EngineContext {
             current_secs: u32::try_from(current).ok(),
             total_secs: u32::try_from(total).ok().filter(|&seconds| seconds > 0),
             is_playing: self.is_playing(),
+            volume: self.current_volume(),
             is_live,
             queued_count: self.playlist_manager.get_queued_count().await,
             sung_count: self.playlist_manager.get_sung_count().await,
@@ -139,6 +143,19 @@ pub(super) fn start_monitor(ctx: &Arc<EngineContext>) -> Result<(), CoreError> {
                 break;
             }
             sample_progress(&ctx).await;
+        }
+    })?;
+    let session = Arc::downgrade(ctx);
+    ctx.spawn_task(async move {
+        let mut timer = tokio::time::interval(Duration::from_secs(1));
+        timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            timer.tick().await;
+            let Some(ctx) = session.upgrade() else { break };
+            if ctx.stopped.load(Ordering::SeqCst) {
+                break;
+            }
+            ctx.refresh_volume().await;
         }
     })?;
     Ok(())

@@ -125,19 +125,18 @@ pub async fn set_volume_core(volume: u32) -> Result<u32, CoreError> {
         guard.as_ref().cloned().ok_or("Engine not initialized")?
     };
     let target = volume.clamp(0, 100);
-    ctx.caster.set_volume(target).await?;
+    ctx.set_volume(target).await?;
     super::remote::wake();
     Ok(target)
 }
 
-/// 获取当前音量，返回值范围 0~100；如果设备不支持获取音量，则返回 0。
+/// 获取会话当前音量；读取不可用时保留当前值，初始为 0。
 pub async fn get_volume_core() -> Result<u32, CoreError> {
     let ctx = {
         let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
         guard.as_ref().cloned().ok_or("Engine not initialized")?
     };
-    let v = ctx.caster.get_volume().await?;
-    Ok(v.unwrap_or(0))
+    Ok(ctx.current_volume().unwrap_or(0))
 }
 
 /// 应用声音偏移，媒体重载期间暂停采样和自动切歌。
@@ -161,7 +160,7 @@ pub async fn volume_up_core(step: u32) -> Result<(), CoreError> {
         let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
         guard.as_ref().cloned().ok_or("Engine not initialized")?
     };
-    ctx.caster.volume_up(step).await?;
+    ctx.change_volume(step, true).await?;
     super::remote::wake();
     Ok(())
 }
@@ -172,7 +171,7 @@ pub async fn volume_down_core(step: u32) -> Result<(), CoreError> {
         let guard = ENGINE_STATE.read().map_err(|_| "Lock error")?;
         guard.as_ref().cloned().ok_or("Engine not initialized")?
     };
-    ctx.caster.volume_down(step).await?;
+    ctx.change_volume(step, false).await?;
     super::remote::wake();
     Ok(())
 }
@@ -277,4 +276,55 @@ pub async fn get_current_song_title_core() -> String {
             .unwrap_or_else(|| "暂无歌曲".to_string());
     }
     "未连接".to_string()
+}
+
+impl EngineContext {
+    pub(super) fn current_volume(&self) -> Option<u32> {
+        self.caster
+            .capabilities()
+            .absolute_volume
+            .then(|| self.volume.load(Ordering::SeqCst))
+    }
+
+    pub(super) async fn refresh_volume(&self) {
+        if !self.caster.capabilities().absolute_volume {
+            return;
+        }
+        // 查询和设置串行，防止旧查询覆盖刚设置的音量。
+        let _control = self.volume_control.lock().await;
+        if let Ok(Some(volume)) = self.caster.get_volume().await {
+            if self.volume.swap(volume.min(100), Ordering::SeqCst) != volume.min(100) {
+                super::remote::wake();
+            }
+        }
+    }
+
+    pub(super) async fn set_volume(&self, volume: u32) -> Result<(), CoreError> {
+        let _control = self.volume_control.lock().await;
+        self.apply_volume(volume.min(100)).await
+    }
+
+    async fn apply_volume(&self, volume: u32) -> Result<(), CoreError> {
+        self.caster.set_volume(volume).await?;
+        self.volume.store(volume, Ordering::SeqCst);
+        Ok(())
+    }
+
+    pub(super) async fn change_volume(&self, step: u32, increase: bool) -> Result<(), CoreError> {
+        if self.caster.capabilities().absolute_volume {
+            let _control = self.volume_control.lock().await;
+            let volume = self.volume.load(Ordering::SeqCst);
+            let target = if increase {
+                volume.saturating_add(step).min(100)
+            } else {
+                volume.saturating_sub(step)
+            };
+            self.apply_volume(target).await?;
+        } else if increase {
+            self.caster.volume_up(step).await?;
+        } else {
+            self.caster.volume_down(step).await?;
+        }
+        Ok(())
+    }
 }

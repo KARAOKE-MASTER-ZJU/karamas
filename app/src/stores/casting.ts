@@ -41,7 +41,6 @@ export const useCastingStore = defineStore("casting", () => {
       localReport.commandId !== command.commandId
     )
       return;
-    volume.value = localReport.muted ? 0 : localReport.volume;
     if (playback.value) {
       playback.value.isLive = localReport.live;
       playback.value.capabilities.seek = !localReport.live;
@@ -95,7 +94,7 @@ export const useCastingStore = defineStore("casting", () => {
         : null;
     }),
   );
-  const volume = ref<number | null>(null);
+  const volume = computed(() => playback.value?.volume ?? null);
   const connecting = ref(false);
   const enteringRoom = ref(false);
   const controlling = ref(false);
@@ -218,7 +217,6 @@ export const useCastingStore = defineStore("casting", () => {
     ++revision;
     playback.value = null;
     activeDevice.value = null;
-    volume.value = null;
     try {
       const session = requireSession(device);
       if (device.kind === "dlna") await initializeDlnaProxy();
@@ -297,7 +295,6 @@ export const useCastingStore = defineStore("casting", () => {
       playback.value = null;
       activeDevice.value = null;
       selectedDevice.value = null;
-      volume.value = null;
     } finally {
       connecting.value = false;
     }
@@ -307,16 +304,6 @@ export const useCastingStore = defineStore("casting", () => {
     if (busy.value) return;
     await disconnect();
     room.value = null;
-  }
-  async function refreshVolume() {
-    const currentRevision = revision;
-    if (
-      activeDevice.value?.kind === "local" ||
-      !playback.value?.capabilities.absoluteVolume
-    )
-      return;
-    const value = await castingApi.getVolume();
-    if (currentRevision === revision) volume.value = value;
   }
   async function poll() {
     if (
@@ -333,12 +320,7 @@ export const useCastingStore = defineStore("casting", () => {
       if (currentRevision !== revision) return;
       playback.value = value;
       syncLocalState();
-      if (!value) {
-        activeDevice.value = null;
-        volume.value = null;
-      } else if (volume.value === null && value.capabilities.absoluteVolume) {
-        await refreshVolume();
-      }
+      if (!value) activeDevice.value = null;
     } finally {
       polling = false;
     }
@@ -377,21 +359,19 @@ export const useCastingStore = defineStore("casting", () => {
   }
   async function changeVolume(increase: boolean) {
     if (!connected.value || sessionBusy.value) return;
-    if (playback.value?.capabilities.absoluteVolume) {
-      if (volume.value !== null)
-        await setVolume(volume.value + (increase ? 5 : -5));
-    } else {
-      await castingApi.changeVolume(increase);
-    }
+    ++revision;
+    await castingApi.changeVolume(increase);
+    await poll();
   }
   async function setVolume(value: number) {
     if (!connected.value || sessionBusy.value) return;
     if (!playback.value?.capabilities.absoluteVolume) return;
-    // 立即显示目标值，连续操作无需等待响应；旧的音量读取不能覆盖它。
-    ++revision;
-    const target = Math.max(0, Math.min(100, value));
-    if (activeDevice.value?.kind !== "local") volume.value = target;
-    await castingApi.setVolume(target);
+    const currentRevision = ++revision;
+    const target = await castingApi.setVolume(
+      Math.max(0, Math.min(100, value)),
+    );
+    if (currentRevision === revision && playback.value)
+      playback.value.volume = target;
   }
 
   async function recast() {

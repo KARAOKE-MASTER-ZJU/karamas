@@ -245,7 +245,7 @@ pub(crate) fn start_remote(
             let current = status.borrow_and_update().clone();
             if let RemoteStatus::Registered(session_id) = current {
                 let report = async {
-                    // 首帧只读取已有状态，音量和清晰度查询随后补齐。
+                    // 首帧只读取已有状态，清晰度查询随后补齐。
                     {
                         let Some(ctx) = session.upgrade() else { return };
                         let state = ctx.playback_state().await;
@@ -255,7 +255,7 @@ pub(crate) fn start_remote(
                         seq += 1;
                         playback_tx.send_replace(Some((
                             session_id.clone(),
-                            playback_frame(&state, mode, &cache, None, seq),
+                            playback_frame(&state, mode, &cache, seq),
                         )));
                     }
                     let mut heartbeat = tokio::time::interval(HEARTBEAT_INTERVAL);
@@ -265,7 +265,6 @@ pub(crate) fn start_remote(
                         {
                             let Some(ctx) = session.upgrade() else { return };
                             let state = ctx.playback_state().await;
-                            let volume = ctx.caster.get_volume().await.ok().flatten();
                             refresh_qualities(&mut cache, state.song_url.as_deref()).await;
                             let state = ctx.playback_state().await;
                             if cache.song != state.song_url {
@@ -274,7 +273,7 @@ pub(crate) fn start_remote(
                             seq += 1;
                             playback_tx.send_replace(Some((
                                 session_id.clone(),
-                                playback_frame(&state, mode, &cache, volume, seq),
+                                playback_frame(&state, mode, &cache, seq),
                             )));
                         }
                         tokio::select! {
@@ -368,7 +367,6 @@ fn playback_frame(
     state: &EnginePlaybackState,
     mode: &str,
     cache: &QualityCache,
-    volume: Option<u32>,
     seq: u64,
 ) -> String {
     let qualities = quality_options(
@@ -386,7 +384,7 @@ fn playback_frame(
             "seq": seq,
             "position": state.current_secs,
             "duration": state.total_secs,
-            "volume": volume,
+            "volume": state.volume,
             "isPlaying": state.is_playing,
             "qualities": qualities,
             "capabilities": {

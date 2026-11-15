@@ -19,6 +19,9 @@ struct TestCaster {
     refresh_started: Notify,
     refresh_reply: Notify,
     progress_frozen: AtomicBool,
+    volumes: Mutex<Vec<u32>>,
+    volume_response: Mutex<Result<Option<u32>, String>>,
+    fail_volume: AtomicBool,
 }
 
 impl TestCaster {
@@ -38,6 +41,9 @@ impl TestCaster {
             refresh_started: Notify::new(),
             refresh_reply: Notify::new(),
             progress_frozen: AtomicBool::new(false),
+            volumes: Mutex::new(vec![]),
+            volume_response: Mutex::new(Ok(None)),
+            fail_volume: AtomicBool::new(false),
         }
     }
 }
@@ -101,17 +107,25 @@ impl Caster for TestCaster {
     async fn seek(&self, _: u32) -> Result<(), CastError> {
         Ok(())
     }
-    async fn set_volume(&self, _: u32) -> Result<(), CastError> {
+    async fn set_volume(&self, volume: u32) -> Result<(), CastError> {
+        if self.fail_volume.load(Ordering::SeqCst) {
+            return Err(CastError::Device("volume failed".into()));
+        }
+        self.volumes.lock().await.push(volume);
         Ok(())
     }
     async fn get_volume(&self) -> Result<Option<u32>, CastError> {
-        Ok(None)
+        self.volume_response
+            .lock()
+            .await
+            .clone()
+            .map_err(CastError::Device)
     }
     fn capabilities(&self) -> Capabilities {
         Capabilities {
             hardware_progress: self.hardware,
             seek: true,
-            absolute_volume: false,
+            absolute_volume: self.hardware,
         }
     }
 }
@@ -317,6 +331,8 @@ fn context(caster: Arc<dyn Caster>) -> EngineContext {
         local_ip: "127.0.0.1".parse().unwrap(),
         server_port: 0,
         is_playing: AtomicBool::new(true),
+        volume: std::sync::atomic::AtomicU32::new(0),
+        volume_control: Mutex::new(()),
         playback_lock: Arc::new(Mutex::new(())),
         progress_control: Mutex::new(0),
         rt: tokio::runtime::Handle::current(),
@@ -577,4 +593,37 @@ async fn native_scrubbing_and_pause_do_not_advance_playlist() {
     assert_eq!(sample_progress(&ctx).await, (-1, -1));
     let mut gate = ctx.playlist_manager.progress_gate.lock().await;
     assert!(gate.auto_next.observe_finished());
+}
+
+#[tokio::test]
+async fn volume_commands_and_device_reports_share_the_playback_state() {
+    let caster = Arc::new(TestCaster::new(true, false));
+    let ctx = context(caster.clone());
+    assert_eq!(ctx.playback_state().await.volume, Some(0));
+
+    ctx.set_volume(50).await.unwrap();
+    ctx.refresh_volume().await;
+    assert_eq!(ctx.playback_state().await.volume, Some(50));
+    ctx.change_volume(5, true).await.unwrap();
+    ctx.change_volume(5, false).await.unwrap();
+    assert_eq!(*caster.volumes.lock().await, vec![50, 55, 50]);
+    let (first, second) = tokio::join!(ctx.change_volume(5, true), ctx.change_volume(5, true));
+    first.unwrap();
+    second.unwrap();
+    assert_eq!(ctx.playback_state().await.volume, Some(60));
+    ctx.set_volume(50).await.unwrap();
+
+    caster.fail_volume.store(true, Ordering::SeqCst);
+    assert!(ctx.set_volume(80).await.is_err());
+    assert_eq!(ctx.playback_state().await.volume, Some(50));
+
+    *caster.volume_response.lock().await = Ok(Some(70));
+    ctx.refresh_volume().await;
+    assert_eq!(ctx.playback_state().await.volume, Some(70));
+    *caster.volume_response.lock().await = Err("read failed".into());
+    ctx.refresh_volume().await;
+    assert_eq!(ctx.playback_state().await.volume, Some(70));
+    *caster.volume_response.lock().await = Ok(Some(0));
+    ctx.refresh_volume().await;
+    assert_eq!(ctx.playback_state().await.volume, Some(0));
 }

@@ -42,7 +42,7 @@ pub enum CastTarget {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceCapabilities {
-    /// 是否支持读取和设置绝对音量。
+    /// 是否支持按数值设置音量。
     pub absolute_volume: bool,
     pub seek: bool,
     /// 是否从设备查询真实进度；否则由核心库本地计时。
@@ -73,6 +73,7 @@ pub struct PlaybackState {
     pub total_secs: Option<u32>,
     /// 当前播放状态，B站投屏由设备回传同步。
     pub is_playing: bool,
+    pub volume: Option<u32>,
     pub is_live: bool,
     pub queued_count: usize,
     pub sung_count: usize,

@@ -143,6 +143,8 @@ pub async fn connect_room(
         local_ip: local_ip_addr,
         server_port: port,
         is_playing: AtomicBool::new(true),
+        volume: std::sync::atomic::AtomicU32::new(0),
+        volume_control: Mutex::new(()),
         playback_lock: Arc::new(Mutex::new(())),
         progress_control: Mutex::new(0),
         // danmaku_on: AtomicBool::new(false),

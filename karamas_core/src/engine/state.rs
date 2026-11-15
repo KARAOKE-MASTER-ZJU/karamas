@@ -1,7 +1,7 @@
 use crate::{cast, error::CoreError, playlist::PlaylistManager};
 use std::sync::{
     Arc, RwLock,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU32, Ordering},
 };
 use tokio::sync::Mutex;
 
@@ -14,6 +14,8 @@ pub struct EngineContext {
     pub local_ip: std::net::IpAddr,
     pub server_port: u16,
     pub is_playing: AtomicBool,
+    pub(super) volume: AtomicU32,
+    pub(super) volume_control: Mutex<()>,
     pub(super) playback_lock: Arc<Mutex<()>>,
     /// 控制命令期间跳过采样；计数用于丢弃命令之前发出的查询。
     pub(super) progress_control: Mutex<u64>,
