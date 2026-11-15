@@ -2,9 +2,25 @@
 import AppDialog from "@/components/base/AppDialog.vue";
 import { useUpdaterStore } from "@/stores/updater";
 import { useCastingStore } from "@/stores/casting";
+import { openUrl, isTauri } from "@/services/platform";
+import { errorMessage } from "@/services/casting";
+import { useOperationNotice } from "@/composables/useOperationNotice";
 
 const updater = useUpdaterStore();
 const casting = useCastingStore();
+const { notify } = useOperationNotice();
+const releaseUrl =
+  "https://github.com/KARAOKE-MASTER-ZJU/karamas/releases/latest";
+
+async function openRelease(event: MouseEvent) {
+  if (!isTauri()) return;
+  event.preventDefault();
+  try {
+    await openUrl(releaseUrl);
+  } catch (error) {
+    notify(`打开 GitHub 失败：${errorMessage(error)}`, "error");
+  }
+}
 </script>
 
 <template>
@@ -39,6 +55,15 @@ const casting = useCastingStore();
       </p>
     </div>
     <div class="update-actions">
+      <a
+        class="button secondary"
+        :href="releaseUrl"
+        target="_blank"
+        rel="noopener noreferrer"
+        @click="openRelease"
+      >
+        在 GitHub 查看
+      </a>
       <button
         v-if="updater.status === 'available'"
         class="button primary"
@@ -95,7 +120,12 @@ progress {
 }
 .update-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
   justify-content: flex-end;
   margin-top: 20px;
+}
+.update-actions a {
+  text-decoration: none;
 }
 </style>
