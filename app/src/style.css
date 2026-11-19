@@ -33,15 +33,11 @@
   --input-line: #d7d9df;
   /* 基础主题色 */
   --accent-base: #ff3377;
-  /* 按 WebKit 控件机制调整 XYZ，浅色亮度上限为 0.5。 */
-  --accent: color(
-    from var(--accent-base) xyz-d65 calc(x * 0.5 / max(y, 0.5)) min(y, 0.5)
-      calc(z * 0.5 / max(y, 0.5))
-  );
+  --accent: var(--accent-base);
   /* 强调色背景上的文字 */
   --on-accent: #fff;
   /* 半透明主题色 */
-  --accent-soft: color-mix(in srgb, var(--accent) 10%, transparent);
+  --accent-soft: rgb(255 51 119 / 10%);
   /* 警告色 */
   --warning: #a56a1b;
   /* 错误色 */
@@ -60,16 +56,43 @@
   --muted: #a0a3ad;
   --line: #30323a;
   --input-line: #444752;
-  /* 深色亮度下限为 0.5；sign(y) 处理纯黑的零亮度。 */
-  --accent: color(
-    from var(--accent-base) xyz-d65
-      calc((x + 1 - sign(y)) * max(y, 0.5) / max(y, 1 - sign(y))) max(y, 0.5)
-      calc((z + 1 - sign(y)) * max(y, 0.5) / max(y, 1 - sign(y)))
-  );
+  --accent: #ff49a4;
   --on-accent: var(--surface);
-  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+  --accent-soft: rgb(255 73 164 / 16%);
   --warning: #f0bd6a;
   --error: #ffb1a9;
+}
+/* 先检查颜色语法，再覆盖默认值。CSS 变量本身可以存下不受支持的颜色。 */
+@supports (
+  color: color(from white xyz-d65 calc(x / max(y, 0.5)) min(y, 0.5) z)
+) {
+  :root {
+    /* 按 WebKit 控件机制调整 XYZ，浅色亮度上限为 0.5。 */
+    --accent: color(
+      from var(--accent-base) xyz-d65 calc(x * 0.5 / max(y, 0.5)) min(y, 0.5)
+        calc(z * 0.5 / max(y, 0.5))
+    );
+  }
+}
+@supports (
+  color: color(from white xyz-d65 calc(x / max(y, sign(y))) max(y, 0.5) z)
+) {
+  :root[data-theme="dark"] {
+    /* 深色亮度下限为 0.5，sign(y) 用来处理纯黑。 */
+    --accent: color(
+      from var(--accent-base) xyz-d65
+        calc((x + 1 - sign(y)) * max(y, 0.5) / max(y, 1 - sign(y))) max(y, 0.5)
+        calc((z + 1 - sign(y)) * max(y, 0.5) / max(y, 1 - sign(y)))
+    );
+  }
+}
+@supports (color: color-mix(in srgb, white, transparent)) {
+  :root {
+    --accent-soft: color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+  :root[data-theme="dark"] {
+    --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+  }
 }
 * {
   box-sizing: border-box;
