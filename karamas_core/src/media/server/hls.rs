@@ -235,7 +235,7 @@ mod tests {
         )
         .unwrap();
         track.urls.push(format!("http://{address}/backup"));
-        let source = Arc::new(Source::new(track, data.len() as u64, Vec::new(), Vec::new()));
+        let source = Arc::new(Source::new(track, data.len() as u64, Vec::new(), None));
         let sessions = MediaSessions::default();
         let session =
             sessions.activate_with_format("BV1NTWn6aEoY-page0", Quality::P1080, MediaFormat::Hls);

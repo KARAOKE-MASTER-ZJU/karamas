@@ -2,7 +2,9 @@
 use futures_util::StreamExt;
 use std::{fmt::Write, io, ops::Range, sync::Arc, time::Duration};
 
+mod delay;
 mod recovery;
+use delay::FragmentDelay;
 pub(crate) use recovery::Source;
 
 #[derive(Clone)]
@@ -153,26 +155,24 @@ async fn load_playlist(
     delay_ms: u32,
 ) -> io::Result<(String, Source)> {
     let mut selected = track.clone();
-    let (data, total, segments, patches) = selected
+    let (data, total, segments, delay) = selected
         .recover(Duration::from_secs(60), |url, _| async move {
             let (data, total) = load_index(client, track, &url).await?;
             let segments = parse_index(&data, track.index.start, total)?;
-            let patches = if delay_ms == 0 {
-                Vec::new()
+            let delay = if delay_ms == 0 {
+                None
             } else {
-                let (length, patches) =
-                    super::mp4::dash::timestamp_patches(client, &url, delay_ms).await?;
-                if length != total {
-                    return Err(invalid("HLS 媒体长度已变化"));
-                }
-                patches
+                let init =
+                    super::upstream::fetch_range(client, &url, track.initialization.clone(), total)
+                        .await?;
+                Some(FragmentDelay::new(delay_ms, &init, &segments)?)
             };
-            Ok((data, total, segments, patches))
+            Ok((data, total, segments, delay))
         })
         .await?;
     let media_url = media_url.unwrap_or(&selected.urls[0]);
     let playlist = track.playlist(media_url, segments);
-    Ok((playlist, Source::new(selected, total, data, patches)))
+    Ok((playlist, Source::new(selected, total, data, delay)))
 }
 
 fn network_error(error: reqwest::Error) -> io::Error {

@@ -298,39 +298,6 @@ async fn load_source(
     })
 }
 
-pub(crate) struct TimestampPatch {
-    pub offset: u64,
-    pub before: Bytes,
-    pub after: Bytes,
-}
-
-pub(crate) async fn timestamp_patches(
-    client: &reqwest::Client,
-    url: &str,
-    milliseconds: u32,
-) -> io::Result<(u64, Vec<TimestampPatch>)> {
-    use super::{
-        boxes::{child, children},
-        fragmented::{delay_fragment, track_timescale},
-    };
-    let source = load_source(client, url, "HLS").await?;
-    let timescale = track_timescale(&source.moov)?;
-    let mut patches = Vec::new();
-    for (offset, moof, _) in source.fragments {
-        let shifted = delay_fragment(&moof, timescale, milliseconds)?;
-        for traf in children(&moof)?.into_iter().filter(|b| &b[4..8] == b"traf") {
-            let tfdt = child(traf, b"tfdt")?;
-            let start = tfdt.as_ptr() as usize - moof.as_ptr() as usize;
-            patches.push(TimestampPatch {
-                offset: offset + start as u64,
-                before: Bytes::copy_from_slice(tfdt),
-                after: Bytes::copy_from_slice(&shifted[start..start + tfdt.len()]),
-            });
-        }
-    }
-    Ok((source.len, patches))
-}
-
 pub struct PreparedDash {
     pub mp4: VirtualMp4,
     pub sources: Vec<RemoteSource>,
