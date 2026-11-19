@@ -13,7 +13,7 @@ const storageKey = "ktv-casting.preferences.v1";
 export const usePreferencesStore = defineStore("preferences", () => {
   // 初始化偏好设置
   const preferences = reactive<Preferences>({
-    serverUrl: "",
+    serverUrl: "https://ktv.starfreedomx.top",
     roomId: "",
     appId: "",
     remoteControlEnabled: false,
@@ -65,7 +65,11 @@ export const usePreferencesStore = defineStore("preferences", () => {
           stored.appId
         )
           preferences.appId = stored.appId;
-        if ("serverUrl" in stored && typeof stored.serverUrl === "string")
+        if (
+          "serverUrl" in stored &&
+          typeof stored.serverUrl === "string" &&
+          stored.serverUrl
+        )
           preferences.serverUrl = stored.serverUrl;
         if ("roomId" in stored && typeof stored.roomId === "string")
           preferences.roomId = stored.roomId;

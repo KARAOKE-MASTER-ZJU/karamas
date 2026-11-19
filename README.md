@@ -35,9 +35,9 @@ _投屏页预览_
 
 ### 加入点歌房间
 
-准备一个可用的 KTV Song List Web 点歌台网址。可以使用已有部署；如需自行搭建，参照[点歌台部署指南](https://github.com/KARAOKE-MASTER-ZJU/ktv-song-web#自行部署)。
+“连接”页默认填入 `https://ktv.starfreedomx.top`，也可以改填其他 KTV Song List Web 点歌台的网址。自行搭建可参照[点歌台部署指南](https://github.com/KARAOKE-MASTER-ZJU/ktv-song-web#自行部署)。
 
-打开 KARAM@S 的“连接”页，填写服务器网址和房间号。例如，网址填 `https://ktv.example.com`，房间号填 `karaoke`。已有房间选择“加入房间”，新房间选择“创建并加入”。
+填写房间号后，已有房间选“加入房间”，新房间选“创建并加入”。
 
 ### 选择播放方式
 
