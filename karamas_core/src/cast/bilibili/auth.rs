@@ -3,6 +3,10 @@ use super::{
     session::{BilibiliSession, now_ts},
 };
 use serde_json::Value;
+use std::time::Duration;
+use tokio::time::{Instant, sleep_until};
+
+const QR_VALIDITY: Duration = Duration::from_secs(180);
 
 /// 扫码登录并返回会话，保存由调用方决定。`on_qr(url)` 在获取二维码后调用一次。
 pub async fn login_qr(
@@ -15,7 +19,10 @@ pub async fn login_qr(
 
     // 获取二维码和授权码
     let json: Value = client
-        .post(format!("{}/x/passport-tv-login/qrcode/auth_code", PASSPORT_HOST))
+        .post(format!(
+            "{}/x/passport-tv-login/qrcode/auth_code",
+            PASSPORT_HOST
+        ))
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(body)
         .send()
@@ -29,29 +36,45 @@ pub async fn login_qr(
         return Err(format!("auth_code error: {}", json["message"]));
     }
     let qr_url = json["data"]["url"].as_str().ok_or("no url")?.to_string();
-    let auth_code = json["data"]["auth_code"].as_str().ok_or("no auth_code")?.to_string();
+    let auth_code = json["data"]["auth_code"]
+        .as_str()
+        .ok_or("no auth_code")?
+        .to_string();
+    let expires_at = Instant::now() + QR_VALIDITY;
 
     on_qr(qr_url);
 
     loop {
         // 等待 2 秒后轮询授权码状态
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        let next_poll = Instant::now() + Duration::from_secs(2);
+        sleep_until(next_poll.min(expires_at)).await;
+        if Instant::now() >= expires_at {
+            break;
+        }
 
         let mut poll_params = base_params(buvid);
         poll_params.push(("auth_code".into(), auth_code.clone()));
         let poll_body = sign_params(&poll_params);
 
         // 轮询授权码状态
-        let poll: Value = client
-            .post(format!("{}/x/passport-tv-login/qrcode/poll", PASSPORT_HOST))
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .body(poll_body)
-            .send()
-            .await
-            .map_err(|e| format!("poll: {}", e))?
-            .json()
-            .await
-            .map_err(|e| format!("poll parse: {}", e))?;
+        let response = async {
+            client
+                .post(format!("{}/x/passport-tv-login/qrcode/poll", PASSPORT_HOST))
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .body(poll_body)
+                .send()
+                .await?
+                .bytes()
+                .await
+        }
+        .await;
+        let poll: Value = match response {
+            Ok(body) => serde_json::from_slice(&body).map_err(|e| format!("poll parse: {e}"))?,
+            Err(error) => {
+                log::debug!("bili poll request failed: {error:?}");
+                continue;
+            }
+        };
 
         // 处理轮询结果
         match poll["code"].as_i64() {
@@ -66,12 +89,17 @@ pub async fn login_qr(
                     .as_u64()
                     .unwrap_or(7776000);
                 let expires_at = Some(now_ts() + expires_in);
-                let session = BilibiliSession { access_token: token, mid, expires_at };
+                let session = BilibiliSession {
+                    access_token: token,
+                    mid,
+                    expires_at,
+                };
                 return Ok(session);
             }
             // 授权码过期
-            Some(86038) => return Err("QR code expired".into()),
+            Some(86038) => break,
             _ => log::debug!("bili poll: {} {}", poll["code"], poll["message"]),
         }
     }
+    Err("二维码已过期，请重新获取。".into())
 }

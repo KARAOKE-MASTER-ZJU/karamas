@@ -55,7 +55,10 @@ export const useBilibiliStore = defineStore("bilibili", () => {
       }
       if (currentAttempt === attempt) showLogin.value = false;
     } catch (error) {
-      if (currentAttempt === attempt) loginError.value = errorMessage(error);
+      if (currentAttempt === attempt) {
+        qrUrl.value = "";
+        loginError.value = errorMessage(error);
+      }
     } finally {
       if (currentAttempt === attempt) loggingIn.value = false;
     }
