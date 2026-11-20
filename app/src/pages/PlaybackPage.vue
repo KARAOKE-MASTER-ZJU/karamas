@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { Cast, Monitor, ExternalLink, RefreshCw } from "@lucide/vue";
-import { RouterLink } from "vue-router";
 import { computed, ref, toRef } from "vue";
 import { storeToRefs } from "pinia";
 import LocalPlayer from "@/components/playback/LocalPlayer.vue";
+import PlaybackSessionHeader from "@/components/playback/PlaybackSessionHeader.vue";
 import NowPlaying from "@/components/playback/NowPlaying.vue";
 import PlaybackProgress from "@/components/playback/PlaybackProgress.vue";
 import PlaybackTransport from "@/components/playback/PlaybackTransport.vue";
@@ -58,60 +57,18 @@ useVideoLayout(
 
 <template>
   <div class="playback-page" :class="{ 'video-only': videoOnly }">
-    <div v-if="!videoOnly" class="session-header" aria-label="当前投屏连接">
-      <div class="session-chips">
-        <RouterLink
-          :to="{ name: 'connection' }"
-          class="session-chip device-chip"
-        >
-          <component
-            :is="activeDevice?.kind === 'local' ? Monitor : Cast"
-            :size="14"
-          /><span>{{
-            casting.connecting
-              ? "连接中…"
-              : (casting.activeDevice?.name ??
-                (casting.selectedDevice
-                  ? `${casting.selectedDevice.name} · ${casting.room ? "未连接" : "待加入房间"}`
-                  : casting.connected
-                    ? "已连接设备"
-                    : "未连接设备"))
-          }}</span>
-        </RouterLink>
-        <div class="room-actions">
-          <button
-            type="button"
-            class="session-chip room-chip"
-            :disabled="!room"
-            :title="room ? `打开点歌台：${room.serverUrl}` : '未加入房间'"
-            :aria-label="
-              room ? `打开房间 ${room.roomId} 的点歌台` : '未加入房间'
-            "
-            @click="room && controls.run(() => openSongRoom(room!))"
-          >
-            <span>{{ room ? `房间：${room.roomId}` : "未加入房间" }}</span>
-            <ExternalLink v-if="room" :size="12" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            class="session-chip refresh-chip"
-            :disabled="
-              !room || !casting.connected || playbackBusy || refreshingPlaylist
-            "
-            :aria-busy="refreshingPlaylist"
-            :title="refreshingPlaylist ? '正在刷新歌单' : undefined"
-            @click="controls.refreshPlaylist()"
-          >
-            <RefreshCw
-              :size="14"
-              :class="{ spinning: refreshingPlaylist }"
-              aria-hidden="true"
-            />
-            <span>刷新歌单</span>
-          </button>
-        </div>
-      </div>
-    </div>
+    <PlaybackSessionHeader
+      v-if="!videoOnly"
+      :active-device="activeDevice"
+      :selected-device="casting.selectedDevice"
+      :connecting="casting.connecting"
+      :connected="casting.connected"
+      :room="room"
+      :refresh-disabled="!room || !casting.connected || playbackBusy"
+      :refreshing-playlist="refreshingPlaylist"
+      @open-room="controls.run(() => openSongRoom($event))"
+      @refresh-playlist="controls.refreshPlaylist()"
+    />
 
     <section
       class="content-section player-section"
@@ -250,85 +207,6 @@ useVideoLayout(
 }
 .video-container {
   display: flow-root;
-}
-.session-header {
-  padding: 0 0 20px;
-  text-align: center;
-}
-.session-chips {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-.session-chip {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 32px;
-  max-width: 100%;
-  padding: 6px 10px;
-  border: 0;
-  border-radius: 6px;
-  background: var(--subtle);
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 20px;
-  text-align: left;
-  text-decoration: none;
-}
-.device-chip:hover,
-.refresh-chip:hover:not(:disabled) {
-  background: var(--hover);
-}
-.session-chip > span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.room-actions {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  max-width: 100%;
-  gap: 8px;
-}
-.room-chip {
-  min-width: 0;
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.room-chip:disabled {
-  opacity: 1;
-}
-.refresh-chip {
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-.refresh-chip[aria-busy="true"] {
-  opacity: 0.72;
-}
-.spinning {
-  animation: refresh-spin 1s linear infinite;
-}
-@keyframes refresh-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .spinning {
-    animation: none;
-  }
-}
-@media (pointer: coarse) {
-  .session-chip::after {
-    content: "";
-    position: absolute;
-    inset: -4px 0;
-  }
 }
 .playback-page .player-section {
   padding: 0 0 16px;
