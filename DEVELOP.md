@@ -12,7 +12,7 @@ app/
 ├── scripts/             # 应用构建脚本
 ├── package.json         # 应用依赖和命令
 └── vite.config.ts       # 前端构建配置
-karamas_core/             # 独立投屏核心
+karamas_core/            # 独立投屏核心
 Cargo.toml               # Rust 工作区
 package.json             # 根目录命令入口和格式化工具
 pnpm-workspace.yaml      # pnpm 工作区
@@ -30,7 +30,7 @@ Tauri 命令层只负责调用转发，投屏逻辑放在 `karamas_core` 中。�
 
 ## 本地运行
 
-安装 Node.js 24 或更高版本、pnpm 11、Rust，并按 [Tauri 环境准备文档](https://v2.tauri.app/start/prerequisites/)安装对应平台的工具链。
+安装 Node.js 24 或更高版本、pnpm 11、支持 Rust 2024 edition 的工具链（CI 使用 1.98.1），并按 [Tauri 环境准备文档](https://v2.tauri.app/start/prerequisites/)安装对应平台的工具链。在 Windows 上编译 x86 或 ARM64 目标时，还需安装 LLVM 并配置 `LIBCLANG_PATH` 供 `rquickjs` 生成绑定。
 
 在仓库根目录安装依赖并启动桌面应用：
 
@@ -41,17 +41,17 @@ pnpm tauri dev
 
 ## 开发与检查
 
-| 命令                               | 用途                      |
-| ---------------------------------- | ------------------------- |
-| `pnpm dev`                         | 启动前端开发服务器        |
-| `pnpm tauri dev`                   | 启动桌面应用调试          |
-| `pnpm tauri build`                 | 构建桌面安装包            |
-| `pnpm check:all`                   | 运行 lint、格式和类型检查 |
-| `pnpm fix:all`                     | 自动修复 lint 和格式      |
-| `pnpm build`                       | 类型检查并构建前端        |
-| `cargo check --workspace`          | 检查 Rust 工作区编译      |
-| `cargo test -p karamas_core --lib` | 运行核心库测试            |
-| `cargo test -p karamas --lib`      | 运行应用层测试            |
+| 命令                               | 用途                                                          |
+| ---------------------------------- | ------------------------------------------------------------- |
+| `pnpm dev`                         | 启动前端开发服务器                                            |
+| `pnpm tauri dev`                   | 启动桌面应用调试                                              |
+| `pnpm tauri build`                 | 构建桌面安装包                                                |
+| `pnpm check:all`                   | 运行前端 lint、格式、类型检查及应用层 `karamas` Rust 格式检查 |
+| `pnpm fix:all`                     | 自动修复前端 lint、格式及应用层 `karamas` Rust 格式           |
+| `pnpm build`                       | 类型检查并构建前端                                            |
+| `cargo check --workspace`          | 检查 Rust 工作区编译                                          |
+| `cargo test -p karamas_core --lib` | 运行核心库测试                                                |
+| `cargo test -p karamas --lib`      | 运行应用层测试                                                |
 
 浏览器预览用于检查界面，投屏和登录需通过 Tauri 应用调试。
 
@@ -75,7 +75,9 @@ CI 配置见 [GitHub Actions 工作流](.github/workflows/ci.yml)。
 
 Android 原生工程保存在 `app/src-tauri/gen/android`，与应用源码一起维护。修改原生代码后不要重新运行 `android init`，以免覆盖接入代码。
 
-安装 Android Studio、JDK 21 或更高版本、Android SDK 37 和 NDK。设置 `ANDROID_HOME` 指向 SDK；使用特定 NDK 时设置 `NDK_HOME`，使用特定 JDK 时设置 `JAVA_HOME`。macOS 上未设置 `JAVA_HOME` 时，启动脚本尝试使用 Android Studio 自带的 JDK。
+安装 Android Studio、JDK 21 或更高版本、Android SDK 37 和 NDK，并安装对应架构的 Rust 编译目标（例如 `rustup target add aarch64-linux-android`）。`rquickjs` 在 Android 上需要 `bindgen`，Linux 需安装 `libclang-dev`，Windows 需安装 LLVM 并设置 `LIBCLANG_PATH`。
+
+通过 `pnpm android` 启动构建（不要直接运行 `pnpm tauri android`），脚本会自动查找默认路径下的 SDK、最新 NDK 并注入 `bindgen` 所需的头文件路径。使用自定义路径或特定版本时，可通过 `ANDROID_HOME`、`NDK_HOME`、`JAVA_HOME` 覆盖；macOS 上未设置 `JAVA_HOME` 时会自动尝试使用 Android Studio 自带的 JDK。
 
 启动开发或构建 arm64 调试 APK：
 
