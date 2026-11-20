@@ -22,7 +22,7 @@ pnpm-workspace.yaml      # pnpm 工作区
 
 ## 开发约定
 
-Tauri 命令层只负责调用转发，投屏逻辑放在 `karamas_core` 中。
+Tauri 命令层只负责调用转发，投屏逻辑放在 `karamas_core` 中。核心库运行架构见[核心库架构说明](karamas_core/DEVELOP.md)。
 
 前端使用 Vue 3 和 Vue Router，TypeScript 开启严格模式。源码内部导入统一使用 `@/`；导入源码目录外的文件时使用相对路径。
 
