@@ -4,7 +4,7 @@
 
 # KARAM@S
 
-[下载应用](https://github.com/KARAOKE-MASTER-ZJU/karamas/releases/latest) / [开始使用](#开始使用) / [更新日志](CHANGELOG.md) / [问题反馈](https://github.com/KARAOKE-MASTER-ZJU/karamas/issues)
+[下载应用](https://github.com/KARAOKE-MASTER-ZJU/karamas/releases/latest) / [开始使用](#开始使用) / [使用文档](https://idol-zju.feishu.cn/wiki/Ytt1wNh88i6E9jkEndhcxNmYnBd#share-DRDOdc1wdon3eix3QXIc9FMVnqf) / [更新日志](CHANGELOG.md) / [问题反馈](https://github.com/KARAOKE-MASTER-ZJU/karamas/issues)
 
 </div>
 
@@ -32,6 +32,8 @@ _投屏页预览_
 | Android 7.0 及以上 | `.apk` | 常见手机选 `android-arm64-v8a`；其他架构可选 `armeabi-v7a`、`x86` 或 `x86_64`                |
 
 ## 开始使用
+
+完整使用说明可查看[飞书使用文档](https://idol-zju.feishu.cn/wiki/Ytt1wNh88i6E9jkEndhcxNmYnBd#share-DRDOdc1wdon3eix3QXIc9FMVnqf)。
 
 ### 加入点歌房间
 
@@ -65,35 +67,35 @@ _投屏页预览_
 
 ## 常见问题
 
-### 本项目和 [ktv-casting-android-app](https://github.com/KARAOKE-MASTER-ZJU/ktv-casting-android-app)是什么关系？
+### 本项目和 [ktv-casting-android-app](https://github.com/KARAOKE-MASTER-ZJU/ktv-casting-android-app) 是什么关系？
 
-本项目是该项目的跨平台重构版，直接基于[ktv-casting](https://github.com/KARAOKE-MASTER-ZJU/ktv-casting)开发，减少维护两个仓库带来的不必要的麻烦。与此同时原有的两个仓库将不再进行更新。
+本项目是该项目的跨平台重构版，直接基于 [ktv-casting](https://github.com/KARAOKE-MASTER-ZJU/ktv-casting) 开发，减少维护两个仓库带来的不必要的麻烦。与此同时，原有的两个仓库将不再进行更新。
 
 ### 为什么小电视模式显示切歌了却实际没成功？
 
-这个是小电视的限制，可能请求返回成功但是设备仍然可能不播放，需要手动点一下重新投屏，未来会尝试优化。
+这是小电视的限制，请求返回成功但设备仍可能不播放，需要手动点一下“重新投屏”，未来会尝试优化。
 
 ### 为什么小电视的进度不同步？
 
-小电视默认接收b站的主动消息推送来同步校准进度，大概10s一次，并且会有网络延迟，所以可能会出现不同步的情况。
+小电视默认接收哔哩哔哩的主动消息推送来同步校准进度，大概 10 秒一次，并且会有网络延迟，所以可能会出现不同步的情况。
 
 ### 纯 K 为什么没有显示总时长？
 
 纯 K 等部分 DLNA 接收端无法提供播放总时长，应用会尝试查询视频时长。仍无法获取时，保留已播时间，总时长显示为 `--:--`。
 
-### 为什么无法搜索到 DLNA 设备
+### 为什么无法搜索到 DLNA 设备？
 
-DLNA默认从可用的 IPv4 局域网接口搜索，检查一下网络是否和被投屏设备在同一局域网和广播域，检查局域网是否允许 SSDP 组播通信。
+DLNA 默认从可用的 IPv4 局域网接口搜索，检查一下网络是否和被投屏设备在同一局域网和广播域，检查局域网是否允许 SSDP 组播通信。
 
 ### DLNA 设备无法播放 HLS
 
-B站点播的“HLS 播放”是实验性选项，需要接收端支持。开启后如果出现播放或定位问题，可在“设置 → DLNA 投屏”中关闭，再重新投屏。
+哔哩哔哩点播的“HLS 播放”是实验性选项，需要接收端支持。开启后如果出现播放或定位问题，可在“设置 → DLNA 投屏”中关闭，再重新投屏。
 
-### 清晰度列表没有 1080P 60帧等清晰度
+### 清晰度列表没有 1080P 60 帧等清晰度
 
-可能是视频本身没有提供、b站没有登录、未开启反向代理或HLS
+可能是视频本身没有提供、哔哩哔哩没有登录、未开启反向代理或 HLS。
 
-### 如何反馈问题
+### 如何反馈问题？
 
 在“设置 → 运行日志”中保存或分享日志，并在 [Issues](https://github.com/KARAOKE-MASTER-ZJU/karamas/issues) 中说明应用版本、操作系统、播放方式、设备型号和复现步骤。
 
@@ -113,11 +115,11 @@ KARAM@S 基于 Tauri 2、Vue 3、TypeScript 和 Rust 构建。环境准备、源
 
 ## 致谢
 
-- [KTV Song List Web](https://github.com/KARAOKE-MASTER-ZJU/ktv-song-web): 配套的网页点歌台。
-- [ktv-casting](https://github.com/aspromise/ktv-casting)（作者 [aspromise](https://github.com/aspromise)）及其 [KARAOKE-MASTER-ZJU 分支](https://github.com/KARAOKE-MASTER-ZJU/ktv-casting): 本项目投屏核心的来源。
-- [hls.js](https://github.com/video-dev/hls.js): 本机播放器的 HLS 播放支持。
+- [KTV Song List Web](https://github.com/KARAOKE-MASTER-ZJU/ktv-song-web)：配套的网页点歌台。
+- [ktv-casting](https://github.com/aspromise/ktv-casting)（作者 [aspromise](https://github.com/aspromise)）及其 [KARAOKE-MASTER-ZJU 分支](https://github.com/KARAOKE-MASTER-ZJU/ktv-casting)：本项目投屏核心的来源。
+- [hls.js](https://github.com/video-dev/hls.js)：本机播放器的 HLS 播放支持。
 - [mpegts.js](https://github.com/xqq/mpegts.js)：本机播放器的 FLV 播放支持。
-- [rupnp](https://github.com/jakobhellermann/rupnp) 及其 [aspromise 分支](https://github.com/aspromise/rupnp): DLNA 设备描述解析与 UPnP 服务访问。
-- [innertube-rs](https://github.com/caya8205-2/innertube-rs): YouTube 媒体信息获取与播放地址解析。
-- [mp4-rust](https://github.com/alfg/mp4-rust): MP4 元数据与时长读取。
-- [bilikara](https://github.com/VZRXS/bilikara): 本地/有线投屏客户端，本项目参考了实现
+- [rupnp](https://github.com/jakobhellermann/rupnp) 及其 [aspromise 分支](https://github.com/aspromise/rupnp)：DLNA 设备描述解析与 UPnP 服务访问。
+- [innertube-rs](https://github.com/caya8205-2/innertube-rs)：YouTube 媒体信息获取与播放地址解析。
+- [mp4-rust](https://github.com/alfg/mp4-rust)：MP4 元数据与时长读取。
+- [bilikara](https://github.com/VZRXS/bilikara)：本地 / 有线投屏客户端，本项目参考了实现。
