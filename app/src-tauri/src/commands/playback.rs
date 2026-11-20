@@ -40,6 +40,11 @@ pub async fn poll_playback() -> CommandResult<Option<PlaybackState>> {
     Ok(Some(result))
 }
 
+#[tauri::command]
+pub async fn refresh_playlist() -> CommandResult<()> {
+    Ok(current_engine()?.refresh_playlist().await?)
+}
+
 /// 恢复播放，成功后返回 true。
 #[tauri::command]
 pub async fn play() -> CommandResult<bool> {

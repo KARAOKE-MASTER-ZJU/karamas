@@ -348,26 +348,21 @@ async fn heartbeat_sync_plays_missed_song_and_later_updates_do_not_replay_it() {
             played.send(url).unwrap();
         })
     };
-    let mut cached = None;
     manager
-        .sync_playlist(&mut cached, &mut callback)
+        .sync_playlist(&mut callback, true)
         .await
         .unwrap();
     assert_eq!(received.try_recv().unwrap(), "BV-A");
     // No WS notification: the heartbeat uses this same operation and must play B.
     manager
-        .sync_playlist(&mut cached, &mut callback)
+        .sync_playlist(&mut callback, true)
         .await
         .unwrap();
     assert_eq!(received.try_recv().unwrap(), "BV-B");
     assert_eq!(progress(&manager, 1, 180).await, (1, 180));
-    // A later sync/reconnect and a queue-only update must not replay B.
-    for _ in 0..2 {
-        manager
-            .sync_playlist(&mut cached, &mut callback)
-            .await
-            .unwrap();
-    }
+    // A manual refresh and a later queue-only update must not replay B.
+    manager.sync_playlist(&mut callback, false).await.unwrap();
+    manager.sync_playlist(&mut callback, true).await.unwrap();
     assert!(received.try_recv().is_err());
     assert_eq!(manager.current_hash().await, "H2");
     for _ in 0..4 {
@@ -410,24 +405,26 @@ async fn failed_sync_preserves_handled_song_and_next_sync_recovers() {
         played.send(url).unwrap();
         Box::pin(async {})
     };
-    let mut cached = None;
     manager
-        .sync_playlist(&mut cached, &mut callback)
+        .sync_playlist(&mut callback, true)
         .await
         .unwrap();
     assert_eq!(received.try_recv().unwrap(), "BV-A");
     phase.store(1, Ordering::SeqCst);
     assert!(
         manager
-            .sync_playlist(&mut cached, &mut callback)
+            .sync_playlist(&mut callback, true)
             .await
             .is_err()
     );
-    assert_eq!(cached, Some((Some("A".into()), "BV-A".into())));
+    assert_eq!(
+        *manager.last_handled_song.lock().await,
+        Some((Some("A".into()), "BV-A".into()))
+    );
     assert!(received.try_recv().is_err());
     phase.store(2, Ordering::SeqCst);
     manager
-        .sync_playlist(&mut cached, &mut callback)
+        .sync_playlist(&mut callback, true)
         .await
         .unwrap();
     assert_eq!(received.try_recv().unwrap(), "BV-B");
@@ -456,9 +453,8 @@ async fn part_edit_preserves_title_and_sync_replays_same_id_only_once() {
             played.send(url).unwrap();
         })
     };
-    let mut cached = None;
     manager
-        .sync_playlist(&mut cached, &mut callback)
+        .sync_playlist(&mut callback, true)
         .await
         .unwrap();
     assert_eq!(received.try_recv().unwrap(), "BV1LS4MzKE8y-page0");
@@ -483,13 +479,13 @@ async fn part_edit_preserves_title_and_sync_replays_same_id_only_once() {
         json!({"idArrayHash":"H0","song":{"id":"A","title":"A","url":second}})
     );
     manager
-        .sync_playlist(&mut cached, &mut callback)
+        .sync_playlist(&mut callback, true)
         .await
         .unwrap();
     assert_eq!(received.try_recv().unwrap(), "BV1LS4MzKE8y-page1");
     assert_eq!(progress(&manager, 1, 226).await, (1, 226));
     manager
-        .sync_playlist(&mut cached, &mut callback)
+        .sync_playlist(&mut callback, true)
         .await
         .unwrap();
     assert!(received.try_recv().is_err());

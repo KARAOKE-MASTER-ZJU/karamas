@@ -47,14 +47,17 @@ impl PlaylistManager {
     }
 
     /// 同步一次歌单；当前歌曲变化且有 URL 时回调，无 URL 时保持播放。
-    pub(super) async fn sync_playlist<F>(
+    pub(crate) async fn sync_playlist<F, Fut>(
         &self,
-        song_playing_cached: &mut Option<(Option<String>, String)>,
-        f_on_update: &mut F,
+        f_on_update: F,
+        report_error: bool,
     ) -> Result<(), String>
     where
-        F: Fn(String) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send,
+        F: FnOnce(String) -> Fut,
+        Fut: Future<Output = ()>,
     {
+        // 手动刷新与后台同步串行，共用同一份已处理歌曲记录。
+        let mut last_handled_song = self.last_handled_song.lock().await;
         let mut retries = 0;
         let song = loop {
             match self.fetch_playlist().await {
@@ -71,16 +74,18 @@ impl PlaylistManager {
                     let message = format!(
                         "拉取歌单失败，重试 {PLAYLIST_RETRIES} 次后仍未成功，请检查网络或稍后重连。详情：{error}"
                     );
-                    *self.sync_error.lock().await = Some(message.clone());
+                    if report_error {
+                        *self.sync_error.lock().await = Some(message.clone());
+                    }
                     return Err(message);
                 }
             }
         };
-        if song != *song_playing_cached {
+        if song != *last_handled_song {
             if let Some((_, url)) = &song {
                 f_on_update(url.clone()).await;
             }
-            *song_playing_cached = song;
+            *last_handled_song = song;
         }
         Ok(())
     }
@@ -106,14 +111,12 @@ impl PlaylistManager {
                 .and_then(|s| s.parse::<u64>().ok())
                 .unwrap_or(30);
             info!("心跳间隔: {} 秒", interval_secs);
-            // Keep the last handled song across reconnects as well as heartbeat/WS updates.
-            let mut song_playing_cached = None;
             let sync_requested = Notify::new();
             // 歌单与起播仍串行处理，耗时操作不挡住同一连接上的遥控消息。
             let playlist_sync = async {
                 loop {
                     sync_requested.notified().await;
-                    if let Err(error) = self_clone.sync_playlist(&mut song_playing_cached, &mut f_on_update).await {
+                    if let Err(error) = self_clone.sync_playlist(&mut f_on_update, true).await {
                         error!("同步歌单失败: {}", error);
                     }
                 }
@@ -295,10 +298,9 @@ impl PlaylistManager {
         let self_clone = self.clone();
         runtime.spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_millis(300));
-            let mut song_playing = None;
             loop {
                 interval.tick().await;
-                if let Err(e) = self_clone.sync_playlist(&mut song_playing, &mut f_on_update).await {
+                if let Err(e) = self_clone.sync_playlist(&mut f_on_update, true).await {
                     error!("定时更新播放列表失败: {}", e);
                 }
             }

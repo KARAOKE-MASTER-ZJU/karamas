@@ -1,8 +1,27 @@
 use super::state::{ENGINE_STATE, EngineContext};
-use crate::{cast, playlist::progress_gate};
+use crate::{CoreError, cast, playlist::progress_gate};
 use log::{info, trace, warn};
-use std::{sync::atomic::Ordering, time::Duration};
+use std::{
+    sync::{Arc, atomic::Ordering},
+    time::Duration,
+};
 use tokio::sync::Mutex;
+
+impl EngineContext {
+    /// 立即同步当前房间歌单，沿用后台同步的切歌规则。
+    pub async fn refresh_playlist(self: &Arc<Self>) -> Result<(), CoreError> {
+        let ctx = self.clone();
+        self.spawn_task(async move {
+            // 手动刷新由调用方显示错误，避免同时触发后台提示。
+            ctx.playlist_manager
+                .sync_playlist(|url| update_playback(&ctx, url), false)
+                .await
+        })?
+        .await
+        .map_err(|_| "歌单刷新已取消")??;
+        Ok(())
+    }
+}
 
 /// 读取会话任务最近取得的有效进度。
 pub async fn get_current_progress() -> (i32, i32) {

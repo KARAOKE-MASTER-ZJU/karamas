@@ -145,6 +145,7 @@ export const castingApi = {
     await call<void>("disconnect_casting");
   },
   poll: () => call<PlaybackState | null>("poll_playback"),
+  refreshPlaylist: () => call<void>("refresh_playlist"),
   play: () => call<boolean>("play"),
   pause: () => call<boolean>("pause"),
   togglePause: () => call<boolean>("toggle_pause"),

@@ -30,6 +30,7 @@ export function usePlaybackControls() {
   return {
     run,
     recast,
+    refreshPlaylist: () => run(casting.refreshPlaylist),
     previousSong: () => run(() => casting.control(castingApi.previousSong)),
     nextSong: () => run(() => casting.control(castingApi.nextSong)),
     play: () => run(casting.play),

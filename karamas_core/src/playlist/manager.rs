@@ -4,6 +4,8 @@ use reqwest::Client;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+type PlaylistSong = (Option<String>, String);
+
 #[derive(Clone)]
 pub struct PlaylistManager {
     pub(super) url: String,
@@ -16,6 +18,7 @@ pub struct PlaylistManager {
     pub(super) queued_count: Arc<Mutex<usize>>,
     pub(super) sung_count: Arc<Mutex<usize>>,
     pub(super) sync_error: Arc<Mutex<Option<String>>>,
+    pub(super) last_handled_song: Arc<Mutex<Option<PlaylistSong>>>,
     pub(crate) progress_gate: Arc<Mutex<ProgressGate>>,
 }
 
@@ -39,6 +42,7 @@ impl PlaylistManager {
             queued_count: Arc::new(Mutex::new(0)),
             sung_count: Arc::new(Mutex::new(0)),
             sync_error: Arc::new(Mutex::new(None)),
+            last_handled_song: Arc::new(Mutex::new(None)),
             progress_gate: Arc::new(Mutex::new(ProgressGate::default())),
         }
     }
@@ -51,7 +55,7 @@ impl PlaylistManager {
     // }
     // Song { id, title, url, addedBy? }
     /// 同步房间歌单，返回当前歌曲的 ID 和地址。
-    pub(super) async fn fetch_playlist(&self) -> Result<Option<(Option<String>, String)>, String> {
+    pub(super) async fn fetch_playlist(&self) -> Result<Option<PlaylistSong>, String> {
         let last_hash = self
             .hash
             .lock()

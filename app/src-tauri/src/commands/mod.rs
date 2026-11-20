@@ -53,6 +53,7 @@ pub fn handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + 
         session::set_dlna_hls_direct,
         session::set_proxy_device_only,
         playback::poll_playback,
+        playback::refresh_playlist,
         playback::report_local_playback,
         playback::play,
         playback::pause,

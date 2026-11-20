@@ -99,6 +99,7 @@ export const useCastingStore = defineStore("casting", () => {
   const enteringRoom = ref(false);
   const controlling = ref(false);
   const recasting = ref(false);
+  const refreshingPlaylist = ref(false);
   const applyingAudioDelay = ref(false);
   const connected = computed(
     () => activeDevice.value !== null || playback.value !== null,
@@ -391,6 +392,20 @@ export const useCastingStore = defineStore("casting", () => {
       }
     });
   }
+  async function refreshPlaylist() {
+    if (!connected.value || sessionBusy.value || refreshingPlaylist.value)
+      return;
+    refreshingPlaylist.value = true;
+    try {
+      await castingApi.refreshPlaylist();
+      if (connected.value && !sessionBusy.value) {
+        ++revision;
+        await poll().catch(() => undefined);
+      }
+    } finally {
+      refreshingPlaylist.value = false;
+    }
+  }
   async function seek(seconds: number) {
     await control(async () => {
       const current = playback.value;
@@ -544,6 +559,7 @@ export const useCastingStore = defineStore("casting", () => {
     enteringRoom,
     controlling,
     recasting,
+    refreshingPlaylist,
     applyingAudioDelay,
     connected,
     sessionBusy,
@@ -560,6 +576,7 @@ export const useCastingStore = defineStore("casting", () => {
     changeVolume,
     setVolume,
     recast,
+    refreshPlaylist,
     seek,
     setQuality,
     setDanmaku,
