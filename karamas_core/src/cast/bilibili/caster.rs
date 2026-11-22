@@ -1,6 +1,6 @@
 //! Bilibili 投屏器
 use super::{
-    broadcast::BroadcastReceiver,
+    broadcast::{BroadcastReceiver, PlaySession},
     client::{API_HOST, APPKEY, bili_client, form_body},
     session::{BilibiliSession, now_ts},
 };
@@ -75,10 +75,11 @@ impl BilibiliCaster {
     fn command_body(
         &self,
         command: u32,
-        oid: u64,
+        session: Option<&PlaySession>,
         extra_override: Option<Value>,
         seek_ts: u32,
     ) -> String {
+        let session = session.cloned().or_else(|| self.broadcast.play_session());
         let device_info = serde_json::json!({
             "ott_buvid": self.device_buvid,
             "ott_mid": self.mid,
@@ -91,11 +92,11 @@ impl BilibiliCaster {
         let mut full_extra = serde_json::json!({
             "accessKey": self.access_token.as_str(),
             "buvid": self.broadcast.buvid,
-            "autoNext": false, "biz_id": 6213332, "oid": oid,
-            "userDesireSpeed": 1.0, "type": 101, "userVipInfo": 1
+            "autoNext": false, "biz_id": 0, "oid": 0,
+            "userDesireSpeed": 1.0, "type": 0, "userVipInfo": 1
         });
-        if let Some(id) = self.broadcast.session_id() {
-            full_extra["bizSessionId"] = id.into();
+        if let Some(session) = &session {
+            full_extra["bizSessionId"] = session.id.as_str().into();
         }
         if let (Some(obj), Some(extra)) = (full_extra.as_object_mut(), extra_override.as_ref().and_then(|v| v.as_object())) {
             for (k, v) in extra {
@@ -103,19 +104,14 @@ impl BilibiliCaster {
             }
         }
 
+        let (aid, cid) = session
+            .as_ref()
+            .map_or((0, 0), |session| (session.aid, session.cid));
         let cmd_str = command.to_string();
+        let aid_str = aid.to_string();
+        let cid_str = cid.to_string();
         let seek_str = seek_ts.to_string();
         let ts_str = now_ts().to_string();
-
-        // 提取cid作为顶级参数（如果存在）
-        let cid_str = full_extra.get("cid")
-            .and_then(|v| v.as_u64())
-            .map(|c| c.to_string());
-
-        // 从extra中移除cid，避免重复传递
-        if let Some(obj) = full_extra.as_object_mut() {
-            obj.remove("cid");
-        }
 
         let extra_str = full_extra.to_string();
 
@@ -123,9 +119,9 @@ impl BilibiliCaster {
         if let Some(extra) = logged_extra.as_object_mut() {
             extra.remove("accessKey");
         }
-        log::info!("[Bilibili] send_cmd: command={}, oid={}, cid={:?}, extra={}", command, oid, cid_str, logged_extra);
+        log::info!("[Bilibili] send_cmd: command={}, aid={}, cid={}, extra={}", command, aid, cid, logged_extra);
 
-        // 构建form参数，cid作为顶级参数（如果存在）
+        // 构建表单参数。
         let mut params = vec![
             ("access_key", self.access_token.as_str()),
             ("appkey", APPKEY),
@@ -135,16 +131,15 @@ impl BilibiliCaster {
             ("device_info", &device_info),
             ("extra", &extra_str),
             ("seek_ts", &seek_str),
-            ("video_type", "4"),
+            ("video_type", "0"),
             ("room_id", "0"),
             ("mobi_app", "android"),
             ("platform", "android"),
             ("s_locale", "zh-Hans_CN"),
         ];
 
-        // 如果存在cid，作为顶级参数加入
-        if let Some(ref cid) = cid_str {
-            params.insert(8, ("cid", cid.as_str()));
+        if session.is_some() {
+            params.extend([("aid", aid_str.as_str()), ("cid", cid_str.as_str())]);
         }
 
         form_body(&params)
@@ -154,11 +149,11 @@ impl BilibiliCaster {
     async fn send_cmd(
         &self,
         command: u32,
-        oid: u64,
+        session: Option<&PlaySession>,
         extra_override: Option<Value>,
         seek_ts: u32,
     ) -> Result<(), CastError> {
-        let body = self.command_body(command, oid, extra_override, seek_ts);
+        let body = self.command_body(command, session, extra_override, seek_ts);
 
         // 发送请求
         let endpoint = format!("{}/x/tv/stream/cmd", API_HOST);
@@ -272,13 +267,16 @@ impl Caster for BilibiliCaster {
         // 读取 AtomicBool 的当前值
         let current_danmaku = self.danmaku.load(Ordering::Relaxed);
 
-        // extra的cid会被解析提取到外层
         self.start_broadcast();
         let session = self.broadcast.begin_play(aid, cid);
-        let extra = serde_json::json!({ "oid": aid, "cid": cid, "type": 101, "bizSessionId": session.id, "quality": current_quality, "danmaku_switch": current_danmaku });
+        let extra = serde_json::json!({
+            "oid": aid,
+            "quality": current_quality,
+            "danmaku_switch": current_danmaku,
+        });
 
         log::info!("[Bilibili] sending play command: aid={}, cid={}, page={}, extra={}", aid, cid, page, extra);
-        if let Err(error) = self.send_cmd(1, aid, Some(extra), 0).await {
+        if let Err(error) = self.send_cmd(1, Some(&session), Some(extra), 0).await {
             self.broadcast.clear_play(&session.id);
             return Err(error);
         }
@@ -300,24 +298,24 @@ impl Caster for BilibiliCaster {
     /// 继续播放
     async fn resume(&self) -> Result<(), CastError> {
         self.broadcast.update_local_playback(None, Some(true));
-        self.send_cmd(6, 0, None, 0).await
+        self.send_cmd(6, None, None, 0).await
     }
 
     /// 暂停播放
     async fn pause(&self) -> Result<(), CastError> {
         self.broadcast.update_local_playback(None, Some(false));
-        self.send_cmd(5, 0, None, 0).await
+        self.send_cmd(5, None, None, 0).await
     }
 
     /// 停止播放
     async fn stop(&self) -> Result<(), CastError> {
-        self.send_cmd(7, 0, None, 0).await
+        self.send_cmd(7, None, None, 0).await
     }
 
     /// 定位到指定时间点（秒）
     async fn seek(&self, secs: u32) -> Result<(), CastError> {
         self.broadcast.update_local_playback(Some(secs), None);
-        self.send_cmd(4, 0, None, secs).await
+        self.send_cmd(4, None, None, secs).await
     }
 
     /// 获取当前播放进度（秒），返回 Progress 结构体
@@ -346,16 +344,16 @@ impl Caster for BilibiliCaster {
     // command=8 音量+，command=12 音量-（与 main.py 的 cmd 8 / 12 一致）。
     /// 增大音量
     async fn volume_up(&self, _step: u32) -> Result<(), CastError> {
-        self.send_cmd(8, 0, None, 0).await
+        self.send_cmd(8, None, None, 0).await
     }
 
     async fn volume_down(&self, _step: u32) -> Result<(), CastError> {
-        self.send_cmd(12, 0, None, 0).await
+        self.send_cmd(12, None, None, 0).await
     }
 
     // command=9：弹幕开关，与 main.py 的 cmd 9 一致。
     async fn set_danmaku(&self, on: bool) -> Result<(), CastError> {
-        self.send_cmd(9, 0, Some(serde_json::json!({ "danmaku_switch": on })), 0).await?;
+        self.send_cmd(9, None, Some(serde_json::json!({ "danmaku_switch": on })), 0).await?;
         self.danmaku.store(on, Ordering::Relaxed);
         Ok(())
     }
@@ -368,7 +366,7 @@ impl Caster for BilibiliCaster {
         let extra = serde_json::json!({
             "qn": { "currentQn": { "quality": quality.as_qn() }, "userDesireQn": 0 }
         });
-        self.send_cmd(10, 0, Some(extra), 0).await?;
+        self.send_cmd(10, None, Some(extra), 0).await?;
         self.quality.store(quality.as_qn(), Ordering::Relaxed);
         Ok(())
     }

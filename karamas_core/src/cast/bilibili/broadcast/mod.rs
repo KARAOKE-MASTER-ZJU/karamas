@@ -114,12 +114,11 @@ impl BroadcastReceiver {
         self.stop.send_replace(true);
     }
 
-    pub fn session_id(&self) -> Option<String> {
+    pub fn play_session(&self) -> Option<PlaySession> {
         self.active
             .read()
             .unwrap_or_else(|e| e.into_inner())
-            .as_ref()
-            .map(|session| session.id.clone())
+            .clone()
     }
 
     /// 在后台建立订阅，立即返回；断流后可再次调用以重连。
