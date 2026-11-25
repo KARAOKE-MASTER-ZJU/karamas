@@ -92,7 +92,7 @@ impl BilibiliCaster {
         let mut full_extra = serde_json::json!({
             "accessKey": self.access_token.as_str(),
             "buvid": self.broadcast.buvid,
-            "autoNext": false, "biz_id": 0, "oid": 0,
+            "autoNext": true, "biz_id": 0, "oid": 0,
             "userDesireSpeed": 1.0, "type": 0, "userVipInfo": 1
         });
         if let Some(session) = &session {
